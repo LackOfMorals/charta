@@ -150,6 +150,11 @@ func (p *parser) fail(pos Pos, format string, args ...any) {
 	panic(bailout{&SyntaxError{Pos: pos, Msg: fmt.Sprintf(format, args...)}})
 }
 
+// failc is fail with a TCK error code.
+func (p *parser) failc(code string, pos Pos, format string, args ...any) {
+	panic(bailout{&SyntaxError{Pos: pos, Msg: fmt.Sprintf(format, args...), Code: code}})
+}
+
 // enter/leave bound recursion depth.
 func (p *parser) enter() {
 	p.depth++

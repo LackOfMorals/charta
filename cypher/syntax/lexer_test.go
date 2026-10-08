@@ -221,8 +221,6 @@ func TestLexer_Errors(t *testing.T) {
 		{"bad octal", "0o9", 1, 1, "octal"},
 		{"bad exponent", "1e", 1, 1, "exponent"},
 		{"bad exponent sign", "1e+", 1, 1, "exponent"},
-		{"identifier glued to number", "12abc", 1, 1, "invalid numeric"},
-		{"hex glued to letter", "0x1G", 1, 1, "invalid numeric"},
 		{"unexpected char", "a @ b", 1, 3, "unexpected character"},
 		{"unexpected unicode char", "a € b", 1, 3, "unexpected character"},
 		{"invalid utf8", "a \xff b", 1, 3, "UTF-8"},

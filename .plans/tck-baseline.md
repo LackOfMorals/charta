@@ -1,25 +1,30 @@
 <!--
-Baseline of the hand-written-parser plan (task-017), taken with the full
-openCypher TCK imported (compat/testdata/tck, commit 677cbaf) and BEFORE any
-semantic analysis (task-018): scenarios that expect a compile-time error pass
-as soon as *any* error is raised, so the pass rate below is optimistic.
+TCK results after semantic analysis (task-018), with the harness requiring the
+exact error class and code for every "should be raised at compile time"
+scenario. Full openCypher TCK, compat/testdata/tck (commit 677cbaf).
 Regenerate with:  TCK_REPORT=.plans/tck-baseline.md CGO_ENABLED=0 go test -tags=tck ./compat/...
 -->
 
-> **Reading this baseline.** The two biggest failure groups are not parser or
-> semantic problems: `expressions/temporal` (975 scenarios, the TCK's
-> date/time/duration types) and the translator rejecting "complex expressions"
-> (functions, arithmetic beyond `+`/`-`, ~1,100 scenarios). Those belong to the
-> planner/SQL iterations (tasks 019-027) and the Neo4j value types (task-038).
-> `expressions/quantifier` (604) and `typeConversion` (47) are skipped until
-> list predicates and conversion functions exist. Skips are listed with their
-> reasons at the end.
+> **Before and after task-018.** Before: 816/2,631 executed (31.0%), measured while
+> compile-time error scenarios accepted *any* error. After: see the figure below,
+> with the exact class and code required. The rate went up because ~95 expected-error
+> scenarios that used to fail ("expected a SyntaxError but the query succeeded")
+> now raise the right error. All 586 compile-time-error cases in the TCK match
+> (checked directly by `cypher/analyze` TestTCK_CompileTimeErrors), and none of the
+> 4,176 valid queries is wrongly rejected (TestTCK_ValidScenariosPass).
+>
+> **What is left.** The failures are not parsing or analysis problems:
+> `expressions/temporal` (975 scenarios, date/time types, task-038) and the
+> translator rejecting "complex expressions" (~1,100, tasks 019-027 and 039);
+> runtime error expectations (negative SKIP/LIMIT parameters, deleted-entity
+> access, ...) still accept any error. `expressions/quantifier` (604) and
+> `typeConversion` (47) are skipped until list predicates and conversion functions exist.
 
 # openCypher TCK results
 
-Scenarios: 3897 total - **816 passed**, 1815 failed, 1264 skipped (feature not supported yet), 2 excluded (Cypher 25 removed syntax).
+Scenarios: 3897 total - **911 passed**, 1720 failed, 1264 skipped (feature not supported yet), 2 excluded (Cypher 25 removed syntax).
 
-Pass rate over executed scenarios: **816/2631 (31.0%)**
+Pass rate over executed scenarios: **911/2631 (34.6%)**
 
 ## By area
 
@@ -28,22 +33,22 @@ Pass rate over executed scenarios: **816/2631 (31.0%)**
 | clauses/call | 2 | 0 | 50 | 0 | 100% |
 | clauses/create | 61 | 5 | 12 | 0 | 92% |
 | clauses/delete | 17 | 21 | 3 | 0 | 45% |
-| clauses/match | 174 | 87 | 120 | 0 | 67% |
+| clauses/match | 178 | 83 | 120 | 0 | 68% |
 | clauses/match-where | 23 | 7 | 4 | 0 | 77% |
 | clauses/merge | 25 | 35 | 13 | 2 | 42% |
 | clauses/remove | 17 | 10 | 6 | 0 | 63% |
-| clauses/return | 26 | 24 | 13 | 0 | 52% |
-| clauses/return-orderby | 10 | 10 | 15 | 0 | 50% |
+| clauses/return | 29 | 21 | 13 | 0 | 58% |
+| clauses/return-orderby | 11 | 9 | 15 | 0 | 55% |
 | clauses/return-skip-limit | 24 | 3 | 4 | 0 | 89% |
 | clauses/set | 20 | 29 | 4 | 0 | 41% |
 | clauses/union | 0 | 0 | 12 | 0 | 0% |
 | clauses/unwind | 0 | 0 | 14 | 0 | 0% |
-| clauses/with | 4 | 15 | 10 | 0 | 21% |
-| clauses/with-orderBy | 45 | 197 | 50 | 0 | 19% |
+| clauses/with | 6 | 13 | 10 | 0 | 32% |
+| clauses/with-orderBy | 70 | 172 | 50 | 0 | 29% |
 | clauses/with-skip-limit | 1 | 6 | 2 | 0 | 14% |
 | clauses/with-where | 1 | 14 | 4 | 0 | 7% |
 | expressions/aggregation | 13 | 6 | 16 | 0 | 68% |
-| expressions/boolean | 68 | 62 | 20 | 0 | 52% |
+| expressions/boolean | 127 | 3 | 20 | 0 | 98% |
 | expressions/comparison | 22 | 34 | 16 | 0 | 39% |
 | expressions/conditional | 0 | 12 | 1 | 0 | 0% |
 | expressions/existentialSubqueries | 1 | 8 | 1 | 0 | 11% |
@@ -54,7 +59,7 @@ Pass rate over executed scenarios: **816/2631 (31.0%)**
 | expressions/mathematical | 1 | 4 | 1 | 0 | 20% |
 | expressions/null | 11 | 33 | 0 | 0 | 25% |
 | expressions/path | 0 | 0 | 7 | 0 | 0% |
-| expressions/pattern | 17 | 31 | 2 | 0 | 35% |
+| expressions/pattern | 18 | 30 | 2 | 0 | 38% |
 | expressions/precedence | 27 | 35 | 59 | 0 | 44% |
 | expressions/quantifier | 0 | 0 | 604 | 0 | 0% |
 | expressions/string | 12 | 16 | 4 | 0 | 43% |
@@ -91,12 +96,12 @@ Pass rate over executed scenarios: **816/2631 (31.0%)**
 | clauses/match-where/MatchWhere4.feature | 1 | 1 | 0 | 0 | 50% |
 | clauses/match-where/MatchWhere5.feature | 4 | 0 | 0 | 0 | 100% |
 | clauses/match-where/MatchWhere6.feature | 3 | 5 | 0 | 0 | 38% |
-| clauses/match/Match1.feature | 59 | 1 | 26 | 0 | 98% |
+| clauses/match/Match1.feature | 60 | 0 | 26 | 0 | 100% |
 | clauses/match/Match2.feature | 67 | 0 | 19 | 0 | 100% |
 | clauses/match/Match3.feature | 20 | 10 | 0 | 0 | 67% |
 | clauses/match/Match4.feature | 3 | 5 | 2 | 0 | 38% |
 | clauses/match/Match5.feature | 16 | 13 | 0 | 0 | 55% |
-| clauses/match/Match6.feature | 4 | 22 | 71 | 0 | 15% |
+| clauses/match/Match6.feature | 7 | 19 | 71 | 0 | 27% |
 | clauses/match/Match7.feature | 4 | 26 | 1 | 0 | 13% |
 | clauses/match/Match8.feature | 1 | 2 | 0 | 0 | 33% |
 | clauses/match/Match9.feature | 0 | 8 | 1 | 0 | 0% |
@@ -113,7 +118,7 @@ Pass rate over executed scenarios: **816/2631 (31.0%)**
 | clauses/remove/Remove2.feature | 2 | 0 | 3 | 0 | 100% |
 | clauses/remove/Remove3.feature | 12 | 9 | 0 | 0 | 57% |
 | clauses/return-orderby/ReturnOrderBy1.feature | 0 | 0 | 12 | 0 | 0% |
-| clauses/return-orderby/ReturnOrderBy2.feature | 8 | 4 | 2 | 0 | 67% |
+| clauses/return-orderby/ReturnOrderBy2.feature | 9 | 3 | 2 | 0 | 75% |
 | clauses/return-orderby/ReturnOrderBy3.feature | 0 | 1 | 0 | 0 | 0% |
 | clauses/return-orderby/ReturnOrderBy4.feature | 0 | 1 | 1 | 0 | 0% |
 | clauses/return-orderby/ReturnOrderBy5.feature | 0 | 1 | 0 | 0 | 0% |
@@ -124,9 +129,9 @@ Pass rate over executed scenarios: **816/2631 (31.0%)**
 | clauses/return/Return1.feature | 2 | 0 | 0 | 0 | 100% |
 | clauses/return/Return2.feature | 8 | 8 | 2 | 0 | 50% |
 | clauses/return/Return3.feature | 3 | 0 | 0 | 0 | 100% |
-| clauses/return/Return4.feature | 3 | 5 | 3 | 0 | 38% |
+| clauses/return/Return4.feature | 4 | 4 | 3 | 0 | 50% |
 | clauses/return/Return5.feature | 2 | 3 | 0 | 0 | 40% |
-| clauses/return/Return6.feature | 8 | 7 | 6 | 0 | 53% |
+| clauses/return/Return6.feature | 10 | 5 | 6 | 0 | 67% |
 | clauses/return/Return7.feature | 0 | 0 | 2 | 0 | 0% |
 | clauses/return/Return8.feature | 0 | 1 | 0 | 0 | 0% |
 | clauses/set/Set1.feature | 7 | 3 | 1 | 0 | 70% |
@@ -140,7 +145,7 @@ Pass rate over executed scenarios: **816/2631 (31.0%)**
 | clauses/union/Union3.feature | 0 | 0 | 2 | 0 | 0% |
 | clauses/unwind/Unwind1.feature | 0 | 0 | 14 | 0 | 0% |
 | clauses/with-orderBy/WithOrderBy1.feature | 10 | 50 | 36 | 0 | 17% |
-| clauses/with-orderBy/WithOrderBy2.feature | 0 | 81 | 2 | 0 | 0% |
+| clauses/with-orderBy/WithOrderBy2.feature | 25 | 56 | 2 | 0 | 31% |
 | clauses/with-orderBy/WithOrderBy3.feature | 30 | 53 | 10 | 0 | 36% |
 | clauses/with-orderBy/WithOrderBy4.feature | 5 | 13 | 2 | 0 | 28% |
 | clauses/with-skip-limit/WithSkipLimit1.feature | 0 | 2 | 0 | 0 | 0% |
@@ -156,7 +161,7 @@ Pass rate over executed scenarios: **816/2631 (31.0%)**
 | clauses/with/With1.feature | 1 | 2 | 3 | 0 | 33% |
 | clauses/with/With2.feature | 0 | 2 | 0 | 0 | 0% |
 | clauses/with/With3.feature | 0 | 1 | 0 | 0 | 0% |
-| clauses/with/With4.feature | 2 | 4 | 1 | 0 | 33% |
+| clauses/with/With4.feature | 4 | 2 | 1 | 0 | 67% |
 | clauses/with/With5.feature | 0 | 2 | 0 | 0 | 0% |
 | clauses/with/With6.feature | 1 | 2 | 6 | 0 | 33% |
 | clauses/with/With7.feature | 0 | 2 | 0 | 0 | 0% |
@@ -166,10 +171,10 @@ Pass rate over executed scenarios: **816/2631 (31.0%)**
 | expressions/aggregation/Aggregation5.feature | 2 | 0 | 0 | 0 | 100% |
 | expressions/aggregation/Aggregation6.feature | 6 | 6 | 1 | 0 | 50% |
 | expressions/aggregation/Aggregation8.feature | 2 | 0 | 2 | 0 | 100% |
-| expressions/boolean/Boolean1.feature | 9 | 17 | 4 | 0 | 35% |
-| expressions/boolean/Boolean2.feature | 9 | 17 | 4 | 0 | 35% |
+| expressions/boolean/Boolean1.feature | 26 | 0 | 4 | 0 | 100% |
+| expressions/boolean/Boolean2.feature | 26 | 0 | 4 | 0 | 100% |
 | expressions/boolean/Boolean3.feature | 23 | 3 | 4 | 0 | 88% |
-| expressions/boolean/Boolean4.feature | 27 | 25 | 0 | 0 | 52% |
+| expressions/boolean/Boolean4.feature | 52 | 0 | 0 | 0 | 100% |
 | expressions/boolean/Boolean5.feature | 0 | 0 | 8 | 0 | 0% |
 | expressions/comparison/Comparison1.feature | 16 | 24 | 3 | 0 | 40% |
 | expressions/comparison/Comparison2.feature | 5 | 10 | 4 | 0 | 33% |
@@ -218,7 +223,7 @@ Pass rate over executed scenarios: **816/2631 (31.0%)**
 | expressions/path/Path1.feature | 0 | 0 | 1 | 0 | 0% |
 | expressions/path/Path2.feature | 0 | 0 | 3 | 0 | 0% |
 | expressions/path/Path3.feature | 0 | 0 | 3 | 0 | 0% |
-| expressions/pattern/Pattern1.feature | 17 | 21 | 1 | 0 | 45% |
+| expressions/pattern/Pattern1.feature | 18 | 20 | 1 | 0 | 47% |
 | expressions/pattern/Pattern2.feature | 0 | 10 | 1 | 0 | 0% |
 | expressions/precedence/Precedence1.feature | 11 | 2 | 59 | 0 | 85% |
 | expressions/precedence/Precedence2.feature | 0 | 26 | 0 | 0 | 0% |
@@ -267,14 +272,12 @@ Pass rate over executed scenarios: **816/2631 (31.0%)**
 | 1080 | query failed: graphlite: translate: sql: SELECT projection: sql: unsupported expression "…": complex expressions are not yet supported in … |
 | 144 | expected N row(s), got N |
 | 89 | having executed "…": graphlite: translate: sql: CREATE node props: property "…": sql: unsupported expression "…": complex expressions … |
-| 60 | expected SyntaxError error (InvalidArgumentType) but query succeeded |
 | 46 | query failed: graphlite: query: SQL logic error: near "…": syntax error (N) |
 | 42 | query failed: graphlite: parse: cypher: multiple WITH stages are not yet supported |
 | 35 | column "…": unexpected value "…" in actual results |
 | 29 | query failed: graphlite: query: SQL logic error: ambiguous column name: nN.id (N) |
 | 27 | query failed: graphlite: translate: sql: SELECT projection: sql: variable "…" not in scope |
 | 26 | query failed: graphlite: plan: cypher: MERGE with relationship patterns is not yet supported |
-| 25 | expected SyntaxError error (InvalidAggregation) but query succeeded |
 | 24 | query failed: graphlite: translate: sql: SELECT projection: sql: arith lhs: sql: unsupported expression "…": complex expressions are not y… |
 | 21 | query failed: graphlite: query: SQL logic error: ambiguous column name: nN.props (N) |
 | 21 | query failed: graphlite: translate: sql: WHERE predicate: sql: unsupported expression "…": complex expressions are not yet supported in th… |
@@ -289,6 +292,8 @@ Pass rate over executed scenarios: **816/2631 (31.0%)**
 | 5 | query failed: graphlite: translate: sql: match-for-write FROM clause: sql: HAVING predicate: sql: unsupported expression "…": complex expr… |
 | 4 | expected empty result (table has no data rows), got N row(s) |
 | 4 | query failed: graphlite: translate: sql: GROUP BY expression: sql: unsupported expression "…": complex expressions are not yet supported i… |
+| 4 | query failed: graphlite: translate: sql: SELECT projection: sql: count() argument: sql: unsupported expression "…": complex expressions ar… |
+| 4 | query failed: graphlite: write-then-select query: SQL logic error: no such column: nN.props (N) |
 
 ## Skip and exclusion reasons
 

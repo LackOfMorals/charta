@@ -5,12 +5,15 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/LackOfMorals/graphlite/v2/cypher/analyze"
 	"github.com/LackOfMorals/graphlite/v2/cypher/syntax"
 )
 
-// Parse parses a Cypher statement with the hand-written cypher/syntax parser
-// and lowers the result to the Query AST that the planner and translator
-// consume.
+// Parse parses a Cypher statement with the hand-written cypher/syntax parser,
+// checks it semantically (cypher/analyze: undefined or conflicting variables,
+// aggregation and type errors) and lowers the result to the Query AST that the
+// planner and translator consume. Compile-time errors are *syntax.SyntaxError
+// or *analyze.Error; analyze.Describe returns their TCK class and code.
 //
 // Constructs the Query AST cannot represent (UNION, UNWIND, CALL, FOREACH,
 // multiple WITH stages, path selectors, label expressions other than simple
@@ -23,6 +26,9 @@ func Parse(input string) (*Query, error) {
 	st, err := syntax.Parse(input)
 	if err != nil {
 		return nil, fmt.Errorf("cypher syntax error: %w", err)
+	}
+	if err := analyze.Check(st); err != nil {
+		return nil, fmt.Errorf("cypher: %w", err)
 	}
 	return lowerStatement(st)
 }

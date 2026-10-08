@@ -167,10 +167,10 @@ func TestParse_RejectsNeo4jExtensionsWithAClearMessage(t *testing.T) {
 		{"CREATE USER u SET PASSWORD 'p'", "server command CREATE USER"},
 		{"MATCH (n) WHERE n.x IS :: INTEGER RETURN n", "type predicate"},
 		{"MATCH (n) WHERE n.s IS NORMALIZED RETURN n", "NORMALIZED"},
-		{"MATCH (n) SET n:$(x)", "SET items"},
+		{"MATCH (n) SET n:$($label)", "SET items"},
 		{"MATCH (n) SET n[$k] = 1", "dynamic property"},
-		{"MATCH (n:$(x)) RETURN n", "dynamic label"},
-		{"MATCH (a)-[:$(t)]->(b) RETURN a", "dynamic relationship type"},
+		{"MATCH (n:$($label)) RETURN n", "dynamic label"},
+		{"MATCH (a)-[:$($type)]->(b) RETURN a", "dynamic relationship type"},
 	}
 	for _, tc := range tests {
 		_, err := cypher.Parse(tc.src)

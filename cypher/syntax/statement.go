@@ -62,7 +62,7 @@ func (p *parser) parseBody(ctx queryCtx) Body {
 		if len(u.Queries) == 1 {
 			u.All = all
 		} else if all != u.All {
-			p.fail(t.Pos, "cannot mix UNION and UNION ALL in one statement")
+			p.failc(CodeInvalidClauseComposition, t.Pos, "cannot mix UNION and UNION ALL in one statement")
 		}
 		q := p.parseSingleQuery(ctx)
 		p.requireReturn(q, "UNION")
@@ -110,7 +110,7 @@ func (p *parser) checkClauseOrder(cs []Clause, ctx queryCtx) {
 		switch {
 		case isReading(c):
 			if updated {
-				p.fail(c.Pos(), "WITH is required between an updating clause and %s", clauseName(c))
+				p.failc(CodeInvalidClauseComposition, c.Pos(), "WITH is required between an updating clause and %s", clauseName(c))
 			}
 		case isUpdating(c):
 			updated = true

@@ -324,6 +324,9 @@ func (p *parser) parseRelDetail(r *RelPattern) {
 	if p.accept(COLON) {
 		r.Types = p.parseLabelExpr()
 	}
+	if p.at(DOTDOT) {
+		p.failc(CodeInvalidRelationshipPattern, p.cur().Pos, "a variable-length relationship needs a '*' before its range")
+	}
 	if p.at(STAR) {
 		r.Range = p.parseRange()
 	}
@@ -337,6 +340,9 @@ func (p *parser) parseRelDetail(r *RelPattern) {
 // parseRange parses `*`, `*n`, `*n..`, `*..m` or `*n..m`.
 func (p *parser) parseRange() *Range {
 	star := p.expect(STAR)
+	if p.at(MINUS) {
+		p.failc(CodeInvalidRelationshipPattern, p.cur().Pos, "a variable-length relationship cannot have a negative bound")
+	}
 	rng := &Range{Loc: Loc{star.Pos}}
 	if p.at(INT) {
 		v := p.rangeBound()
@@ -358,7 +364,7 @@ func (p *parser) rangeBound() int64 {
 	t := p.expect(INT)
 	v, err := parseIntLiteral(t.Text, false)
 	if err != nil {
-		p.fail(t.Pos, "%s", err.Error())
+		p.failInt(t.Pos, err)
 	}
 	return v
 }

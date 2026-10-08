@@ -5,6 +5,20 @@ import (
 	"strings"
 )
 
+// Error codes carried by SyntaxError.Code. They are the openCypher TCK error
+// detail codes, so callers can tell, say, an integer overflow from a generic
+// syntax error.
+const (
+	CodeUnexpectedSyntax           = "UnexpectedSyntax"
+	CodeIntegerOverflow            = "IntegerOverflow"
+	CodeFloatingPointOverflow      = "FloatingPointOverflow"
+	CodeInvalidNumberLiteral       = "InvalidNumberLiteral"
+	CodeInvalidUnicodeLiteral      = "InvalidUnicodeLiteral"
+	CodeInvalidUnicodeCharacter    = "InvalidUnicodeCharacter"
+	CodeInvalidRelationshipPattern = "InvalidRelationshipPattern"
+	CodeInvalidClauseComposition   = "InvalidClauseComposition"
+)
+
 // SyntaxError is a positioned lexing or parsing error.
 type SyntaxError struct {
 	// Pos is where the error was detected.
@@ -15,6 +29,18 @@ type SyntaxError struct {
 	Expected []string
 	// Msg is the primary description of the problem.
 	Msg string
+	// Code is the TCK error detail code, or "" for a generic syntax error
+	// (see ErrorCode).
+	Code string
+}
+
+// ErrorCode returns the TCK error detail code: Code, or UnexpectedSyntax when
+// none was set.
+func (e *SyntaxError) ErrorCode() string {
+	if e.Code == "" {
+		return CodeUnexpectedSyntax
+	}
+	return e.Code
 }
 
 // Error formats the error as

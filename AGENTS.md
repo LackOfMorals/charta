@@ -43,7 +43,8 @@ graphlite/
 ├── migrate.go      ← neo4j migration helpers (to be removed in v2)
 ├── neo4jadapter/   ← neo4j DriverCompat (to be removed in v2)
 ├── cypher/         ← Parse (syntax AST → Query AST), plan types, planner, BindingScope
-│   └── syntax/     ← hand-written Cypher 25 lexer/parser + typed AST (stdlib only)
+│   ├── syntax/     ← hand-written Cypher 25 lexer/parser + typed AST (stdlib only)
+│   └── analyze/    ← semantic analysis: scopes, aggregation and type errors with TCK codes
 ├── sql/            ← translator + Dialect interface
 ├── store/          ← Store interface + SQLite implementation + DDL
 ├── compat/         ← TCK harness (opt-in: -tags=tck)
@@ -54,7 +55,7 @@ graphlite/
 
 - The `store/` package must NEVER import Cypher types — it works with raw IDs, labels, JSON blobs only.
 - The `cypher/` package must NEVER import `store/` or `sql/`.
-- `cypher/syntax` imports only the standard library (nothing from this module). `cypher/` imports it; it must never import `cypher/`.
+- `cypher/syntax` imports only the standard library (nothing from this module). `cypher/analyze` imports only `cypher/syntax`. `cypher/` imports both; neither may import `cypher/`.
 - The `sql/` package translates `cypher.LogicalPlan` → SQL; it may import `cypher/` but not `store/`.
 - All SQL must use parameterised queries — never `fmt.Sprintf` user input into SQL strings.
 - CGO must remain disabled: always use `modernc.org/sqlite`, never `mattn/go-sqlite3`.
@@ -126,6 +127,9 @@ WAL mode is enabled via `PRAGMA journal_mode=WAL` on every open.
 - The `Query` AST is partly text-based: property-map values, `ReturnItem.ExprText`, `SortItem.ExprText`, `SetItem.ExprText` and `DeleteClause.Exprs` are the verbatim source of the expression, captured by the syntax parser in its `Source`/`Sources`/`ValueSource` fields. List values are `"__list__:a,b"`, a `$param` map is stored under the key `"$"`. Never rebuild this text from the typed tree.
 - `Parse` deliberately differs from the removed ANTLR parser: chained comparisons compare adjacent operands (`a<b<c` → `a<b AND b<c`; ANTLR reused `a`), hop bounds survive a following property map (`[*2..4 {w:1}]`), `SET (n).p = v` fills `SetItem.Expr`, and it accepts `LIMIT` before `SKIP`, `OFFSET`, `NODETACH` and keywords as variable names. `RETURN *`/`WITH *` lower to an empty `Items` slice (the planner reads that as "all variables"), so `RETURN *, x` projects only `x`.
 - `cypher/syntax` parses Cypher 25 including Neo4j's extensions (label expressions, `EXISTS/COUNT/COLLECT {}`, `CALL (a) {} IN TRANSACTIONS`, quantified path patterns and path selectors, map projections, dynamic labels/properties, `IS :: TYPE`, `FILTER`/`LET`/`FINISH`, schema commands, `LOAD CSV`, hints, server-only commands). `cypher.Parse` lowers only what the `Query` AST can express and rejects the rest with a "not supported" error naming the construct. `CYPHER 5` is rejected; `NEXT`, `INSERT` and standalone `ORDER BY` are deliberately not parsed (not documented in the Cypher Manual). Syntax was checked against the Neo4j Cypher Manual, not guessed.
+- `cypher.Parse` = `syntax.Parse` → `analyze.Check` → lowering. Compile-time errors are `*syntax.SyntaxError` or `*analyze.Error`; `analyze.Describe(err)` returns the openCypher TCK class and detail code (`UndefinedVariable`, `VariableAlreadyBound`, `AmbiguousAggregationExpression`, `InvalidArgumentType`, …) through graphlite's `%w` wrapping. Lexer/parser errors carry a `Code` too (`IntegerOverflow`, `InvalidNumberLiteral`, …; default `UnexpectedSyntax`).
+- `analyze.Check` reports only what it can prove (unknown types are accepted) and must have ZERO false positives: `cypher/analyze` `TestTCK_ValidScenariosPass` checks every valid TCK query and `TestTCK_CompileTimeErrors` requires the exact class and code for all 586 compile-time-error cases. Rules worth knowing: a path variable is bound AFTER its elements (so `p = (p)-->()` is "already bound" while a later node `r` after path `r` is a type conflict); in an aggregating item every variable/property leaf outside an aggregate must equal a projected non-aggregating item (so `me.age + you.age + count(*)` is ambiguous even if `me.age + you.age` is projected); `NoExpressionAlias` is reported after the other projection checks; `WITH *` with no variables is legal but `RETURN *` is `NoVariablesInScope`.
+- The TCK harness (`compat`) requires class AND code to match for "should be raised at compile time"; runtime and any-time expectations still accept any error. Property access on a path is a `SyntaxError`, on a non-map value a `TypeError` (both `InvalidArgumentType`).
 - `cypher/syntax` follows the openCypher grammar's operator levels (string/list/null operators bind tighter than `+`; unary minus tighter than `^`; `^` left-associative). Operator and clause words (`NOT`, `AND`, `IN`, `WHEN`, …) cannot start an expression; other keywords are valid variable, label and function names.
 - `golang.org/x/sys` is pinned at v0.41.0 (not v0.44.0): v0.44.0 fixes GO-2026-5024 but requires Go 1.25. Revisit when minimum Go version is raised to 1.25.
 - Plan cache (`plan_cache.go`) is per-`DB` and keyed on Cypher string only. `maxPathHops` is implicitly scoped by the owning DB. `glsql.BindParams` always allocates new slices, so the cached pre-BindParams `glsql.Result` is safely shared read-only across goroutines. Avoid shadowing the builtin `cap` — use `size` or similar parameter names.

@@ -308,6 +308,7 @@ graphlite/
 │   ├── ast.go        ← Clause and expression AST types
 │   ├── parse.go      ← Parse: syntax AST → Query AST (parse_expr.go: expressions)
 │   ├── syntax/       ← hand-written Cypher 25 lexer + parser + typed AST
+│   ├── analyze/      ← semantic analysis (variables, aggregation, types)
 │   ├── plan.go       ← LogicalPlan types
 │   ├── planner.go    ← AST → LogicalPlan
 │   └── scope.go      ← BindingScope: Cypher vars → SQL aliases

@@ -1,22 +1,24 @@
 ================================================================================
-PROGRESS: handwritten-cypher-parser            (last updated 2026-10-08)
+PROGRESS: handwritten-cypher-parser            (last updated 2026-10-09)
 Plan: prd-handwritten-cypher-parser.md   Tasks: tasks-handwritten-cypher-parser.yml
 Branch: feat/handwritten-cypher-parser
 ================================================================================
 
-DONE (22 of 39 tasks)
+DONE (23 of 39 tasks)
   001-003  lexer, tokens, positioned errors, FuzzLex
   004-009  typed AST, expressions, patterns, comprehensions
   010-012  clauses, projections, UNION, clause-order checks, Parse()
   013      (still pending: see decision 3 below)
   014-016  adapter, differential test vs ANTLR (since deleted), cut-over; ANTLR and
            cloudprivacylabs/opencypher removed from go.mod/vendor
-  017      full openCypher TCK imported + baseline  (this commit)
+  017      full openCypher TCK imported + baseline
+  018      semantic analysis with TCK error codes
   028-033  Neo4j / Cypher 25 syntax: label expressions, subqueries, QPP and
            selectors, map projections, type predicates, schema commands, etc.
 
 Commits so far on the branch (newest first)
-  <task-017 commit>   full TCK import, harness upgrade, baseline
+  <task-018 commit>   semantic analysis (cypher/analyze), strict TCK harness
+  c8b7adf             full TCK import, harness upgrade, baseline
   9d91e51             cut-over + Neo4j extension syntax
   4e111aa             ParseNew adapter + differential test
   7b2f099             statements/clauses
@@ -38,50 +40,21 @@ TASK-017 RESULT (details in tck-baseline.md)
     expression" ~1,100 (tasks 019-027 / task-039), ~85 "expected SyntaxError but
     query succeeded" (= task-018).
 
-TASK-018 (semantic analysis) - ANALYSIS DONE, NOTHING IMPLEMENTED
-  Expected compile-time errors in the TCK (scenario definitions; outlines multiply):
-    UnexpectedSyntax 17 | VariableAlreadyBound 19 | UndefinedVariable 18 |
-    VariableTypeConflict 11 | InvalidArgumentType 25 (+2 TypeError) |
-    AmbiguousAggregationExpression 6 | IntegerOverflow 6 | NoSingleRelationshipType 5 |
-    InvalidNumberLiteral 4 | InvalidAggregation 5 | NonConstantExpression 4 |
-    NegativeIntegerArgument 4 | InvalidParameterUse 4 | InvalidNumberOfArguments 4 |
-    InvalidClauseComposition 3 | RequiresDirectedRelationship 2 |
-    InvalidRelationshipPattern 2 | InvalidDelete 2 | DifferentColumnsInUnion 2 |
-    CreatingVarLength 2 | ColumnNameConflict 2 | ProcedureNotFound 2 |
-    one each: UnknownFunction, RelationshipUniquenessViolation, NoVariablesInScope,
-    NoExpressionAlias, NestedAggregation, InvalidUnicodeLiteral,
-    InvalidUnicodeCharacter, InvalidArgumentPassingMode, FloatingPointOverflow,
-    MissingParameter.
-  Runtime / any-time expectations (DeletedEntityAccess, NumberOutOfRange,
-  InvalidArgumentValue, MergeReadOwnWrites, ...) are NOT part of 018.
-
-  Suggested design
-    * New package cypher/analyze (imports cypher/syntax only) with
-      Error{Class, Code, Pos, Msg}; Code constants use the TCK names.
-    * cypher.Parse = syntax.Parse -> analyze -> lower. Check that graphlite's error
-      wrapping keeps %w so the harness can use errors.As.
-    * Plain *syntax.SyntaxError maps to class SyntaxError / code UnexpectedSyntax.
-    * Harness: for "at compile time" require class AND code to match; keep
-      runtime / any-time lenient.
-  Sub-steps (each shippable): A plumbing + strict harness; B scope analysis;
-  C aggregation rules; D literal/lexical codes; E clause/pattern rules; F static
-  type inference (largest group, ~120 expanded cases: NOT/AND/OR/XOR on non-booleans,
-  IN on non-list, properties()/length()/type()/labels()/size() argument kinds,
-  property access on non-maps, quantifier element mismatch, DELETE 1+1, bare
-  pattern as WHERE predicate) plus UnknownFunction (needs a function registry).
-  Procedure codes belong to task-026.
-
-  Notes found while reading the scenarios
-    * Several codes are already half-covered by the parser: UNION mix is a syntax
-      error today but has no code; CREATE ()-[:FOO*2]->() parses fine and must be
-      rejected as CreatingVarLength; "[:LIKES..]" and "*-2" need
-      InvalidRelationshipPattern; IntegerOverflow is currently reported as a
-      plain syntax error ("integer literal ... is too large").
-    * ORDER BY scoping after WITH / RETURN DISTINCT is the trickiest scope rule
-      (UndefinedVariable cases in WithOrderBy*/ReturnOrderBy*).
-    * SKIP/LIMIT: literal negative -> NegativeIntegerArgument, float ->
-      InvalidArgumentType, non-constant -> NonConstantExpression (compile time);
-      the same checks on parameters are RUNTIME and out of scope.
+TASK-018 (semantic analysis) - DONE
+  * cypher/analyze: typed Error{Class, Code, Pos, Msg}; Check(); Describe().
+    Lexer/parser errors carry TCK codes (syntax.SyntaxError.Code / ErrorCode()).
+    cypher.Parse = syntax.Parse -> analyze.Check -> lowering.
+  * Results: all 586 compile-time-error cases in the TCK produce the exact expected
+    class and code; 0 of 4,176 valid queries are wrongly rejected; strict harness
+    pass rate 816/2,631 (31.0%) -> 911/2,631 (34.6%). FuzzCheck: 23M executions,
+    no panics.
+  * Design notes (also in AGENTS.md): zero false positives is a hard requirement
+    (TestTCK_ValidScenariosPass); path variables are bound after their elements;
+    the aggregation grouping rule is leaf-by-leaf; NoExpressionAlias is reported
+    after the other projection checks; type inference only reports proven
+    mismatches (unknown stays unknown).
+  * Not covered: procedure signatures/arguments (task-026) and every runtime error
+    expectation (those still accept any error in the harness).
 
 DECISIONS / OPEN QUESTIONS
   1. The original 018 acceptance "property map values no longer ExprText" was split
@@ -98,7 +71,7 @@ DECISIONS / OPEN QUESTIONS
      ORDER BY. IS NORMALIZED is implemented but unverified.
 
 NOT DONE / NEXT
-  * 018 sub-steps A-F, then task-039.
+  * task-039 (retire ExprText), then iterations 8-10.
   * Iteration 8-10: UNWIND/UNION/functions in the planner and SQL, comprehension
     and subquery execution, Neo4j extension execution, temporal/spatial values.
   * Push the branch / open a draft PR when wanted (not pushed since 328cdba).

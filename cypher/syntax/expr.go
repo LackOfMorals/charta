@@ -336,6 +336,9 @@ func (p *parser) parseAtom() Expr {
 // Kind set) it has already been consumed and is folded into the literal.
 func (p *parser) numberLiteral(sign Token) Expr {
 	t := p.next()
+	if n := p.cur(); n.Kind == IDENT && n.Pos.Offset == t.End() {
+		p.failc(CodeInvalidNumberLiteral, t.Pos, "invalid numeric literal %s%s", t.Text, n.Text)
+	}
 	neg := sign.Kind == MINUS
 	start := t.Pos
 	text := t.Text
@@ -346,7 +349,7 @@ func (p *parser) numberLiteral(sign Token) Expr {
 	if t.Kind == FLOAT {
 		v, err := strconv.ParseFloat(t.Text, 64)
 		if err != nil || math.IsInf(v, 0) {
-			p.fail(t.Pos, "floating point number %s is too large", t.Text)
+			p.failc(CodeFloatingPointOverflow, t.Pos, "floating point number %s is too large", t.Text)
 		}
 		if neg {
 			v = -v
@@ -355,7 +358,7 @@ func (p *parser) numberLiteral(sign Token) Expr {
 	}
 	v, err := parseIntLiteral(t.Text, neg)
 	if err != nil {
-		p.fail(t.Pos, "%s", err.Error())
+		p.failInt(t.Pos, err)
 	}
 	return &IntLit{Loc{start}, v, text}
 }
@@ -377,7 +380,7 @@ func parseIntLiteral(text string, neg bool) (int64, error) {
 		if ne, ok := err.(*strconv.NumError); ok && ne.Err == strconv.ErrRange {
 			return 0, errIntTooLarge(text)
 		}
-		return 0, &intError{"invalid integer literal " + text}
+		return 0, &intError{"invalid integer literal " + text, CodeInvalidNumberLiteral}
 	}
 	limit := uint64(math.MaxInt64)
 	if neg {
@@ -392,12 +395,24 @@ func parseIntLiteral(text string, neg bool) (int64, error) {
 	return int64(u), nil
 }
 
-type intError struct{ msg string }
+type intError struct {
+	msg  string
+	code string
+}
 
 func (e *intError) Error() string { return e.msg }
 
 func errIntTooLarge(text string) error {
-	return &intError{"integer literal " + text + " is too large"}
+	return &intError{"integer literal " + text + " is too large", CodeIntegerOverflow}
+}
+
+// failInt reports an integer-literal error with its TCK code.
+func (p *parser) failInt(pos Pos, err error) {
+	code := CodeInvalidNumberLiteral
+	if ie, ok := err.(*intError); ok {
+		code = ie.code
+	}
+	p.failc(code, pos, "%s", err.Error())
 }
 
 func (p *parser) parseListLiteral() Expr {

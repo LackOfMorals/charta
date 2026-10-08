@@ -90,6 +90,11 @@ func (l *Lexer) errorf(p Pos, found, msg string) error {
 	return &SyntaxError{Pos: p, Found: found, Msg: msg}
 }
 
+// errorc is errorf with a TCK error code.
+func (l *Lexer) errorc(code string, p Pos, found, msg string) error {
+	return &SyntaxError{Pos: p, Found: found, Msg: msg, Code: code}
+}
+
 func isIdentStartByte(c byte) bool {
 	return c == '_' || 'a' <= c && c <= 'z' || 'A' <= c && c <= 'Z'
 }
@@ -175,7 +180,7 @@ func (l *Lexer) Next() (Token, error) {
 		if isIdentStartRune(r) {
 			return l.identifier(start), nil
 		}
-		return Token{}, l.errorf(start, string(r), "unexpected character")
+		return Token{}, l.errorc(CodeInvalidUnicodeCharacter, start, string(r), "unexpected character")
 	}
 	return l.operator(start, c)
 }
@@ -405,7 +410,7 @@ func (l *Lexer) number(start Pos) (Token, error) {
 			i++
 		}
 		if i == d {
-			return Token{}, l.errorf(start, s[l.off:i], "malformed hexadecimal literal")
+			return Token{}, l.errorc(CodeInvalidNumberLiteral, start, s[l.off:i], "malformed hexadecimal literal")
 		}
 	case s[i] == '0' && i+1 < len(s) && (s[i+1] == 'o' || s[i+1] == 'O'):
 		i += 2
@@ -414,7 +419,7 @@ func (l *Lexer) number(start Pos) (Token, error) {
 			i++
 		}
 		if i == d {
-			return Token{}, l.errorf(start, s[l.off:i], "malformed octal literal")
+			return Token{}, l.errorc(CodeInvalidNumberLiteral, start, s[l.off:i], "malformed octal literal")
 		}
 	default:
 		scanDigits()
@@ -429,7 +434,7 @@ func (l *Lexer) number(start Pos) (Token, error) {
 				j++
 			}
 			if j >= len(s) || !isDigit(s[j]) {
-				return Token{}, l.errorf(start, s[l.off:j], "malformed exponent in numeric literal")
+				return Token{}, l.errorc(CodeInvalidNumberLiteral, start, s[l.off:j], "malformed exponent in numeric literal")
 			}
 			kind = FLOAT
 			i = j
@@ -437,13 +442,6 @@ func (l *Lexer) number(start Pos) (Token, error) {
 		}
 	}
 
-	if i < len(s) {
-		r, _ := utf8.DecodeRuneInString(s[i:])
-		if isIdentStartRune(r) || isDigit(s[i]) {
-			end := i + utf8.RuneLen(r)
-			return Token{}, l.errorf(start, s[l.off:end], "invalid numeric literal")
-		}
-	}
 	text := s[l.off:i]
 	l.advanceTo(i)
 	return Token{Kind: kind, Pos: start, Text: text, Value: text}, nil
@@ -522,14 +520,14 @@ func (l *Lexer) escape(sb *strings.Builder, p Pos, i int) (int, error) {
 		// present, otherwise four; the letter's case does not matter.
 		if r, ok := hexRune(s, i+2, 8); ok {
 			if r > unicode.MaxRune || utf16.IsSurrogate(r) {
-				return 0, l.errorf(p, s[i:i+10], "invalid escape: not a Unicode code point")
+				return 0, l.errorc(CodeInvalidUnicodeLiteral, p, s[i:i+10], "invalid escape: not a Unicode code point")
 			}
 			sb.WriteRune(r)
 			return 10, nil
 		}
 		r, ok := hexRune(s, i+2, 4)
 		if !ok {
-			return 0, l.errorf(p, s[i:min(i+6, len(s))], "invalid \\u escape: expected 4 or 8 hex digits")
+			return 0, l.errorc(CodeInvalidUnicodeLiteral, p, s[i:min(i+6, len(s))], "invalid \\u escape: expected 4 or 8 hex digits")
 		}
 		if utf16.IsSurrogate(r) {
 			// A high surrogate must be followed by \uXXXX holding the low half.
@@ -541,7 +539,7 @@ func (l *Lexer) escape(sb *strings.Builder, p Pos, i int) (int, error) {
 					}
 				}
 			}
-			return 0, l.errorf(p, s[i:i+6], "invalid \\u escape: unpaired UTF-16 surrogate")
+			return 0, l.errorc(CodeInvalidUnicodeLiteral, p, s[i:i+6], "invalid \\u escape: unpaired UTF-16 surrogate")
 		}
 		sb.WriteRune(r)
 		return 6, nil

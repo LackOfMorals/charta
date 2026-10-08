@@ -34,6 +34,7 @@ import (
 	"github.com/cucumber/godog"
 
 	graphlite "github.com/LackOfMorals/graphlite/v2"
+	"github.com/LackOfMorals/graphlite/v2/cypher/analyze"
 )
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -484,7 +485,20 @@ func (s *tckState) errorShouldBeRaised(ctx context.Context, errorType, phase, co
 	if s.lastError == nil {
 		return fmt.Errorf("expected %s error (%s) but query succeeded", errorType, code)
 	}
-	return nil // any error satisfies this expectation
+	// Compile-time expectations must match exactly: the error has to come from
+	// parsing or semantic analysis and carry the expected class and code.
+	// Runtime and any-time expectations accept any error until the execution
+	// iterations raise typed runtime errors.
+	if phase == "compile time" && code != "" {
+		class, got, ok := analyze.Describe(s.lastError)
+		switch {
+		case !ok:
+			return fmt.Errorf("expected compile-time %s %s, got a different kind of error: %v", errorType, code, s.lastError)
+		case class != errorType || got != code:
+			return fmt.Errorf("expected compile-time %s %s, got %s %s: %v", errorType, code, class, got, s.lastError)
+		}
+	}
+	return nil
 }
 
 // ─── Value parsing ─────────────────────────────────────────────────────────────

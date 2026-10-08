@@ -349,43 +349,38 @@ tasks:
   - id: task-018
     title: "Semantic analysis pass (compile-time errors with TCK codes)"
     description: |
-      STATUS: ANALYSIS DONE, IMPLEMENTATION NOT STARTED. See
-      .plans/progress-handwritten-cypher-parser.txt for the full inventory of
-      the ~190 TCK compile-time error scenarios, grouped into the sub-steps
-      below, and the open decisions.
-
-      Add a typed error (`Class` SyntaxError/TypeError/…, `Code` = TCK detail
-      code, `Pos`) produced by an analysis pass over the cypher/syntax AST, run
-      by cypher.Parse after syntax.Parse. Make the TCK harness strict for
-      compile-time expectations (class and code must match; runtime and
-      any-time expectations stay lenient until the execution iterations).
-      Sub-steps, each shippable on its own:
-        A. error type + plumbing + strict harness (and map plain parse errors
-           to UnexpectedSyntax)
-        B. scope analysis: UndefinedVariable, VariableAlreadyBound,
+      DONE. New package cypher/analyze (imports cypher/syntax only) with a typed
+      Error{Class, Code, Pos, Msg}, Check(), and Describe(); lexer/parser errors
+      carry a TCK Code (syntax.SyntaxError.Code / ErrorCode()). cypher.Parse runs
+      syntax.Parse -> analyze.Check -> lowering. The TCK harness now requires class
+      and code to match for compile-time expectations.
+      Sub-steps delivered:
+        A. error type, plumbing, strict harness
+        B. scope analysis (UndefinedVariable, VariableAlreadyBound,
            VariableTypeConflict, ColumnNameConflict, NoExpressionAlias,
-           NoVariablesInScope, ORDER BY scoping
-        C. aggregation rules: InvalidAggregation, AmbiguousAggregationExpression,
-           NestedAggregation, NonConstantExpression
-        D. literal/lexical codes: IntegerOverflow, FloatingPointOverflow,
-           InvalidNumberLiteral, InvalidUnicode*, UnexpectedSyntax
-        E. clause/pattern rules: NoSingleRelationshipType,
+           NoVariablesInScope, ORDER BY scoping, pattern-predicate variables)
+        C. aggregation (InvalidAggregation, AmbiguousAggregationExpression,
+           NestedAggregation, NonConstantExpression)
+        D. literal/lexical codes (IntegerOverflow, FloatingPointOverflow,
+           InvalidNumberLiteral, InvalidUnicodeLiteral/Character, UnexpectedSyntax)
+        E. clause/pattern rules (NoSingleRelationshipType,
            RequiresDirectedRelationship, CreatingVarLength, InvalidParameterUse,
            InvalidRelationshipPattern, RelationshipUniquenessViolation,
            InvalidDelete, InvalidClauseComposition, DifferentColumnsInUnion,
-           NegativeIntegerArgument, SKIP/LIMIT argument types
-        F. static type inference for InvalidArgumentType (largest group,
-           ~120 expanded scenarios) and UnknownFunction (needs a function
-           registry)
-      Procedure-related codes (ProcedureNotFound, InvalidNumberOfArguments for
-      CALL, InvalidArgumentPassingMode, MissingParameter) belong to task-026.
-    status: in_progress
+           NegativeIntegerArgument, SKIP/LIMIT argument types)
+        F. static type inference (InvalidArgumentType incl. TypeError for
+           non-map property access) and UnknownFunction (function registry);
+           ProcedureNotFound for names outside db.*/dbms.*/tx.*
+      Not covered (belong elsewhere): procedure signatures/arguments
+      (InvalidNumberOfArguments, InvalidArgumentPassingMode, MissingParameter ->
+      task-026) and every runtime error expectation.
+    status: completed
     dependencies: [task-017]
     acceptance_criteria:
-      - "A typed *analyze.Error (class + TCK code + position) reaches the caller through graphlite's error wrapping (errors.As works)"
-      - "The harness requires class and code to match for 'at compile time' expectations"
-      - "Every TCK scenario expecting a compile-time error in groups A-E passes with the right code; group F passes or is listed with a reason"
-      - "TCK pass rate over executed scenarios does not fall below the committed baseline once strictness is on, apart from scenarios that previously passed only because any error was accepted"
+      - "A typed *analyze.Error (class + TCK code + position) reaches the caller through graphlite's error wrapping: done (analyze.Describe, used by the harness)"
+      - "The harness requires class and code to match for 'at compile time' expectations: done"
+      - "Every TCK scenario expecting a compile-time error passes with the right code: 586/586 cases (cypher/analyze TestTCK_CompileTimeErrors), 0 of 4,176 valid queries wrongly rejected (TestTCK_ValidScenariosPass)"
+      - "TCK pass rate over executed scenarios: 816/2,631 (31.0%) -> 911/2,631 (34.6%)"
 
   - id: task-039
     title: "Retire ExprText: planner consumes typed property-map expressions"
