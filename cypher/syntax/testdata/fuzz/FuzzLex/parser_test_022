@@ -1,0 +1,2 @@
+go test fuzz v1
+string("MATCH (a)-[:E1]->(b)-[:E2]->(c)-[:E3]->(d)-[:E4]->(e)-[:E5]->(f) RETURN f")

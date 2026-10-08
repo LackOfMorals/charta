@@ -1,0 +1,2 @@
+go test fuzz v1
+string("MATCH (n:Person) WHERE n.age > 18 AND n.active = true RETURN n")
