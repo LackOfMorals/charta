@@ -136,7 +136,7 @@ func TestParse_MatchByLabelAndProperty(t *testing.T) {
 	if len(pp.Start.Labels) != 1 || pp.Start.Labels[0] != "Person" {
 		t.Errorf("labels: got %v", pp.Start.Labels)
 	}
-	if pp.Start.Props["name"] == "" {
+	if pp.Start.Props["name"] == nil {
 		t.Errorf("expected Props[name] to be set, got %v", pp.Start.Props)
 	}
 }
@@ -299,10 +299,10 @@ func TestParse_CreateNode(t *testing.T) {
 	if len(pp.Start.Labels) != 1 || pp.Start.Labels[0] != "Person" {
 		t.Errorf("labels: got %v, want [Person]", pp.Start.Labels)
 	}
-	if pp.Start.Props["name"] == "" {
+	if pp.Start.Props["name"] == nil {
 		t.Errorf("expected Props[name] to be set, got %v", pp.Start.Props)
 	}
-	if pp.Start.Props["age"] == "" {
+	if pp.Start.Props["age"] == nil {
 		t.Errorf("expected Props[age] to be set, got %v", pp.Start.Props)
 	}
 }
@@ -348,8 +348,8 @@ func TestParse_SetClause(t *testing.T) {
 	if item.Property != "age" {
 		t.Errorf("property: got %q, want %q", item.Property, "age")
 	}
-	if item.ExprText == "" {
-		t.Error("expected non-empty ExprText")
+	if item.Expr == nil {
+		t.Error("expected a typed value expression")
 	}
 }
 
@@ -363,9 +363,8 @@ func TestParse_SetWithParam(t *testing.T) {
 	if item.Property != "name" {
 		t.Errorf("property: got %q, want %q", item.Property, "name")
 	}
-	// ExprText should contain the parameter reference.
-	if item.ExprText == "" {
-		t.Error("expected non-empty ExprText for $param")
+	if p, ok := item.Expr.(*cypher.ParamRef); !ok || p.Name != "newName" {
+		t.Errorf("value = %#v, want ParamRef newName", item.Expr)
 	}
 }
 
@@ -381,8 +380,8 @@ func TestParse_DeleteNode(t *testing.T) {
 	if len(dc.Exprs) != 1 {
 		t.Fatalf("expected 1 delete expr, got %d", len(dc.Exprs))
 	}
-	if dc.Exprs[0] != "n" {
-		t.Errorf("delete expr: got %q, want %q", dc.Exprs[0], "n")
+	if v, ok := dc.Exprs[0].(*cypher.VarExpr); !ok || v.Name != "n" {
+		t.Errorf("delete expr: got %#v, want VarExpr n", dc.Exprs[0])
 	}
 }
 
@@ -516,10 +515,10 @@ func TestParse_CreateWithParam(t *testing.T) {
 	cc := getCreate(t, q, 0)
 	pp := cc.Pattern[0]
 
-	if pp.Start.Props["name"] == "" {
+	if pp.Start.Props["name"] == nil {
 		t.Errorf("expected Props[name] to be set, got %v", pp.Start.Props)
 	}
-	if pp.Start.Props["age"] == "" {
+	if pp.Start.Props["age"] == nil {
 		t.Errorf("expected Props[age] to be set, got %v", pp.Start.Props)
 	}
 }

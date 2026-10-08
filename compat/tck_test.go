@@ -940,6 +940,22 @@ func TestTCK(t *testing.T) {
 		passRate = float64(passed) / float64(executed) * 100.0
 	}
 
+	// TCK_OUTCOMES=path writes one "status<TAB>feature::scenario#n" line per
+	// executed case, for diffing two runs scenario by scenario.
+	if path := os.Getenv("TCK_OUTCOMES"); path != "" {
+		seen := map[string]int{}
+		var lines []string
+		for _, o := range ctrs.outcomes {
+			key := o.Feature + "::" + o.Name
+			seen[key]++
+			lines = append(lines, fmt.Sprintf("%s\t%s#%d", o.Status, key, seen[key]))
+		}
+		sort.Strings(lines)
+		if err := os.WriteFile(path, []byte(strings.Join(lines, "\n")+"\n"), 0o644); err != nil {
+			t.Errorf("TCK_OUTCOMES: %v", err)
+		}
+	}
+
 	if path := os.Getenv("TCK_REPORT"); path != "" {
 		if f, err := os.Create(path); err == nil {
 			writeReport(f, ctrs.outcomes)

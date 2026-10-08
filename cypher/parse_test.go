@@ -50,25 +50,42 @@ func TestParse_VarLengthBoundsWithProperties(t *testing.T) {
 func TestParse_SetOnParenthesisedVariableIsTyped(t *testing.T) {
 	q := mustParse(t, "MATCH (n) SET (n).x = 1")
 	item := q.Clauses[1].(*cypher.SetClause).Items[0]
-	if item.Variable != "n" || item.Property != "x" || item.ExprText != "1" || item.Expr == nil {
+	if lit, ok := item.Expr.(*cypher.LiteralExpr); item.Variable != "n" || item.Property != "x" || !ok || lit.Value != int64(1) {
 		t.Errorf("SetItem = %#v", item)
 	}
 }
 
-func TestParse_TextEncodings(t *testing.T) {
-	q := mustParse(t, "MATCH (n {a:  1 + 2, tags: [1,  'x y', 3], m: {k: 1}, p: $p}) RETURN n.a  +  1  AS s ORDER BY  n.a   DESC")
+// Property values, SET values, ORDER BY keys and DELETE targets are typed
+// expressions, not source text.
+func TestParse_TypedValues(t *testing.T) {
+	q := mustParse(t, "MATCH (n {a:  1 + 2, tags: [1,  'x y', 3], m: {k: 1}, p: $p, neg: -4, f: -1.5, s: 'it\\'s'}) RETURN n.a  +  1  AS s ORDER BY  n.a   DESC")
 	node := q.Clauses[0].(*cypher.MatchClause).Pattern[0].Start
-	want := map[string]string{"a": "1 + 2", "tags": "__list__:1,'x y',3", "m": "{k: 1}", "p": "$p"}
-	for k, v := range want {
-		if node.Props[k] != v {
-			t.Errorf("Props[%q] = %q, want %q", k, node.Props[k], v)
+	if arith, ok := node.Props["a"].(*cypher.ArithExpr); !ok || arith.Op != "+" {
+		t.Errorf("Props[a] = %#v, want an ArithExpr", node.Props["a"])
+	}
+	if list, ok := node.Props["tags"].(*cypher.ListLiteralExpr); !ok || len(list.Items) != 3 {
+		t.Errorf("Props[tags] = %#v, want a 3-element ListLiteralExpr", node.Props["tags"])
+	}
+	if _, ok := node.Props["m"].(*cypher.RawExpr); !ok {
+		t.Errorf("Props[m] = %#v, want RawExpr (map values are not modelled yet)", node.Props["m"])
+	}
+	if p, ok := node.Props["p"].(*cypher.ParamRef); !ok || p.Name != "p" {
+		t.Errorf("Props[p] = %#v", node.Props["p"])
+	}
+	// Negative literals are plain literals, and escapes are decoded.
+	for key, want := range map[string]any{"neg": int64(-4), "f": -1.5, "s": "it's"} {
+		if lit, ok := node.Props[key].(*cypher.LiteralExpr); !ok || lit.Value != want {
+			t.Errorf("Props[%s] = %#v, want literal %v", key, node.Props[key], want)
 		}
 	}
 	ret := q.Clauses[1].(*cypher.ReturnClause)
-	if ret.Items[0].ExprText != "n.a  +  1" || ret.Items[0].Alias != "s" {
-		t.Errorf("item = %#v (ExprText must keep the verbatim source)", ret.Items[0])
+	if ret.Items[0].Source != "n.a  +  1" || ret.Items[0].Alias != "s" {
+		t.Errorf("item = %#v (Source must keep the verbatim text for column naming)", ret.Items[0])
 	}
-	if ret.OrderBy[0].ExprText != "n.a" || !ret.OrderBy[0].Descending {
+	if _, ok := ret.Items[0].Expr.(*cypher.ArithExpr); !ok {
+		t.Errorf("item expr = %#v", ret.Items[0].Expr)
+	}
+	if p, ok := ret.OrderBy[0].Expr.(*cypher.PropExpr); !ok || p.Variable != "n" || p.Property != "a" || !ret.OrderBy[0].Descending {
 		t.Errorf("order = %#v", ret.OrderBy[0])
 	}
 }
@@ -76,8 +93,24 @@ func TestParse_TextEncodings(t *testing.T) {
 func TestParse_ParamPropertyMapUsesDollarKey(t *testing.T) {
 	q := mustParse(t, "CREATE (n:L $props)")
 	node := q.Clauses[0].(*cypher.CreateClause).Pattern[0].Start
-	if node.Props["$"] != "$props" || !node.HasExplicitProps {
+	if p, ok := node.Props["$"].(*cypher.ParamRef); !ok || p.Name != "props" || !node.HasExplicitProps {
 		t.Errorf("node = %#v", node)
+	}
+}
+
+func TestParse_SetMergeProps(t *testing.T) {
+	q := mustParse(t, "MATCH (n) SET n += {a: 1, b: [1, 2], c: $p}")
+	item := q.Clauses[1].(*cypher.SetClause).Items[0]
+	if !item.Merge || len(item.Props) != 3 {
+		t.Fatalf("item = %#v", item)
+	}
+	if _, ok := item.Props["b"].(*cypher.ListLiteralExpr); !ok {
+		t.Errorf("Props[b] = %#v", item.Props["b"])
+	}
+	// A right-hand side that is not a map literal gives an empty map.
+	q = mustParse(t, "MATCH (n) SET n += $props")
+	if item := q.Clauses[1].(*cypher.SetClause).Items[0]; !item.Merge || item.Props == nil || len(item.Props) != 0 {
+		t.Errorf("item = %#v", item)
 	}
 }
 

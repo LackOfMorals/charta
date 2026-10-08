@@ -426,9 +426,7 @@ func (p *parser) parseListLiteral() Expr {
 	l := &ListLit{Loc: Loc{open.Pos}}
 	if !p.at(RBRACK) {
 		for {
-			first := p.i
 			l.Elems = append(l.Elems, p.parseExpr())
-			l.Sources = append(l.Sources, p.sourceBetween(first, p.i))
 			if !p.accept(COMMA) {
 				break
 			}
@@ -445,9 +443,7 @@ func (p *parser) parseMapLiteral() *MapLit {
 		for {
 			key, pos := p.name("property key name")
 			p.expect(COLON)
-			first := p.i
-			value := p.parseExpr()
-			m.Entries = append(m.Entries, MapEntry{Loc{pos}, key, value, p.sourceBetween(first, p.i)})
+			m.Entries = append(m.Entries, MapEntry{Loc{pos}, key, p.parseExpr()})
 			if !p.accept(COMMA) {
 				break
 			}

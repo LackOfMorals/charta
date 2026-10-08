@@ -4,7 +4,7 @@ Plan: prd-handwritten-cypher-parser.md   Tasks: tasks-handwritten-cypher-parser.
 Branch: feat/handwritten-cypher-parser
 ================================================================================
 
-DONE (23 of 39 tasks)
+DONE (24 of 39 tasks)
   001-003  lexer, tokens, positioned errors, FuzzLex
   004-009  typed AST, expressions, patterns, comprehensions
   010-012  clauses, projections, UNION, clause-order checks, Parse()
@@ -13,6 +13,7 @@ DONE (23 of 39 tasks)
            cloudprivacylabs/opencypher removed from go.mod/vendor
   017      full openCypher TCK imported + baseline
   018      semantic analysis with TCK error codes
+  039      ExprText retired: the Query AST is typed (TCK 911 -> 950, 0 regressions)
   028-033  Neo4j / Cypher 25 syntax: label expressions, subqueries, QPP and
            selectors, map projections, type predicates, schema commands, etc.
 
@@ -71,7 +72,7 @@ DECISIONS / OPEN QUESTIONS
      ORDER BY. IS NORMALIZED is implemented but unverified.
 
 NOT DONE / NEXT
-  * task-039 (retire ExprText), then iterations 8-10.
+  * Iterations 8-10 (planner/SQL catch-up: UNWIND, UNION, functions, ...).
   * Iteration 8-10: UNWIND/UNION/functions in the planner and SQL, comprehension
     and subquery execution, Neo4j extension execution, temporal/spatial values.
   * Push the branch / open a draft PR when wanted (not pushed since 328cdba).

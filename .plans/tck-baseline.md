@@ -1,30 +1,30 @@
 <!--
-TCK results after semantic analysis (task-018), with the harness requiring the
-exact error class and code for every "should be raised at compile time"
-scenario. Full openCypher TCK, compat/testdata/tck (commit 677cbaf).
+TCK results after task-039 (typed Query AST), semantic analysis (task-018) and
+the strict compile-time error check. Full openCypher TCK, compat/testdata/tck
+(commit 677cbaf).
 Regenerate with:  TCK_REPORT=.plans/tck-baseline.md CGO_ENABLED=0 go test -tags=tck ./compat/...
+Diff two runs scenario by scenario with TCK_OUTCOMES=path.
 -->
 
-> **Before and after task-018.** Before: 816/2,631 executed (31.0%), measured while
-> compile-time error scenarios accepted *any* error. After: see the figure below,
-> with the exact class and code required. The rate went up because ~95 expected-error
-> scenarios that used to fail ("expected a SyntaxError but the query succeeded")
-> now raise the right error. All 586 compile-time-error cases in the TCK match
-> (checked directly by `cypher/analyze` TestTCK_CompileTimeErrors), and none of the
-> 4,176 valid queries is wrongly rejected (TestTCK_ValidScenariosPass).
+> **History.** 816/2,631 (31.0%) with the full TCK imported and any error accepted
+> for compile-time expectations -> 911/2,631 (34.6%) with semantic analysis and exact
+> error classes and codes -> **950/2,631 (36.1%)** with the typed Query AST (task-039:
+> property values, ORDER BY keys and SET values lower to typed expressions, so negative
+> literals, escapes and arithmetic in property maps now work; 0 regressions).
 >
 > **What is left.** The failures are not parsing or analysis problems:
 > `expressions/temporal` (975 scenarios, date/time types, task-038) and the
-> translator rejecting "complex expressions" (~1,100, tasks 019-027 and 039);
-> runtime error expectations (negative SKIP/LIMIT parameters, deleted-entity
-> access, ...) still accept any error. `expressions/quantifier` (604) and
-> `typeConversion` (47) are skipped until list predicates and conversion functions exist.
+> translator rejecting "complex expressions" (functions, `*`/`/`/`%`/`^`, ~1,000,
+> tasks 019-027). Runtime error expectations (negative SKIP/LIMIT parameters,
+> deleted-entity access, ...) still accept any error. `expressions/quantifier` (604)
+> and `typeConversion` (47) are skipped until list predicates and conversion
+> functions exist.
 
 # openCypher TCK results
 
-Scenarios: 3897 total - **911 passed**, 1720 failed, 1264 skipped (feature not supported yet), 2 excluded (Cypher 25 removed syntax).
+Scenarios: 3897 total - **950 passed**, 1681 failed, 1264 skipped (feature not supported yet), 2 excluded (Cypher 25 removed syntax).
 
-Pass rate over executed scenarios: **911/2631 (34.6%)**
+Pass rate over executed scenarios: **950/2631 (36.1%)**
 
 ## By area
 
@@ -38,7 +38,7 @@ Pass rate over executed scenarios: **911/2631 (34.6%)**
 | clauses/merge | 25 | 35 | 13 | 2 | 42% |
 | clauses/remove | 17 | 10 | 6 | 0 | 63% |
 | clauses/return | 29 | 21 | 13 | 0 | 58% |
-| clauses/return-orderby | 11 | 9 | 15 | 0 | 55% |
+| clauses/return-orderby | 17 | 3 | 15 | 0 | 85% |
 | clauses/return-skip-limit | 24 | 3 | 4 | 0 | 89% |
 | clauses/set | 20 | 29 | 4 | 0 | 41% |
 | clauses/union | 0 | 0 | 12 | 0 | 0% |
@@ -50,11 +50,11 @@ Pass rate over executed scenarios: **911/2631 (34.6%)**
 | expressions/aggregation | 13 | 6 | 16 | 0 | 68% |
 | expressions/boolean | 127 | 3 | 20 | 0 | 98% |
 | expressions/comparison | 22 | 34 | 16 | 0 | 39% |
-| expressions/conditional | 0 | 12 | 1 | 0 | 0% |
+| expressions/conditional | 11 | 1 | 1 | 0 | 92% |
 | expressions/existentialSubqueries | 1 | 8 | 1 | 0 | 11% |
 | expressions/graph | 21 | 12 | 28 | 0 | 64% |
 | expressions/list | 61 | 31 | 93 | 0 | 66% |
-| expressions/literals | 86 | 45 | 0 | 0 | 66% |
+| expressions/literals | 105 | 26 | 0 | 0 | 80% |
 | expressions/map | 9 | 23 | 12 | 0 | 28% |
 | expressions/mathematical | 1 | 4 | 1 | 0 | 20% |
 | expressions/null | 11 | 33 | 0 | 0 | 25% |
@@ -62,7 +62,7 @@ Pass rate over executed scenarios: **911/2631 (34.6%)**
 | expressions/pattern | 18 | 30 | 2 | 0 | 38% |
 | expressions/precedence | 27 | 35 | 59 | 0 | 44% |
 | expressions/quantifier | 0 | 0 | 604 | 0 | 0% |
-| expressions/string | 12 | 16 | 4 | 0 | 43% |
+| expressions/string | 15 | 13 | 4 | 0 | 54% |
 | expressions/temporal | 12 | 975 | 17 | 0 | 1% |
 | expressions/typeConversion | 0 | 0 | 47 | 0 | 0% |
 | useCases/countingSubgraphMatches | 4 | 7 | 0 | 0 | 36% |
@@ -118,11 +118,11 @@ Pass rate over executed scenarios: **911/2631 (34.6%)**
 | clauses/remove/Remove2.feature | 2 | 0 | 3 | 0 | 100% |
 | clauses/remove/Remove3.feature | 12 | 9 | 0 | 0 | 57% |
 | clauses/return-orderby/ReturnOrderBy1.feature | 0 | 0 | 12 | 0 | 0% |
-| clauses/return-orderby/ReturnOrderBy2.feature | 9 | 3 | 2 | 0 | 75% |
-| clauses/return-orderby/ReturnOrderBy3.feature | 0 | 1 | 0 | 0 | 0% |
+| clauses/return-orderby/ReturnOrderBy2.feature | 11 | 1 | 2 | 0 | 92% |
+| clauses/return-orderby/ReturnOrderBy3.feature | 1 | 0 | 0 | 0 | 100% |
 | clauses/return-orderby/ReturnOrderBy4.feature | 0 | 1 | 1 | 0 | 0% |
-| clauses/return-orderby/ReturnOrderBy5.feature | 0 | 1 | 0 | 0 | 0% |
-| clauses/return-orderby/ReturnOrderBy6.feature | 2 | 3 | 0 | 0 | 40% |
+| clauses/return-orderby/ReturnOrderBy5.feature | 1 | 0 | 0 | 0 | 100% |
+| clauses/return-orderby/ReturnOrderBy6.feature | 4 | 1 | 0 | 0 | 80% |
 | clauses/return-skip-limit/ReturnSkipLimit1.feature | 9 | 1 | 1 | 0 | 90% |
 | clauses/return-skip-limit/ReturnSkipLimit2.feature | 13 | 2 | 2 | 0 | 87% |
 | clauses/return-skip-limit/ReturnSkipLimit3.feature | 2 | 0 | 1 | 0 | 100% |
@@ -181,7 +181,7 @@ Pass rate over executed scenarios: **911/2631 (34.6%)**
 | expressions/comparison/Comparison3.feature | 1 | 0 | 8 | 0 | 100% |
 | expressions/comparison/Comparison4.feature | 0 | 0 | 1 | 0 | 0% |
 | expressions/conditional/Conditional1.feature | 0 | 0 | 1 | 0 | 0% |
-| expressions/conditional/Conditional2.feature | 0 | 12 | 0 | 0 | 0% |
+| expressions/conditional/Conditional2.feature | 11 | 1 | 0 | 0 | 92% |
 | expressions/existentialSubqueries/ExistentialSubquery1.feature | 0 | 3 | 1 | 0 | 0% |
 | expressions/existentialSubqueries/ExistentialSubquery2.feature | 1 | 2 | 0 | 0 | 33% |
 | expressions/existentialSubqueries/ExistentialSubquery3.feature | 0 | 3 | 0 | 0 | 0% |
@@ -202,10 +202,10 @@ Pass rate over executed scenarios: **911/2631 (34.6%)**
 | expressions/list/List6.feature | 0 | 0 | 17 | 0 | 0% |
 | expressions/list/List9.feature | 0 | 0 | 1 | 0 | 0% |
 | expressions/literals/Literals1.feature | 6 | 0 | 0 | 0 | 100% |
-| expressions/literals/Literals2.feature | 8 | 4 | 0 | 0 | 67% |
-| expressions/literals/Literals3.feature | 12 | 4 | 0 | 0 | 75% |
-| expressions/literals/Literals4.feature | 6 | 4 | 0 | 0 | 60% |
-| expressions/literals/Literals5.feature | 14 | 13 | 0 | 0 | 52% |
+| expressions/literals/Literals2.feature | 12 | 0 | 0 | 0 | 100% |
+| expressions/literals/Literals3.feature | 16 | 0 | 0 | 0 | 100% |
+| expressions/literals/Literals4.feature | 10 | 0 | 0 | 0 | 100% |
+| expressions/literals/Literals5.feature | 21 | 6 | 0 | 0 | 78% |
 | expressions/literals/Literals6.feature | 11 | 2 | 0 | 0 | 85% |
 | expressions/literals/Literals7.feature | 20 | 0 | 0 | 0 | 100% |
 | expressions/literals/Literals8.feature | 9 | 18 | 0 | 0 | 33% |
@@ -242,12 +242,12 @@ Pass rate over executed scenarios: **911/2631 (34.6%)**
 | expressions/quantifier/Quantifier8.feature | 0 | 0 | 31 | 0 | 0% |
 | expressions/quantifier/Quantifier9.feature | 0 | 0 | 17 | 0 | 0% |
 | expressions/string/String1.feature | 0 | 1 | 0 | 0 | 0% |
-| expressions/string/String10.feature | 4 | 4 | 1 | 0 | 50% |
+| expressions/string/String10.feature | 5 | 3 | 1 | 0 | 62% |
 | expressions/string/String11.feature | 0 | 2 | 0 | 0 | 0% |
 | expressions/string/String3.feature | 0 | 1 | 0 | 0 | 0% |
 | expressions/string/String4.feature | 0 | 0 | 1 | 0 | 0% |
-| expressions/string/String8.feature | 4 | 4 | 1 | 0 | 50% |
-| expressions/string/String9.feature | 4 | 4 | 1 | 0 | 50% |
+| expressions/string/String8.feature | 5 | 3 | 1 | 0 | 62% |
+| expressions/string/String9.feature | 5 | 3 | 1 | 0 | 62% |
 | expressions/temporal/Temporal1.feature | 0 | 207 | 0 | 0 | 0% |
 | expressions/temporal/Temporal10.feature | 0 | 131 | 0 | 0 | 0% |
 | expressions/temporal/Temporal2.feature | 0 | 53 | 0 | 0 | 0% |
@@ -269,31 +269,31 @@ Pass rate over executed scenarios: **911/2631 (34.6%)**
 
 | count | reason |
 |---:|---|
-| 1080 | query failed: graphlite: translate: sql: SELECT projection: sql: unsupported expression "…": complex expressions are not yet supported in … |
-| 144 | expected N row(s), got N |
-| 89 | having executed "…": graphlite: translate: sql: CREATE node props: property "…": sql: unsupported expression "…": complex expressions … |
+| 1060 | query failed: graphlite: translate: sql: SELECT projection: sql: unsupported expression "…": complex expressions are not yet supported in … |
+| 141 | expected N row(s), got N |
+| 84 | having executed "…": graphlite: translate: sql: CREATE node props: property "…": sql: unsupported expression "…": complex expressions … |
 | 46 | query failed: graphlite: query: SQL logic error: near "…": syntax error (N) |
 | 42 | query failed: graphlite: parse: cypher: multiple WITH stages are not yet supported |
-| 35 | column "…": unexpected value "…" in actual results |
+| 39 | column "…": unexpected value "…" in actual results |
 | 29 | query failed: graphlite: query: SQL logic error: ambiguous column name: nN.id (N) |
 | 27 | query failed: graphlite: translate: sql: SELECT projection: sql: variable "…" not in scope |
 | 26 | query failed: graphlite: plan: cypher: MERGE with relationship patterns is not yet supported |
-| 24 | query failed: graphlite: translate: sql: SELECT projection: sql: arith lhs: sql: unsupported expression "…": complex expressions are not y… |
+| 22 | query failed: graphlite: translate: sql: SELECT projection: sql: arith lhs: sql: unsupported expression "…": complex expressions are not y… |
 | 21 | query failed: graphlite: query: SQL logic error: ambiguous column name: nN.props (N) |
 | 21 | query failed: graphlite: translate: sql: WHERE predicate: sql: unsupported expression "…": complex expressions are not yet supported in th… |
 | 17 | query failed: graphlite: parse: cypher: only "…" and "…" SET items are supported |
 | 10 | query failed: graphlite: query: SQL logic error: HAVING clause on a non-aggregate query (N) |
-| 10 | query failed: graphlite: translate: sql: SELECT projection: sql: CASE WHEN value: sql: unsupported expression "…": complex expressions are… |
+| 8 | having executed "…": graphlite: insert node: SQL logic error: no such column: nN.props (N) |
 | 8 | query failed: graphlite: parse: cypher: WHERE clause: cypher: an EXISTS/COUNT/COLLECT subquery is not supported |
-| 8 | query failed: graphlite: translate: sql: variable "…" not in scope for DELETE |
+| 7 | query failed: graphlite: plan: cypher: DELETE of an expression other than a variable is not supported |
 | 6 | query failed: graphlite: query: SQL logic error: no such column: rN.id (N) |
 | 6 | query failed: graphlite: translate: sql: CREATE node props: property "…": sql: unsupported expression "…": complex expressions are not y… |
-| 6 | query failed: graphlite: translate: sql: ORDER BY expr: sql: unsupported expression "…": complex expressions are not yet supported in this… |
 | 5 | query failed: graphlite: translate: sql: match-for-write FROM clause: sql: HAVING predicate: sql: unsupported expression "…": complex expr… |
 | 4 | expected empty result (table has no data rows), got N row(s) |
 | 4 | query failed: graphlite: translate: sql: GROUP BY expression: sql: unsupported expression "…": complex expressions are not yet supported i… |
 | 4 | query failed: graphlite: translate: sql: SELECT projection: sql: count() argument: sql: unsupported expression "…": complex expressions ar… |
 | 4 | query failed: graphlite: write-then-select query: SQL logic error: no such column: nN.props (N) |
+| 3 | expected SyntaxError error (NegativeIntegerArgument) but query succeeded |
 
 ## Skip and exclusion reasons
 

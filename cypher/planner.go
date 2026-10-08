@@ -2,7 +2,6 @@ package cypher
 
 import (
 	"fmt"
-	"strconv"
 	"strings"
 )
 
@@ -467,12 +466,8 @@ func planReturnClause(rc *ReturnClause, scope *BindingScope) (*ReturnPlan, error
 	}
 
 	for _, si := range rc.OrderBy {
-		sortExpr, err := parseExprText(si.ExprText, scope)
-		if err != nil {
-			return nil, fmt.Errorf("cypher: ORDER BY: %w", err)
-		}
 		rp.OrderBy = append(rp.OrderBy, SortSpec{
-			Expr:       sortExpr,
+			Expr:       planValue(si.Expr, scope),
 			Descending: si.Descending,
 		})
 	}
@@ -494,14 +489,7 @@ func planReturnClause(rc *ReturnClause, scope *BindingScope) (*ReturnPlan, error
 }
 
 func planReturnItem(item ReturnItem, scope *BindingScope) (ProjectionItem, error) {
-	if item.Expr != nil {
-		return ProjectionItem{Expr: item.Expr, Alias: item.Alias}, nil
-	}
-	expr, err := parseExprText(item.ExprText, scope)
-	if err != nil {
-		return ProjectionItem{}, fmt.Errorf("cypher: RETURN item %q: %w", item.ExprText, err)
-	}
-	return ProjectionItem{Expr: expr, Alias: item.Alias}, nil
+	return ProjectionItem{Expr: item.Expr, Alias: item.Alias}, nil
 }
 
 // ─── WITH clause planning ─────────────────────────────────────────────────────
@@ -564,15 +552,7 @@ func planWithClause(wc *WithClause, scope *BindingScope) (*WithPlan, error) {
 
 // planWithItem produces a ProjectionItem for a single WITH item.
 func planWithItem(item ReturnItem, scope *BindingScope) (ProjectionItem, error) {
-	if item.Expr != nil {
-		// Typed expression built by Parse (aggregates, etc.).
-		return ProjectionItem{Expr: item.Expr, Alias: item.Alias}, nil
-	}
-	expr, err := parseExprText(item.ExprText, scope)
-	if err != nil {
-		return ProjectionItem{}, fmt.Errorf("cypher: WITH item %q: %w", item.ExprText, err)
-	}
-	return ProjectionItem{Expr: expr, Alias: item.Alias}, nil
+	return ProjectionItem{Expr: item.Expr, Alias: item.Alias}, nil
 }
 
 // ─── CREATE clause planning ───────────────────────────────────────────────────
@@ -772,26 +752,12 @@ func planSetClause(sc *SetClause, scope *BindingScope) ([]LogicalPlan, error) {
 			// SET n += {map} → SetMergePlan
 			props := make(map[string]Expr, len(item.Props))
 			for k, v := range item.Props {
-				expr, err := parseExprText(v, scope)
-				if err != nil {
-					return nil, fmt.Errorf("cypher: SET %s += {%s: ...}: %w", item.Variable, k, err)
-				}
-				props[k] = expr
+				props[k] = planValue(v, scope)
 			}
 			plans = append(plans, &SetMergePlan{Variable: item.Variable, Props: props})
 			continue
 		}
-		var valueExpr Expr
-		if item.Expr != nil {
-			// Typed expr from parser (e.g. arithmetic, concat).
-			valueExpr = item.Expr
-		} else {
-			var err error
-			valueExpr, err = parseExprText(item.ExprText, scope)
-			if err != nil {
-				return nil, fmt.Errorf("cypher: SET %s.%s: %w", item.Variable, item.Property, err)
-			}
-		}
+		valueExpr := item.Expr
 		// Detect undefined variable references in the SET value: a bare identifier
 		// that fell through to RawExpr and is not in scope is an undefined variable.
 		if raw, ok := valueExpr.(*RawExpr); ok && IsIdentifier(raw.Text) {
@@ -878,10 +844,7 @@ func planMergeClause(mc *MergeClause, scope *BindingScope, ac *aliasCounter) (*M
 			// SET n += {map} in ON CREATE — not yet supported in MERGE context.
 			return nil, fmt.Errorf("cypher: MERGE ON CREATE SET += is not yet supported")
 		}
-		valueExpr, err := parseExprText(item.ExprText, scope)
-		if err != nil {
-			return nil, fmt.Errorf("cypher: MERGE ON CREATE SET %s.%s: %w", item.Variable, item.Property, err)
-		}
+		valueExpr := planValue(item.Expr, scope)
 		mp.OnCreate = append(mp.OnCreate, SetPropPlan{
 			Variable: item.Variable,
 			Property: item.Property,
@@ -894,10 +857,7 @@ func planMergeClause(mc *MergeClause, scope *BindingScope, ac *aliasCounter) (*M
 		if item.Merge {
 			return nil, fmt.Errorf("cypher: MERGE ON MATCH SET += is not yet supported")
 		}
-		valueExpr, err := parseExprText(item.ExprText, scope)
-		if err != nil {
-			return nil, fmt.Errorf("cypher: MERGE ON MATCH SET %s.%s: %w", item.Variable, item.Property, err)
-		}
+		valueExpr := planValue(item.Expr, scope)
 		mp.OnMatch = append(mp.OnMatch, SetPropPlan{
 			Variable: item.Variable,
 			Property: item.Property,
@@ -912,8 +872,12 @@ func planMergeClause(mc *MergeClause, scope *BindingScope, ac *aliasCounter) (*M
 
 func planDeleteClause(dc *DeleteClause, scope *BindingScope) ([]LogicalPlan, error) {
 	var plans []LogicalPlan
-	for _, exprText := range dc.Exprs {
-		varName := strings.TrimSpace(exprText)
+	for _, target := range dc.Exprs {
+		v, isVar := target.(*VarExpr)
+		if !isVar {
+			return nil, fmt.Errorf("cypher: DELETE of an expression other than a variable is not supported")
+		}
+		varName := v.Name
 		if b, ok := scope.Resolve(varName); ok {
 			if b.IsRel {
 				plans = append(plans, &DeleteRelPlan{Variable: varName})
@@ -930,88 +894,19 @@ func planDeleteClause(dc *DeleteClause, scope *BindingScope) ([]LogicalPlan, err
 	return plans, nil
 }
 
-// ─── expression text parser ───────────────────────────────────────────────────
+// ─── typed value resolution ───────────────────────────────────────────────────
 
-// parseExprText converts a raw expression text string (as produced by the
-// parser's exprText() helper) into a typed Expr node.
-//
-// The function handles the common cases needed by the planner:
-//   - "n.prop"              → PropExpr
-//   - "n" (bare variable)  → VarExpr
-//   - "$param"             → ParamRef
-//   - string literal       → LiteralExpr (string)
-//   - integer literal      → LiteralExpr (int64)
-//   - float literal        → LiteralExpr (float64)
-//   - "true" / "false"     → LiteralExpr (bool)
-//   - "null"               → LiteralExpr (nil)
-//   - anything else        → RawExpr (deferred to translator)
-//
-// The scope is used to distinguish bare variable references from unknown tokens.
-func parseExprText(text string, scope *BindingScope) (Expr, error) {
-	text = strings.TrimSpace(text)
-
-	if text == "" {
-		return &RawExpr{Text: text}, nil
-	}
-
-	// $param reference.
-	if name, ok := strings.CutPrefix(text, "$"); ok {
-		return &ParamRef{Name: name}, nil
-	}
-
-	// String literal: 'value' or "value".
-	if (strings.HasPrefix(text, "'") && strings.HasSuffix(text, "'")) ||
-		(strings.HasPrefix(text, `"`) && strings.HasSuffix(text, `"`)) {
-		inner := text[1 : len(text)-1]
-		// Unescape doubled quotes.
-		inner = strings.ReplaceAll(inner, "''", "'")
-		inner = strings.ReplaceAll(inner, `""`, `"`)
-		return &LiteralExpr{Value: inner}, nil
-	}
-
-	// Boolean literals.
-	lower := strings.ToLower(text)
-	if lower == "true" {
-		return &LiteralExpr{Value: true}, nil
-	}
-	if lower == "false" {
-		return &LiteralExpr{Value: false}, nil
-	}
-	if lower == "null" {
-		return &LiteralExpr{Value: nil}, nil
-	}
-
-	// Integer literal.
-	if i, err := strconv.ParseInt(text, 10, 64); err == nil {
-		return &LiteralExpr{Value: i}, nil
-	}
-
-	// Float literal.
-	if f, err := strconv.ParseFloat(text, 64); err == nil {
-		return &LiteralExpr{Value: f}, nil
-	}
-
-	// Property access: "n.prop" (exactly one dot, no spaces).
-	if idx := strings.Index(text, "."); idx > 0 && !strings.Contains(text, " ") {
-		varPart := text[:idx]
-		propPart := text[idx+1:]
-		// Only treat as PropExpr if varPart looks like a simple identifier.
-		if IsIdentifier(varPart) && IsIdentifier(propPart) {
-			return &PropExpr{Variable: varPart, Property: propPart}, nil
+// planValue prepares a typed value expression for planning. A bare variable that
+// the planner's scope does not bind (such as an ORDER BY reference to a result
+// alias) stays a raw identifier, which the translator emits as a column name;
+// everything else is already typed.
+func planValue(e Expr, scope *BindingScope) Expr {
+	if v, ok := e.(*VarExpr); ok {
+		if _, bound := scope.Resolve(v.Name); !bound {
+			return &RawExpr{Text: v.Name}
 		}
 	}
-
-	// Bare variable reference — only if the variable is in scope.
-	if IsIdentifier(text) {
-		if _, ok := scope.Resolve(text); ok {
-			return &VarExpr{Name: text}, nil
-		}
-	}
-
-	// Fall back to RawExpr for complex expressions (WHERE sub-expressions,
-	// function calls, arithmetic, etc.). Task-008 will add typed parsing
-	// for WHERE predicates.
-	return &RawExpr{Text: text}, nil
+	return e
 }
 
 // IsIdentifier returns true if s looks like a simple Cypher/SQL identifier:
@@ -1038,10 +933,8 @@ func IsIdentifier(s string) bool {
 
 // ─── property map helpers ─────────────────────────────────────────────────────
 
-// planPropsMap converts a raw-text property map (from the AST) into a typed
-// Expr map. For v0.1 the values are simple: string/number literals, param refs,
-// or RawExpr for complex expressions.
-func planPropsMap(raw map[string]string) map[string]Expr {
+// planPropsMap resolves a property map (from the AST) for planning.
+func planPropsMap(raw map[string]Expr) map[string]Expr {
 	result, _ := planPropsMapValidated(raw, nil)
 	return result
 }
@@ -1050,56 +943,30 @@ func planPropsMap(raw map[string]string) map[string]Expr {
 // expressions against the provided scope. When scope is non-nil, a bare
 // identifier that is not in scope is treated as an undefined variable reference
 // and causes an error. Pass nil to skip validation (for MATCH/MERGE props).
-func planPropsMapValidated(raw map[string]string, scope *BindingScope) (map[string]Expr, error) {
+func planPropsMapValidated(raw map[string]Expr, scope *BindingScope) (map[string]Expr, error) {
 	if len(raw) == 0 {
 		return nil, nil
 	}
+	resolve := scope
+	if resolve == nil {
+		resolve = NewScope()
+	}
 	result := make(map[string]Expr, len(raw))
 	for k, v := range raw {
-		// The "$" sentinel key is used for whole-properties parameter references
-		// (e.g. MATCH (n $param)); leave it as-is for the translator.
+		// The "$" key holds a whole-properties parameter (MATCH (n $param));
+		// leave it as-is for the translator.
 		if k == "$" {
-			result[k] = &ParamRef{Name: strings.TrimPrefix(v, "$")}
+			result[k] = v
 			continue
 		}
-
-		// The "__list__:" sentinel encodes a list literal (e.g. [1, 2, 3]).
-		// Parse each element and wrap them in a ListLiteralExpr.
-		if listContent, ok := strings.CutPrefix(v, "__list__:"); ok {
-			var items []Expr
-			if listContent != "" {
-				emptyScope := NewScope()
-				for _, elemText := range strings.Split(listContent, ",") {
-					elem, _ := parseExprText(strings.TrimSpace(elemText), emptyScope)
-					items = append(items, elem)
-				}
-			}
-			result[k] = &ListLiteralExpr{Items: items}
-			continue
-		}
-
-		// Use the provided scope (if any) to resolve variable references in property
-		// value expressions. This allows MERGE (n {prop: withAlias}) to resolve
-		// WITH-introduced aliases to typed VarExpr/PropExpr nodes. Fall back to an
-		// empty scope for plain literal/param values when no scope is provided.
-		parseScope := scope
-		if parseScope == nil {
-			parseScope = NewScope()
-		}
-		expr, _ := parseExprText(v, parseScope)
-
-		// When a scope is provided for validation, check that bare identifier
-		// expressions (those that resolved to RawExpr because they weren't in the
-		// scope) are not undefined variables.
+		expr := planValue(v, resolve)
+		// With a scope to validate against, a bare identifier that is not bound
+		// is an undefined variable.
 		if scope != nil {
 			if raw, ok := expr.(*RawExpr); ok && IsIdentifier(raw.Text) {
-				// Bare identifier not matched as literal/param/prop — check scope.
-				if _, inScope := scope.Resolve(raw.Text); !inScope {
-					return nil, fmt.Errorf("cypher: undefined variable %q in property value: SyntaxError UndefinedVariable", raw.Text)
-				}
+				return nil, fmt.Errorf("cypher: undefined variable %q in property value: SyntaxError UndefinedVariable", raw.Text)
 			}
 		}
-
 		result[k] = expr
 	}
 	return result, nil

@@ -385,20 +385,22 @@ tasks:
   - id: task-039
     title: "Retire ExprText: planner consumes typed property-map expressions"
     description: |
-      Split out of task-018 because it is a planner/translator refactor, not
-      analysis. Property-map values, ORDER BY keys, SET values and DELETE
-      targets still travel as verbatim source text (the syntax parser's
-      Source/ValueSource/Sources fields) and the planner re-parses them. Move
-      the planner and translator to the typed syntax expressions so ExprText,
-      RawExpr and the "__list__:" encoding can be deleted. Natural to do at the
-      start of iteration 8, since most "complex expression" failures in the TCK
-      baseline come from this text-based path.
-    status: pending
+      DONE. Property-map values, SET values (n.p = v and n += {map}), ORDER BY
+      keys and DELETE targets are typed Exprs in the Query AST, lowered from the
+      syntax tree; the planner's expression-text parser (parseExprText) and the
+      "__list__:" / verbatim-text encodings are gone. The verbatim-source fields
+      were removed from cypher/syntax (MapEntry.Source, ListLit.Sources,
+      SetItem.ValueSource, Delete.Sources, SortItem.Source) EXCEPT
+      ProjectionItem.Source, which un-aliased result columns need.
+      Negative numeric literals now lower to plain LiteralExprs (the text path
+      handled -1; the typed path must too); planValue keeps a bare unbound
+      variable (ORDER BY alias) as a RawExpr identifier, as before.
+    status: completed
     dependencies: [task-018]
     acceptance_criteria:
-      - "NodePattern.Props, SetItem.ExprText, SortItem.ExprText and DeleteClause.Exprs are typed expressions"
-      - "No Source/ValueSource/Sources fields remain in cypher/syntax"
-      - "TCK pass rate is not lower than before the change"
+      - "NodePattern.Props, SetItem values, SortItem and DeleteClause.Exprs are typed expressions: done"
+      - "No Source/ValueSource/Sources fields remain in cypher/syntax except ProjectionItem.Source (documented: column naming)"
+      - "TCK pass rate not lower, compared scenario by scenario: 911 -> 950 passed, 0 regressions, 39 improvements"
 
   # ───────────── Iteration 8: planner/SQL catch-up (A) ─────────────
   - id: task-019

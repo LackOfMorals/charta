@@ -88,18 +88,8 @@ func lowerExpr(e syntax.Expr) (Expr, error) {
 		}
 		return &NullCheckExpr{Expr: x, IsNotNull: e.Negated}, nil
 	case *syntax.IntLit:
-		if strings.HasPrefix(strings.TrimSpace(e.Text), "-") {
-			return raw(e), nil // a negated literal was a unary expression in the legacy AST
-		}
-		v, err := strconv.ParseInt(e.Text, 0, 64)
-		if err != nil {
-			return &RawExpr{Text: e.Text}, nil
-		}
-		return &LiteralExpr{Value: v}, nil
+		return &LiteralExpr{Value: e.Value}, nil // a leading '-' is already folded into Value
 	case *syntax.FloatLit:
-		if strings.HasPrefix(strings.TrimSpace(e.Text), "-") {
-			return raw(e), nil
-		}
 		return &LiteralExpr{Value: e.Value}, nil
 	case *syntax.StringLit:
 		return &LiteralExpr{Value: e.Value}, nil

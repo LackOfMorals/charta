@@ -117,7 +117,15 @@ func lowerClause(c syntax.Clause) (Clause, error) {
 	case *syntax.Remove:
 		return lowerRemove(c)
 	case *syntax.Delete:
-		return &DeleteClause{Detach: c.Detach, Exprs: append([]string(nil), c.Sources...)}, nil
+		dc := &DeleteClause{Detach: c.Detach}
+		for _, e := range c.Exprs {
+			le, err := lowerExpr(e)
+			if err != nil {
+				return nil, err
+			}
+			dc.Exprs = append(dc.Exprs, le)
+		}
+		return dc, nil
 	case *syntax.With:
 		return lowerWith(c)
 	case *syntax.Return:
@@ -187,22 +195,24 @@ func lowerSetItems(items []syntax.SetItem) ([]SetItem, error) {
 			if !ok {
 				return nil, fmt.Errorf("cypher: SET item atom is not a variable")
 			}
-			si := SetItem{Variable: id.Name, Property: prop.Key, ExprText: it.ValueSource}
-			if typed, err := lowerExpr(it.Value); err == nil {
-				if _, isRaw := typed.(*RawExpr); !isRaw {
-					si.Expr = typed
-				}
+			value, err := lowerExpr(it.Value)
+			if err != nil {
+				return nil, err
 			}
-			out = append(out, si)
+			out = append(out, SetItem{Variable: id.Name, Property: prop.Key, Expr: value})
 		case syntax.SetMerge:
 			id, ok := it.Target.(*syntax.Ident)
 			if !ok {
 				return nil, fmt.Errorf("cypher: SET item atom is not a variable")
 			}
-			props := make(map[string]string)
+			props := make(map[string]Expr)
 			if ml, ok := it.Value.(*syntax.MapLit); ok {
 				for _, e := range ml.Entries {
-					props[e.Key] = e.Source
+					v, err := lowerExpr(e.Value)
+					if err != nil {
+						return nil, err
+					}
+					props[e.Key] = v
 				}
 			}
 			out = append(out, SetItem{Variable: id.Name, Merge: true, Props: props})
@@ -244,15 +254,19 @@ func lowerItems(p syntax.Projection) ([]ReturnItem, []SortItem, error) {
 	// works, while `RETURN *, x` projects only x - a legacy limitation).
 	var items []ReturnItem
 	for _, it := range p.Items {
-		ri := ReturnItem{ExprText: it.Source, Alias: it.Alias}
-		if e, err := lowerExpr(it.Expr); err == nil {
-			ri.Expr = e
+		e, err := lowerExpr(it.Expr)
+		if err != nil {
+			return nil, nil, err
 		}
-		items = append(items, ri)
+		items = append(items, ReturnItem{Source: it.Source, Alias: it.Alias, Expr: e})
 	}
 	var order []SortItem
 	for _, s := range p.Order {
-		order = append(order, SortItem{ExprText: s.Source, Descending: s.Desc})
+		e, err := lowerExpr(s.Expr)
+		if err != nil {
+			return nil, nil, err
+		}
+		order = append(order, SortItem{Expr: e, Descending: s.Desc})
 	}
 	return items, order, nil
 }
@@ -420,28 +434,24 @@ func lowerRel(r *syntax.RelPattern) (RelPattern, error) {
 	return rp, nil
 }
 
-// lowerProps converts an inline property map or $param to the legacy
-// map[string]string encoding: values are verbatim source text, list literals
-// are "__list__:a,b,c", and a parameter map is stored under the key "$".
-func lowerProps(e syntax.Expr) (map[string]string, error) {
-	props := make(map[string]string)
+// lowerProps converts an inline property map or $param to typed expressions. A
+// parameter map is stored under the key "$".
+func lowerProps(e syntax.Expr) (map[string]Expr, error) {
+	props := make(map[string]Expr)
 	switch e := e.(type) {
 	case nil:
 	case *syntax.MapLit:
 		for _, entry := range e.Entries {
-			props[entry.Key] = encodePropValue(entry)
+			v, err := lowerExpr(entry.Value)
+			if err != nil {
+				return nil, err
+			}
+			props[entry.Key] = v
 		}
 	case *syntax.Param:
-		props["$"] = "$" + e.Name
+		props["$"] = &ParamRef{Name: e.Name}
 	}
 	return props, nil
-}
-
-func encodePropValue(entry syntax.MapEntry) string {
-	if l, ok := entry.Value.(*syntax.ListLit); ok && strings.HasPrefix(entry.Source, "[") {
-		return "__list__:" + strings.Join(l.Sources, ",")
-	}
-	return entry.Source
 }
 
 // labelList flattens a conjunction of plain label names (`:A:B` / `A&B`).

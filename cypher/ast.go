@@ -11,7 +11,7 @@
 //
 //	Feature                              Query AST representation
 //	MATCH (n), (n:Label), (n:L1:L2)      NodePattern, Labels (AND semantics)
-//	MATCH (n {prop: val})                NodePattern.Props (raw expression text)
+//	MATCH (n {prop: val})                NodePattern.Props (typed expressions)
 //	MATCH (a)-[r:TYPE]->(b), <-, -       RelPattern (ToLeft / ToRight)
 //	MATCH (a)-[:T1|T2*1..3]->(b)         RelPattern.Types, VarLength, MinHops, MaxHops
 //	Multi-hop chains                     PatternPart.Chain
@@ -26,10 +26,8 @@
 //
 // # Known limitations
 //
-//   - Property map values in patterns and SET items are carried as the verbatim
-//     source text of each expression (NodePattern.Props, SetItem.ExprText); list
-//     literals are encoded as "__list__:a,b,c" and a $param map is stored under
-//     the key "$". The planner resolves this text against the call's parameters.
+//   - Property map values, SET values, ORDER BY keys and DELETE targets are typed
+//     expressions; a $param map `(n $props)` is stored under the key "$".
 //   - Expression forms the typed tree does not model - multiplicative, power and
 //     unary arithmetic, subscripts, nested property access, most function calls,
 //     comprehensions, pattern predicates, map literals - become RawExpr, which
@@ -98,26 +96,21 @@ func (*SetClause) clauseNode() {}
 // SetItem represents one assignment in a SET clause.
 //
 // Two forms:
-//   - n.prop = expr  (Merge=false, Property is set, Props is nil)
-//   - n += {map}     (Merge=true, Property is "", Props holds the map pairs)
+//   - n.prop = expr  (Merge=false, Property and Expr are set)
+//   - n += {map}     (Merge=true, Props holds the map entries)
 type SetItem struct {
 	// Variable is the Cypher variable name (e.g. "n").
 	Variable string
-	// Property is the property key being set (e.g. "name"). Empty for += form.
+	// Property is the property key being set (e.g. "name"). Empty for the += form.
 	Property string
-	// ExprText is the raw text of the right-hand-side expression for n.prop = expr.
-	// Empty for the += merge form (Props holds the key/value pairs instead).
-	ExprText string
-	// Expr is the typed AST for the right-hand-side expression. When non-nil it
-	// takes priority over ExprText in the planner. Set by buildSetItem when the
-	// RHS can be parsed into a typed Expr (e.g. arithmetic, function calls).
+	// Expr is the right-hand side of n.prop = expr.
 	Expr Expr
 	// Merge is true for SET n += {map} (property merge without overwriting other keys).
 	Merge bool
-	// Props holds the key/value pairs for the SET n += {map} form.
-	// Each value is the raw expression text (literal or $param).
-	// Nil for the n.prop = expr form.
-	Props map[string]string
+	// Props holds the key/value pairs for the SET n += {map} form; nil for the
+	// n.prop = expr form. A right-hand side that is not a map literal gives an
+	// empty map.
+	Props map[string]Expr
 }
 
 // MergeClause represents a MERGE clause with optional ON CREATE SET and ON MATCH SET actions.
@@ -167,8 +160,8 @@ type RemoveItem struct {
 //	DETACH DELETE n
 type DeleteClause struct {
 	Detach bool
-	// Exprs holds the raw text of each expression to delete (variable names).
-	Exprs []string
+	// Exprs are the expressions to delete (normally variables).
+	Exprs []Expr
 }
 
 func (*DeleteClause) clauseNode() {}
@@ -216,20 +209,20 @@ func (*WithClause) clauseNode() {}
 
 // ReturnItem is one projection in a RETURN or WITH clause.
 type ReturnItem struct {
-	// ExprText is the raw expression text (e.g. "n.name", "n", "count(n)").
-	// Kept for backward compatibility; new code paths also populate Expr.
-	ExprText string
+	// Source is the verbatim source text of the expression (e.g. "n.name",
+	// "count( n )"). It is used for result column names and error messages,
+	// never re-parsed.
+	Source string
 	// Alias is the AS alias, or "" if none.
 	Alias string
-	// Expr is the typed expression built by Parse. Nil when the
-	// item was produced by the legacy ExprText path (existing single-part queries).
+	// Expr is the typed expression built by Parse.
 	Expr Expr
 }
 
 // SortItem represents one column in an ORDER BY clause.
 type SortItem struct {
-	// ExprText is the expression to sort by.
-	ExprText string
+	// Expr is the expression to sort by.
+	Expr Expr
 	// Descending is true for DESC ordering.
 	Descending bool
 }
@@ -253,9 +246,10 @@ type NodePattern struct {
 	Variable string
 	// Labels are the required labels (AND semantics).
 	Labels []string
-	// Props maps property key → raw expression text.
-	// Empty map means no inline properties constraint.
-	Props map[string]string
+	// Props maps property key → value expression. A whole-map parameter
+	// `(n $props)` is stored under the key "$" as a *ParamRef. Empty map means
+	// no inline properties constraint.
+	Props map[string]Expr
 	// HasExplicitProps is true when the node pattern included an explicit
 	// property map in the source Cypher (even an empty map "{}"). This
 	// distinguishes (n {}) from (n) — the former re-binds an existing node
@@ -278,8 +272,8 @@ type RelPattern struct {
 	// Types holds the acceptable relationship types (OR semantics within types,
 	// but typically v0.1 uses exactly one type). Empty means any type.
 	Types []string
-	// Props maps property key → raw expression text.
-	Props map[string]string
+	// Props maps property key → value expression (see NodePattern.Props).
+	Props map[string]Expr
 	// ToLeft is true when the arrow points left: <-[r]-
 	ToLeft bool
 	// ToRight is true when the arrow points right: -[r]->
