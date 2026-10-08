@@ -141,7 +141,7 @@ tasks:
       MATCH/OPTIONAL MATCH [WHERE], UNWIND, WITH and RETURN (DISTINCT, `*`,
       `*, expr`, aliases, ORDER BY, SKIP, LIMIT in either order, WHERE on
       WITH).
-    status: pending
+    status: completed
     dependencies: [task-009]
     acceptance_criteria:
       - "Golden tests for each clause form including SKIP/LIMIT order variants"
@@ -152,7 +152,7 @@ tasks:
       CREATE, MERGE [ON CREATE SET…][ON MATCH SET…], SET (prop =, += map,
       variable = map, label), REMOVE (prop, labels), [DETACH] DELETE, FOREACH
       (v IN list | updating clauses).
-    status: pending
+    status: completed
     dependencies: [task-010]
     acceptance_criteria:
       - "Golden tests for every SET/REMOVE item form and nested FOREACH"
@@ -164,7 +164,7 @@ tasks:
       UNION / UNION ALL, multi-part queries, and the grammar-level rules for
       clause ordering (reading* updating* return, WITH separation).
       Entry point Parse(string) (*Statement, error); reject trailing garbage.
-    status: pending
+    status: completed
     dependencies: [task-011]
     acceptance_criteria:
       - "Every openCypher 9 grammar production in the ast.go checklist is parsed"

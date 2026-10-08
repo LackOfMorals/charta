@@ -9,6 +9,9 @@ import (
 
 // sxMore renders pattern and comprehension nodes for tests.
 func sxMore(n Node) (string, bool) {
+	if out, ok := sxClauses(n); ok {
+		return out, true
+	}
 	switch n := n.(type) {
 	case *PatternExpr:
 		return "(pattern " + sx(n.Part) + ")", true

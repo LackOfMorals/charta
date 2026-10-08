@@ -35,3 +35,35 @@ func FuzzParseExpr(f *testing.F) {
 		_ = Dump(e) // must not panic on any tree the parser can build
 	})
 }
+
+// FuzzParse checks that whole-statement parsing never panics or hangs and that
+// every failure is a well-formed *SyntaxError.
+func FuzzParse(f *testing.F) {
+	for _, s := range []string{
+		"MATCH (n) RETURN n", "MATCH (a)-[r:T*1..3]->(b) WHERE b.x > 1 RETURN a, count(*) ORDER BY a SKIP 1 LIMIT 2",
+		"CREATE (n:L {a: 1})", "MERGE (n:L) ON CREATE SET n.a = 1 ON MATCH SET n += $p",
+		"MATCH (n) SET n:A:B, n.x = 1 REMOVE n.y DETACH DELETE n", "UNWIND [1, 2] AS x WITH x WHERE x > 1 RETURN x",
+		"FOREACH (x IN l | CREATE (:N {v: x}))", "CALL db.labels() YIELD label AS l WHERE l <> 'x'",
+		"RETURN 1 UNION ALL RETURN 2", "MATCH (n) WITH n MATCH (m) RETURN m;", "OPTIONAL MATCH p = shortestPath((a)-[*]-(b)) RETURN p",
+		"MATCH (n", "RETURN", "CREATE (a) MATCH (b) RETURN b", "FOREACH (", "MERGE (n) ON",
+	} {
+		f.Add(s)
+	}
+	f.Fuzz(func(t *testing.T, src string) {
+		st, err := Parse(src)
+		if err != nil {
+			var se *SyntaxError
+			if !errors.As(err, &se) {
+				t.Fatalf("error is %T, want *SyntaxError", err)
+			}
+			if se.Pos.Offset < 0 || se.Pos.Offset > len(src) || se.Pos.Line < 1 || se.Pos.Col < 1 || se.Msg == "" {
+				t.Fatalf("malformed error %+v", se)
+			}
+			return
+		}
+		if st == nil || st.Body == nil {
+			t.Fatal("nil statement")
+		}
+		_ = Dump(st)
+	})
+}
