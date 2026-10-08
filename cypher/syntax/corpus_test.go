@@ -9,14 +9,15 @@ import (
 )
 
 // outlinePlaceholder matches Scenario Outline parameters such as <pattern>.
-var outlinePlaceholder = regexp.MustCompile(`<[a-z_]+>`)
+var outlinePlaceholder = regexp.MustCompile(`<[a-z][a-zA-Z0-9_]*>`)
 
-// tckQueries extracts the Cypher docstrings (""" blocks) from the vendored TCK
-// feature files.
-func tckQueries(t *testing.T) map[string][]string {
+// tckQueries extracts the Cypher docstrings (""" blocks) from the TCK feature
+// files, split into queries from scenarios that expect an error ("should be
+// raised") and queries from all other scenarios.
+func tckQueries(t *testing.T) (valid, expectErr map[string][]string) {
 	t.Helper()
 	root := filepath.Join("..", "..", "compat", "testdata", "tck")
-	out := map[string][]string{}
+	valid, expectErr = map[string][]string{}, map[string][]string{}
 	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
 		if err != nil || d.IsDir() || !strings.HasSuffix(path, ".feature") {
 			return err
@@ -25,19 +26,36 @@ func tckQueries(t *testing.T) map[string][]string {
 		if err != nil {
 			return err
 		}
-		var cur []string
-		in := false
+		// Split into scenarios; each starts at a "Scenario" line.
+		var scenarios []string
 		for _, line := range strings.Split(string(data), "\n") {
-			if strings.TrimSpace(line) == `"""` {
-				if in {
-					out[path] = append(out[path], strings.Join(cur, "\n"))
-					cur = nil
-				}
-				in = !in
-				continue
+			trimmed := strings.TrimSpace(line)
+			if strings.HasPrefix(trimmed, "Scenario:") || strings.HasPrefix(trimmed, "Scenario Outline:") {
+				scenarios = append(scenarios, "")
 			}
-			if in {
-				cur = append(cur, strings.TrimSpace(line))
+			if len(scenarios) > 0 {
+				scenarios[len(scenarios)-1] += line + "\n"
+			}
+		}
+		for _, sc := range scenarios {
+			dest := valid
+			if strings.Contains(sc, "should be raised") {
+				dest = expectErr
+			}
+			var cur []string
+			in := false
+			for _, line := range strings.Split(sc, "\n") {
+				if strings.TrimSpace(line) == `"""` {
+					if in {
+						dest[path] = append(dest[path], strings.Join(cur, "\n"))
+						cur = nil
+					}
+					in = !in
+					continue
+				}
+				if in {
+					cur = append(cur, strings.TrimSpace(line))
+				}
 			}
 		}
 		return nil
@@ -45,16 +63,18 @@ func tckQueries(t *testing.T) map[string][]string {
 	if err != nil {
 		t.Skipf("TCK files unavailable: %v", err)
 	}
-	return out
+	return valid, expectErr
 }
 
-// TestParse_TCKCorpus parses every concrete query in the vendored TCK (outline
-// templates with <placeholders> are skipped). All of them must parse; the
-// TCK scenarios that expect a compile-time error are semantic, not syntactic,
-// and are handled by the semantic-analysis iteration.
+// TestParse_TCKCorpus parses every concrete query of the TCK scenarios that do
+// not expect an error (outline templates with <placeholders> are skipped). All
+// of them must parse; queries in scenarios that expect an error may be
+// rejected by the parser or, for compile-time semantic errors, by the analysis
+// pass, so they are only required not to panic.
 func TestParse_TCKCorpus(t *testing.T) {
+	valid, expectErr := tckQueries(t)
 	total, failed := 0, 0
-	for file, qs := range tckQueries(t) {
+	for file, qs := range valid {
 		for _, q := range qs {
 			if outlinePlaceholder.MatchString(q) {
 				continue
@@ -66,7 +86,14 @@ func TestParse_TCKCorpus(t *testing.T) {
 			}
 		}
 	}
-	t.Logf("parsed %d queries, %d failed", total, failed)
+	for _, qs := range expectErr {
+		for _, q := range qs {
+			if !outlinePlaceholder.MatchString(q) {
+				_, _ = Parse(q) // must not panic
+			}
+		}
+	}
+	t.Logf("parsed %d queries from non-error scenarios, %d failed", total, failed)
 	if total == 0 {
 		t.Skip("no TCK queries found")
 	}

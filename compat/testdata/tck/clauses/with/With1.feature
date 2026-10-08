@@ -1,6 +1,6 @@
 #
-# Copyright (c) 2015-2024 "Neo Technology,"
-# Network Engine for Objects in Lund AB [http://neotechnology.com]
+# Copyright (c) "Neo4j"
+# Neo4j Sweden AB [https://neo4j.com]
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -119,7 +119,7 @@ Feature: With1 - Forward single variable
       | a | b |
     And no side effects
 
-  Scenario: [6] Forwarind a node variable possibly null
+  Scenario: [6] Forwarding a node variable possibly null
     Given an empty graph
     And having executed:
       """

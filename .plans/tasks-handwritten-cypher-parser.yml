@@ -177,7 +177,7 @@ tasks:
       compat/testdata/tck, cypher/*_test.go, sql/translator_test.go and
       testdata/rapid. Benchmark the reference query against the ANTLR
       baseline (9.5ms / 135k allocs).
-    status: pending
+    status: pending   # intent met in pieces, see progress file decision 3; confirm and close
     dependencies: [task-012, task-033]
     acceptance_criteria:
       - "go test -fuzz=FuzzParse -fuzztime=5m finds no failures"
@@ -339,7 +339,7 @@ tasks:
       Replace the 15 vendored .feature files with the full TCK for the
       pinned openCypher version. Record per-feature pass/skip/fail counts as
       a baseline artifact in .plans/ so progress is measurable.
-    status: pending
+    status: completed
     dependencies: [task-016]
     acceptance_criteria:
       - "Full TCK vendored; harness runs end to end"
@@ -347,20 +347,63 @@ tasks:
       - "Baseline report committed"
 
   - id: task-018
-    title: "Semantic analysis pass (cypher/syntax/sema or cypher/analyze)"
+    title: "Semantic analysis pass (compile-time errors with TCK codes)"
     description: |
-      Variable scoping across WITH/UNWIND/FOREACH/comprehensions, undefined
-      variable, variable already bound, column name conflicts, aggregation
-      misuse, invalid argument types detectable statically, non-constant
-      SKIP/LIMIT, DELETE of non-deletable, etc. Map to TCK SyntaxError
-      categories (UndefinedVariable, VariableAlreadyBound,
-      ColumnNameConflict, InvalidAggregation, …). Begin retiring ExprText:
-      planner consumes typed property-map Exprs.
-    status: pending
+      STATUS: ANALYSIS DONE, IMPLEMENTATION NOT STARTED. See
+      .plans/progress-handwritten-cypher-parser.txt for the full inventory of
+      the ~190 TCK compile-time error scenarios, grouped into the sub-steps
+      below, and the open decisions.
+
+      Add a typed error (`Class` SyntaxError/TypeError/…, `Code` = TCK detail
+      code, `Pos`) produced by an analysis pass over the cypher/syntax AST, run
+      by cypher.Parse after syntax.Parse. Make the TCK harness strict for
+      compile-time expectations (class and code must match; runtime and
+      any-time expectations stay lenient until the execution iterations).
+      Sub-steps, each shippable on its own:
+        A. error type + plumbing + strict harness (and map plain parse errors
+           to UnexpectedSyntax)
+        B. scope analysis: UndefinedVariable, VariableAlreadyBound,
+           VariableTypeConflict, ColumnNameConflict, NoExpressionAlias,
+           NoVariablesInScope, ORDER BY scoping
+        C. aggregation rules: InvalidAggregation, AmbiguousAggregationExpression,
+           NestedAggregation, NonConstantExpression
+        D. literal/lexical codes: IntegerOverflow, FloatingPointOverflow,
+           InvalidNumberLiteral, InvalidUnicode*, UnexpectedSyntax
+        E. clause/pattern rules: NoSingleRelationshipType,
+           RequiresDirectedRelationship, CreatingVarLength, InvalidParameterUse,
+           InvalidRelationshipPattern, RelationshipUniquenessViolation,
+           InvalidDelete, InvalidClauseComposition, DifferentColumnsInUnion,
+           NegativeIntegerArgument, SKIP/LIMIT argument types
+        F. static type inference for InvalidArgumentType (largest group,
+           ~120 expanded scenarios) and UnknownFunction (needs a function
+           registry)
+      Procedure-related codes (ProcedureNotFound, InvalidNumberOfArguments for
+      CALL, InvalidArgumentPassingMode, MissingParameter) belong to task-026.
+    status: in_progress
     dependencies: [task-017]
     acceptance_criteria:
-      - "All TCK scenarios expecting compile-time SyntaxError pass with the right code"
-      - "Property map values are no longer carried as ExprText past lowering"
+      - "A typed *analyze.Error (class + TCK code + position) reaches the caller through graphlite's error wrapping (errors.As works)"
+      - "The harness requires class and code to match for 'at compile time' expectations"
+      - "Every TCK scenario expecting a compile-time error in groups A-E passes with the right code; group F passes or is listed with a reason"
+      - "TCK pass rate over executed scenarios does not fall below the committed baseline once strictness is on, apart from scenarios that previously passed only because any error was accepted"
+
+  - id: task-039
+    title: "Retire ExprText: planner consumes typed property-map expressions"
+    description: |
+      Split out of task-018 because it is a planner/translator refactor, not
+      analysis. Property-map values, ORDER BY keys, SET values and DELETE
+      targets still travel as verbatim source text (the syntax parser's
+      Source/ValueSource/Sources fields) and the planner re-parses them. Move
+      the planner and translator to the typed syntax expressions so ExprText,
+      RawExpr and the "__list__:" encoding can be deleted. Natural to do at the
+      start of iteration 8, since most "complex expression" failures in the TCK
+      baseline come from this text-based path.
+    status: pending
+    dependencies: [task-018]
+    acceptance_criteria:
+      - "NodePattern.Props, SetItem.ExprText, SortItem.ExprText and DeleteClause.Exprs are typed expressions"
+      - "No Source/ValueSource/Sources fields remain in cypher/syntax"
+      - "TCK pass rate is not lower than before the change"
 
   # ───────────── Iteration 8: planner/SQL catch-up (A) ─────────────
   - id: task-019
