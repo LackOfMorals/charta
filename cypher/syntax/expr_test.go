@@ -315,7 +315,9 @@ func TestParseExpr_Errors(t *testing.T) {
 		{"star outside count", "sum(*)", 1, 5, "only allowed"},
 		{"star in namespaced count", "a.count(*)", 1, 9, "only allowed"},
 		{"distinct with no args", "f(DISTINCT)", 1, 11, "unexpected token"},
-		{"case without when", "CASE END", 1, 9, "end of input"}, // END is read as the subject
+		{"case without when", "CASE END", 1, 6, "unexpected token"},
+		{"operator word as operand", "a = NOT (b)", 1, 5, "unexpected token"},
+		{"AND as variable", "AND", 1, 1, "unexpected token"},
 		{"case unterminated", "CASE WHEN a THEN b", 1, 19, "end of input"},
 		{"case when without then", "CASE WHEN a END", 1, 13, "unexpected token"},
 		{"is without null", "a IS 1", 1, 6, "unexpected token"},

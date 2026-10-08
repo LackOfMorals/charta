@@ -386,7 +386,9 @@ func (p *parser) parseListLiteral() Expr {
 	l := &ListLit{Loc: Loc{open.Pos}}
 	if !p.at(RBRACK) {
 		for {
+			first := p.i
 			l.Elems = append(l.Elems, p.parseExpr())
+			l.Sources = append(l.Sources, p.sourceBetween(first, p.i))
 			if !p.accept(COMMA) {
 				break
 			}
@@ -403,7 +405,9 @@ func (p *parser) parseMapLiteral() *MapLit {
 		for {
 			key, pos := p.name("property key name")
 			p.expect(COLON)
-			m.Entries = append(m.Entries, MapEntry{Loc{pos}, key, p.parseExpr()})
+			first := p.i
+			value := p.parseExpr()
+			m.Entries = append(m.Entries, MapEntry{Loc{pos}, key, value, p.sourceBetween(first, p.i)})
 			if !p.accept(COMMA) {
 				break
 			}
@@ -417,6 +421,9 @@ func (p *parser) parseMapLiteral() *MapLit {
 // literals, CASE, function calls (possibly namespaced) and plain variables.
 func (p *parser) parseIdentAtom() Expr {
 	t := p.cur()
+	if nonAtomKeywords[t.Keyword] {
+		p.unexpected("expression")
+	}
 	switch t.Keyword {
 	case KwTrue:
 		p.next()
@@ -534,4 +541,14 @@ func (p *parser) parseCase() Expr {
 	}
 	p.expectKw(KwEnd)
 	return c
+}
+
+// nonAtomKeywords are operator and clause-structure words that can never start
+// an expression. Rejecting them stops `a = NOT (b)` from being read as a call
+// to a function named NOT, and `CASE END` from treating END as the subject.
+// Other keywords stay usable as variable and function names.
+var nonAtomKeywords = map[Keyword]bool{
+	KwNot: true, KwAnd: true, KwOr: true, KwXor: true, KwIn: true, KwIs: true,
+	KwAs: true, KwStarts: true, KwEnds: true, KwContains: true,
+	KwWhen: true, KwThen: true, KwElse: true, KwEnd: true,
 }

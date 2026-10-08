@@ -291,7 +291,7 @@ tasks:
       unchanged. Anything the old AST cannot represent returns the same
       ErrUnsupportedCypher/messages as today. Property map values lower to
       the existing ExprText encoding for now (retired in task-018).
-    status: pending
+    status: completed
     dependencies: [task-012]
     acceptance_criteria:
       - "cypher.ParseNew(input) returns the same *Query as Parse for all of cypher/parser_test.go inputs"
@@ -304,7 +304,7 @@ tasks:
       generators, fuzz-generated valid queries) with both parsers; assert
       equal accept/reject and equal lowered ASTs. Record and triage every
       divergence (new parser wrong vs ANTLR wrong); fix or document.
-    status: pending
+    status: completed
     dependencies: [task-013, task-014]
     acceptance_criteria:
       - "Zero unexplained divergences; documented ones listed in the test file"

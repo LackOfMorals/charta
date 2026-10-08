@@ -507,25 +507,33 @@ func (l *Lexer) escape(sb *strings.Builder, p Pos, i int) (int, error) {
 	switch c := s[i+1]; c {
 	case '\\', '\'', '"', '`':
 		sb.WriteByte(c)
-	case 'b':
+	case 'b', 'B':
 		sb.WriteByte('\b')
-	case 'f':
+	case 'f', 'F':
 		sb.WriteByte('\f')
-	case 'n':
+	case 'n', 'N':
 		sb.WriteByte('\n')
-	case 'r':
+	case 'r', 'R':
 		sb.WriteByte('\r')
-	case 't':
+	case 't', 'T':
 		sb.WriteByte('\t')
-	case 'u':
+	case 'u', 'U':
+		// Like the openCypher grammar, take eight hex digits when they are
+		// present, otherwise four; the letter's case does not matter.
+		if r, ok := hexRune(s, i+2, 8); ok {
+			if r > unicode.MaxRune || utf16.IsSurrogate(r) {
+				return 0, l.errorf(p, s[i:i+10], "invalid escape: not a Unicode code point")
+			}
+			sb.WriteRune(r)
+			return 10, nil
+		}
 		r, ok := hexRune(s, i+2, 4)
 		if !ok {
-			return 0, l.errorf(p, s[i:min(i+6, len(s))], "invalid \\u escape: expected 4 hex digits")
+			return 0, l.errorf(p, s[i:min(i+6, len(s))], "invalid \\u escape: expected 4 or 8 hex digits")
 		}
-		n := 6
 		if utf16.IsSurrogate(r) {
 			// A high surrogate must be followed by \uXXXX holding the low half.
-			if r < 0xDC00 && i+7 < len(s) && s[i+6] == '\\' && s[i+7] == 'u' {
+			if r < 0xDC00 && i+7 < len(s) && s[i+6] == '\\' && (s[i+7] == 'u' || s[i+7] == 'U') {
 				if lo, ok := hexRune(s, i+8, 4); ok {
 					if pair := utf16.DecodeRune(r, lo); pair != utf8.RuneError {
 						sb.WriteRune(pair)
@@ -533,20 +541,10 @@ func (l *Lexer) escape(sb *strings.Builder, p Pos, i int) (int, error) {
 					}
 				}
 			}
-			return 0, l.errorf(p, s[i:i+n], "invalid \\u escape: unpaired UTF-16 surrogate")
+			return 0, l.errorf(p, s[i:i+6], "invalid \\u escape: unpaired UTF-16 surrogate")
 		}
 		sb.WriteRune(r)
-		return n, nil
-	case 'U':
-		r, ok := hexRune(s, i+2, 8)
-		if !ok {
-			return 0, l.errorf(p, s[i:min(i+10, len(s))], "invalid \\U escape: expected 8 hex digits")
-		}
-		if r > unicode.MaxRune || utf16.IsSurrogate(r) {
-			return 0, l.errorf(p, s[i:i+10], "invalid \\U escape: not a Unicode code point")
-		}
-		sb.WriteRune(r)
-		return 10, nil
+		return 6, nil
 	default:
 		r, _ := utf8.DecodeRuneInString(s[i+1:])
 		return 0, l.errorf(p, "\\"+string(r), "invalid escape sequence in string literal")

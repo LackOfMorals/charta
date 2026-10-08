@@ -5,9 +5,12 @@ package syntax
 //   - Every node embeds Loc and so reports the Pos where it starts.
 //   - Interfaces are sealed (unexported marker methods); consumers dispatch with
 //     a type switch.
-//   - Nothing is held as unparsed text. The single deliberate exception is
-//     ProjectionItem.Source, which keeps the verbatim source of a projected
-//     expression because un-aliased result columns are named after it.
+//   - Nothing is held as unparsed text, with one deliberate exception: the
+//     Source/ValueSource/Sources fields (ProjectionItem, SortItem, MapEntry,
+//     ListLit, SetItem, Delete) keep the verbatim source of an expression for
+//     consumers that still work from text - un-aliased result columns are
+//     named after it and the planner re-parses it. They are never re-parsed
+//     here and go away once the planner consumes the typed AST.
 //
 // # Grammar coverage checklist
 //
@@ -84,6 +87,8 @@ type Node interface{ Pos() Pos }
 // Statement is the root node of a parsed query.
 type Statement struct {
 	Loc
+	// Src is the query text that was parsed.
+	Src string
 	// Mode is the EXPLAIN/PROFILE prefix, if any.
 	Mode ExplainMode
 	// Options holds `CYPHER 25 key=value …` options, in source order.
@@ -317,6 +322,8 @@ type SetItem struct {
 	Labels LabelExpr
 	// Value is the right-hand side for all kinds except SetLabels.
 	Value Expr
+	// ValueSource is the verbatim source text of Value (see ProjectionItem.Source).
+	ValueSource string
 }
 
 // Remove is REMOVE item, ….
@@ -338,6 +345,9 @@ type Delete struct {
 	Loc
 	Detach bool
 	Exprs  []Expr
+	// Sources holds the verbatim source text of each expression, parallel to
+	// Exprs (see ProjectionItem.Source).
+	Sources []string
 }
 
 // Foreach is FOREACH (var IN list | updating clauses).
@@ -444,6 +454,8 @@ type SortItem struct {
 	Loc
 	Expr Expr
 	Desc bool
+	// Source is the verbatim source text of Expr (see ProjectionItem.Source).
+	Source string
 }
 
 // OrderSkipLimit is a standalone ORDER BY / SKIP / LIMIT clause (Cypher 25).
@@ -700,6 +712,9 @@ type NullLit struct{ Loc }
 type ListLit struct {
 	Loc
 	Elems []Expr
+	// Sources holds the verbatim source text of each element, parallel to
+	// Elems (see ProjectionItem.Source).
+	Sources []string
 }
 
 // MapLit is `{k: v, …}`.
@@ -713,6 +728,8 @@ type MapEntry struct {
 	Loc
 	Key   string
 	Value Expr
+	// Source is the verbatim source text of Value (see ProjectionItem.Source).
+	Source string
 }
 
 // Param is `$name` or `$0`.

@@ -151,7 +151,9 @@ func (p *parser) parseOrderSkipLimit() (order []SortItem, skip, limit Expr) {
 		p.expectKw(KwBy)
 		for {
 			pos := p.cur().Pos
+			first := p.i
 			item := SortItem{Loc: Loc{pos}, Expr: p.parseExpr()}
+			item.Source = p.sourceBetween(first, p.i)
 			switch {
 			case p.acceptKw(KwDesc), p.acceptKw(KwDescending):
 				item.Desc = true
@@ -231,7 +233,9 @@ func (p *parser) parseSetItem() SetItem {
 		return item
 	case *Property, *Subscript:
 		p.expect(EQ)
+		first := p.i
 		item.Kind, item.Target, item.Value = SetProperty, target, p.parseExpr()
+		item.ValueSource = p.sourceBetween(first, p.i)
 		return item
 	case *Ident:
 		item.Target = target
@@ -243,7 +247,9 @@ func (p *parser) parseSetItem() SetItem {
 		default:
 			p.unexpected("=", "+=", ":")
 		}
+		first := p.i
 		item.Value = p.parseExpr()
+		item.ValueSource = p.sourceBetween(first, p.i)
 		return item
 	}
 	p.fail(pos, "invalid SET target")
@@ -288,7 +294,9 @@ func (p *parser) parseDelete() Clause {
 	}
 	p.expectKw(KwDelete)
 	for {
+		first := p.i
 		d.Exprs = append(d.Exprs, p.parseExpr())
+		d.Sources = append(d.Sources, p.sourceBetween(first, p.i))
 		if !p.accept(COMMA) {
 			return d
 		}

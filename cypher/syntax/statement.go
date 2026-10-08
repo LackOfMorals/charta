@@ -18,7 +18,7 @@ func Parse(src string) (*Statement, error) {
 }
 
 func (p *parser) parseStatement() *Statement {
-	st := &Statement{Loc: Loc{p.cur().Pos}}
+	st := &Statement{Loc: Loc{p.cur().Pos}, Src: p.src}
 	st.Body = p.parseBody()
 	p.accept(SEMI)
 	if !p.at(EOF) {
