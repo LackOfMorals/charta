@@ -306,7 +306,8 @@ graphlite/
 ├── options.go        ← functional options (WithBusyTimeout, WithReadOnly)
 ├── cypher/
 │   ├── ast.go        ← Clause and expression AST types
-│   ├── parser.go     ← ANTLR/opencypher CST → AST
+│   ├── parse.go      ← Parse: syntax AST → Query AST (parse_expr.go: expressions)
+│   ├── syntax/       ← hand-written Cypher 25 lexer + parser + typed AST
 │   ├── plan.go       ← LogicalPlan types
 │   ├── planner.go    ← AST → LogicalPlan
 │   └── scope.go      ← BindingScope: Cypher vars → SQL aliases

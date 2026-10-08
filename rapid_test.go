@@ -34,10 +34,9 @@ var lowerLetters = func() []rune {
 }()
 
 // cypherReservedWords is the set of lowercase Cypher keywords that the
-// opencypher parser rejects when used as bare (unquoted) property key names.
-// genPropKey skips any generated key that matches one of these strings so that
-// property-based tests do not hit parser errors unrelated to the feature under
-// test.
+// Cypher reserves. The parser accepts most of them as property keys, but
+// genPropKey conservatively skips any generated key that matches one of these
+// strings so that property-based tests do not depend on that leniency.
 var cypherReservedWords = map[string]struct{}{
 	"all": {}, "and": {}, "as": {}, "asc": {}, "ascending": {},
 	"by": {}, "call": {}, "case": {}, "contains": {}, "create": {},

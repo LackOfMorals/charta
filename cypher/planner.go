@@ -565,7 +565,7 @@ func planWithClause(wc *WithClause, scope *BindingScope) (*WithPlan, error) {
 // planWithItem produces a ProjectionItem for a single WITH item.
 func planWithItem(item ReturnItem, scope *BindingScope) (ProjectionItem, error) {
 	if item.Expr != nil {
-		// Typed expression from ANTLR CST path (aggregates, etc.).
+		// Typed expression built by Parse (aggregates, etc.).
 		return ProjectionItem{Expr: item.Expr, Alias: item.Alias}, nil
 	}
 	expr, err := parseExprText(item.ExprText, scope)

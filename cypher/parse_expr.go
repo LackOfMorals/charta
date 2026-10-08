@@ -9,7 +9,7 @@ import (
 )
 
 // lowerExpr converts a syntax expression to the Query AST's Expr. It mirrors
-// the decisions of the legacy ANTLR-based builder: forms the legacy AST models
+// the decisions of the original ANTLR-based builder: forms the Query AST models
 // are typed; the rest (multiplicative/power/unary arithmetic, subscripts,
 // nested property access, function calls other than the aggregates and
 // exists(), comprehensions, pattern predicates, map literals, …) become a
@@ -125,7 +125,24 @@ func lowerExpr(e syntax.Expr) (Expr, error) {
 		*syntax.Quantifier, *syntax.PatternExpr:
 		return raw(e), nil
 	}
-	return nil, unsupported("expression %s", exprString(e))
+	return nil, unsupported("%s", exprKindName(e))
+}
+
+// exprKindName names an expression form for "not supported" messages.
+func exprKindName(e syntax.Expr) string {
+	switch e.(type) {
+	case *syntax.SubqueryExpr:
+		return "an EXISTS/COUNT/COLLECT subquery"
+	case *syntax.TypePredicate:
+		return "a type predicate (IS :: type)"
+	case *syntax.Normalized:
+		return "IS NORMALIZED"
+	case *syntax.MapProjection:
+		return "a map projection"
+	case *syntax.Reduce:
+		return "reduce()"
+	}
+	return fmt.Sprintf("this expression (%T)", e)
 }
 
 func raw(e syntax.Expr) Expr { return &RawExpr{Text: exprString(e)} }
@@ -205,7 +222,7 @@ func lowerBinary(e *syntax.Binary) (Expr, error) {
 		}
 		return &StringMatchExpr{Expr: base, Pattern: pat, Op: string(e.Op)}, nil
 	}
-	return nil, unsupported("operator %s", e.Op)
+	return nil, unsupported("the %s operator", e.Op)
 }
 
 func lowerFuncCall(f *syntax.FuncCall) (Expr, error) {

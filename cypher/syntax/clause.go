@@ -55,6 +55,17 @@ func (p *parser) parseClauseOpt() Clause {
 		return p.parseForeach()
 	case KwCall:
 		return p.parseCall()
+	case KwLoad:
+		return p.parseLoadCSV()
+	case KwFilter:
+		p.next()
+		p.acceptKw(KwWhere)
+		return &Filter{Loc{t.Pos}, p.parseExpr()}
+	case KwLet:
+		return p.parseLet()
+	case KwFinish:
+		p.next()
+		return &Finish{Loc{t.Pos}}
 	}
 	if t.isWord("nodetach") && p.peek(1).Is(KwDelete) {
 		return p.parseDelete()
@@ -78,7 +89,12 @@ func (p *parser) parseMatch(optional bool) Clause {
 		p.expectKw(KwOptional)
 	}
 	p.expectKw(KwMatch)
-	m := &Match{Loc: Loc{start}, Optional: optional, Patterns: p.parsePatternParts()}
+	m := &Match{Loc: Loc{start}, Optional: optional}
+	m.Mode = p.parseMatchModeOpt()
+	m.Patterns = p.parsePatternParts()
+	for p.atKw(KwUsing) {
+		m.Hints = append(m.Hints, p.parseHint())
+	}
 	if p.acceptKw(KwWhere) {
 		m.Where = p.parseExpr()
 	}
@@ -333,15 +349,15 @@ func (p *parser) parseForeach() Clause {
 
 // ─── CALL ────────────────────────────────────────────────────────────────────
 
-// parseCall parses a procedure call. CALL subqueries are added in a later
-// iteration; `CALL {` and `CALL (` are reported as unsupported for now.
+// parseCall parses a procedure call, or a CALL subquery when the CALL is
+// followed by `{` or a `(` scope clause.
 func (p *parser) parseCall() Clause {
 	start := p.cur().Pos
 	c := &Call{Loc: Loc{start}}
 	c.Optional = p.acceptKw(KwOptional)
 	p.expectKw(KwCall)
 	if p.at(LBRACE) || p.at(LPAREN) {
-		p.fail(p.cur().Pos, "CALL subqueries are not supported yet")
+		return p.parseCallSubquery(start, c.Optional)
 	}
 	for {
 		name, _ := p.name("procedure name")
@@ -397,7 +413,7 @@ func (p *parser) parseYield() *Yield {
 
 func isUpdating(c Clause) bool {
 	switch c.(type) {
-	case *Create, *Insert, *Merge, *Set, *Remove, *Delete, *Foreach:
+	case *Create, *Merge, *Set, *Remove, *Delete, *Foreach:
 		return true
 	}
 	return false
@@ -423,8 +439,6 @@ func clauseName(c Clause) string {
 		return "UNWIND"
 	case *Create:
 		return "CREATE"
-	case *Insert:
-		return "INSERT"
 	case *Merge:
 		return "MERGE"
 	case *Set:
@@ -448,8 +462,6 @@ func clauseName(c Clause) string {
 		return "WITH"
 	case *Return:
 		return "RETURN"
-	case *OrderSkipLimit:
-		return "ORDER BY/SKIP/LIMIT"
 	case *Filter:
 		return "FILTER"
 	case *Let:
@@ -460,4 +472,107 @@ func clauseName(c Clause) string {
 		return "WHEN"
 	}
 	return "clause"
+}
+
+// parseMatchModeOpt parses the optional DIFFERENT RELATIONSHIPS /
+// REPEATABLE ELEMENTS keywords after MATCH.
+func (p *parser) parseMatchModeOpt() MatchMode {
+	t, n := p.cur(), p.peek(1)
+	if t.Kind != IDENT || n.Kind != IDENT {
+		return MatchModeDefault
+	}
+	switch {
+	case t.isWord("different") && (n.isWord("relationships") || n.isWord("relationship") || n.isWord("edges") || n.isWord("edge")):
+		p.next()
+		p.next()
+		return MatchDifferentRelationships
+	case t.isWord("repeatable") && (n.isWord("elements") || n.isWord("element") || n.isWord("bindings") || n.isWord("binding")):
+		p.next()
+		p.next()
+		return MatchRepeatableElements
+	}
+	return MatchModeDefault
+}
+
+// ClauseName returns the keyword(s) a clause is written with, for messages.
+func ClauseName(c Clause) string { return clauseName(c) }
+
+// parseLoadCSV parses `LOAD CSV [WITH HEADERS] FROM expr AS var [FIELDTERMINATOR str]`.
+func (p *parser) parseLoadCSV() Clause {
+	start := p.expectKw(KwLoad)
+	p.expectKw(KwCSV)
+	l := &LoadCSV{Loc: Loc{start.Pos}}
+	if p.acceptKw(KwWith) {
+		p.expectKw(KwHeaders)
+		l.WithHeaders = true
+	}
+	p.expectKw(KwFrom)
+	l.From = p.parseExpr()
+	p.expectKw(KwAs)
+	l.Var, _ = p.name("variable")
+	if p.acceptKw(KwFieldTerm) {
+		l.FieldTerminator = p.parseExpr()
+	}
+	return l
+}
+
+// parseLet parses `LET var = expr [, var = expr]*`.
+func (p *parser) parseLet() Clause {
+	start := p.expectKw(KwLet)
+	l := &Let{Loc: Loc{start.Pos}}
+	for {
+		name, pos := p.name("variable")
+		p.expect(EQ)
+		l.Items = append(l.Items, LetItem{Loc{pos}, name, p.parseExpr()})
+		if !p.accept(COMMA) {
+			return l
+		}
+	}
+}
+
+// atClauseStart reports whether the cursor is at a keyword that begins a
+// clause, which ends a planner hint.
+func (p *parser) atClauseStart() bool {
+	t := p.cur()
+	if t.Kind != IDENT {
+		return false
+	}
+	switch t.Keyword {
+	case KwMatch, KwOptional, KwUnwind, KwWith, KwReturn, KwCreate, KwMerge, KwSet, KwRemove,
+		KwDelete, KwDetach, KwForeach, KwCall, KwLoad, KwUnion, KwFinish, KwFilter, KwLet:
+		return true
+	}
+	return false
+}
+
+// parseHint skips a planner hint (`USING INDEX n:L(p)`, `USING JOIN ON n`,
+// `USING SCAN n:L`, …). Hints do not change results, so the arguments are kept
+// only as text.
+func (p *parser) parseHint() Hint {
+	start := p.expectKw(KwUsing)
+	h := Hint{Loc: Loc{start.Pos}}
+	first := p.i
+	kind, _ := p.name("hint kind")
+	h.Kind = upper(kind)
+	if p.at(IDENT) && p.cur().Is(KwIndex) {
+		h.Kind += " INDEX"
+	}
+	// Skip the arguments, which may contain balanced parentheses; an
+	// unbalanced ')' belongs to an enclosing construct such as `EXISTS { … }`.
+	depth := 0
+	for !p.at(EOF) && !p.at(SEMI) && !p.at(RBRACE) && !p.atKw(KwWhere) && !p.atKw(KwUsing) && !p.atClauseStart() {
+		switch p.cur().Kind {
+		case LPAREN:
+			depth++
+		case RPAREN:
+			if depth == 0 {
+				goto done
+			}
+			depth--
+		}
+		p.next()
+	}
+done:
+	h.Text = p.sourceBetween(first, p.i)
+	return h
 }

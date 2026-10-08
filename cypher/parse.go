@@ -8,15 +8,18 @@ import (
 	"github.com/LackOfMorals/graphlite/v2/cypher/syntax"
 )
 
-// ParseNew parses input with the hand-written cypher/syntax parser and lowers
-// the result to the Query AST that the planner and translator consume.
+// Parse parses a Cypher statement with the hand-written cypher/syntax parser
+// and lowers the result to the Query AST that the planner and translator
+// consume.
 //
-// It is the migration path away from the ANTLR-based Parse: for every query
-// Parse accepts and the lowered AST can express, ParseNew returns an equal
-// Query (see diff_test.go for the documented exceptions). Constructs the
-// Query AST cannot represent are rejected with the same kind of "not
-// supported" error Parse gives.
-func ParseNew(input string) (*Query, error) {
+// Constructs the Query AST cannot represent (UNION, UNWIND, CALL, FOREACH,
+// multiple WITH stages, path selectors, label expressions other than simple
+// conjunctions, …) are rejected with a "not supported" error. WHERE
+// expressions are parsed into a typed Expr tree; forms the tree does not model
+// become RawExpr, which the translator rejects unless it is a bare identifier.
+//
+// Parse is safe to call from multiple goroutines.
+func Parse(input string) (*Query, error) {
 	st, err := syntax.Parse(input)
 	if err != nil {
 		return nil, fmt.Errorf("cypher syntax error: %w", err)
@@ -29,13 +32,35 @@ func unsupported(format string, args ...any) error {
 }
 
 func lowerStatement(st *syntax.Statement) (*Query, error) {
+	if st.Mode != syntax.ModeNone {
+		return nil, unsupported("EXPLAIN/PROFILE")
+	}
 	switch b := st.Body.(type) {
 	case *syntax.SingleQuery:
 		return lowerQuery(b)
 	case *syntax.UnionQuery:
 		return nil, fmt.Errorf("cypher: UNION is not supported in v0.1")
 	}
-	return nil, unsupported("this statement kind")
+	return nil, unsupported("%s", bodyName(st.Body))
+}
+
+// bodyName names a statement kind for "not supported" messages.
+func bodyName(b syntax.Body) string {
+	switch b := b.(type) {
+	case *syntax.CreateIndex:
+		return "CREATE INDEX"
+	case *syntax.CreateConstraint:
+		return "CREATE CONSTRAINT"
+	case *syntax.DropSchema:
+		return "DROP INDEX/CONSTRAINT"
+	case *syntax.Show:
+		return "SHOW"
+	case *syntax.ServerCommand:
+		return "the server command " + b.Command
+	case *syntax.Conditional:
+		return "a conditional (WHEN) query"
+	}
+	return fmt.Sprintf("this statement kind (%T)", b)
 }
 
 func lowerQuery(sq *syntax.SingleQuery) (*Query, error) {
@@ -94,30 +119,16 @@ func lowerClause(c syntax.Clause) (Clause, error) {
 	case *syntax.Unwind, *syntax.Call, *syntax.LoadCSV:
 		return nil, fmt.Errorf("cypher: only MATCH is supported as a reading clause in v0.1 (got %s)", clauseKeyword(c))
 	}
-	return nil, fmt.Errorf("cypher: unsupported clause %s in v0.1", clauseKeyword(c))
+	return nil, fmt.Errorf("cypher: %s is not supported in v0.1", clauseKeyword(c))
 }
 
-func clauseKeyword(c syntax.Clause) string {
-	switch c.(type) {
-	case *syntax.Unwind:
-		return "UNWIND"
-	case *syntax.Call, *syntax.CallSubquery:
-		return "CALL"
-	case *syntax.LoadCSV:
-		return "LOAD CSV"
-	case *syntax.Foreach:
-		return "FOREACH"
-	case *syntax.Insert:
-		return "INSERT"
-	}
-	return fmt.Sprintf("%T", c)
-}
+func clauseKeyword(c syntax.Clause) string { return syntax.ClauseName(c) }
 
 // ─── reading / updating clauses ──────────────────────────────────────────────
 
 func lowerMatch(m *syntax.Match) (*MatchClause, error) {
 	if len(m.Hints) > 0 || m.Mode != syntax.MatchModeDefault {
-		return nil, unsupported("MATCH hints and match modes")
+		return nil, unsupported("a MATCH hint or match mode")
 	}
 	parts, err := lowerPatternParts(m.Patterns)
 	if err != nil {
@@ -161,6 +172,9 @@ func lowerSetItems(items []syntax.SetItem) ([]SetItem, error) {
 		case syntax.SetProperty:
 			prop, ok := it.Target.(*syntax.Property)
 			if !ok {
+				if _, dyn := it.Target.(*syntax.Subscript); dyn {
+					return nil, unsupported("a dynamic property assignment (SET n[key] = …)")
+				}
 				return nil, fmt.Errorf("cypher: SET item must have exactly one property lookup")
 			}
 			id, ok := prop.Subject.(*syntax.Ident)
@@ -309,14 +323,14 @@ func lowerPatternParts(parts []*syntax.PatternPart) ([]PatternPart, error) {
 
 func lowerPatternPart(p *syntax.PatternPart) (PatternPart, error) {
 	if p.Selector != nil {
-		return PatternPart{}, unsupported("path selectors")
+		return PatternPart{}, unsupported("a path selector")
 	}
 	if p.Func != syntax.FuncNone {
 		return PatternPart{}, unsupported("shortestPath()/allShortestPaths()")
 	}
 	first, ok := p.Elems[0].(*syntax.NodePattern)
 	if !ok {
-		return PatternPart{}, unsupported("quantified path patterns")
+		return PatternPart{}, unsupported("a quantified path pattern")
 	}
 	start, err := lowerNode(first)
 	if err != nil {
@@ -326,11 +340,11 @@ func lowerPatternPart(p *syntax.PatternPart) (PatternPart, error) {
 	for i := 1; i < len(p.Elems); i += 2 {
 		rel, ok := p.Elems[i].(*syntax.RelPattern)
 		if !ok || i+1 >= len(p.Elems) {
-			return PatternPart{}, unsupported("quantified path patterns")
+			return PatternPart{}, unsupported("a quantified path pattern")
 		}
 		node, ok := p.Elems[i+1].(*syntax.NodePattern)
 		if !ok {
-			return PatternPart{}, unsupported("quantified path patterns")
+			return PatternPart{}, unsupported("a quantified path pattern")
 		}
 		lr, err := lowerRel(rel)
 		if err != nil {
@@ -370,7 +384,7 @@ func lowerRel(r *syntax.RelPattern) (RelPattern, error) {
 		return RelPattern{}, unsupported("WHERE inside a relationship pattern")
 	}
 	if r.Quant != nil {
-		return RelPattern{}, unsupported("quantified relationships")
+		return RelPattern{}, unsupported("a quantified relationship")
 	}
 	types, err := typeList(r.Types)
 	if err != nil {
@@ -431,7 +445,7 @@ func labelList(le syntax.LabelExpr) ([]string, error) {
 		return nil, nil
 	case *syntax.LabelName:
 		if le.Dynamic != nil {
-			return nil, unsupported("dynamic labels")
+			return nil, unsupported("a dynamic label")
 		}
 		return []string{le.Name}, nil
 	case *syntax.LabelAnd:
@@ -445,7 +459,7 @@ func labelList(le syntax.LabelExpr) ([]string, error) {
 		}
 		return append(l, r...), nil
 	}
-	return nil, unsupported("label expressions other than a conjunction of names")
+	return nil, unsupported("a label expression other than a conjunction of names")
 }
 
 // typeList flattens a disjunction of plain relationship type names (`:A|B`).
@@ -455,7 +469,7 @@ func typeList(le syntax.LabelExpr) ([]string, error) {
 		return nil, nil
 	case *syntax.LabelName:
 		if le.Dynamic != nil {
-			return nil, unsupported("dynamic relationship types")
+			return nil, unsupported("a dynamic relationship type")
 		}
 		return []string{le.Name}, nil
 	case *syntax.LabelOr:
@@ -469,5 +483,5 @@ func typeList(le syntax.LabelExpr) ([]string, error) {
 		}
 		return append(l, r...), nil
 	}
-	return nil, unsupported("relationship type expressions other than a disjunction of names")
+	return nil, unsupported("a relationship type expression other than a disjunction of names")
 }

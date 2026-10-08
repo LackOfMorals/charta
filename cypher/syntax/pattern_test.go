@@ -12,6 +12,15 @@ func sxMore(n Node) (string, bool) {
 	if out, ok := sxClauses(n); ok {
 		return out, true
 	}
+	if out, ok := sxSubquery(n); ok {
+		return out, true
+	}
+	if out, ok := sxTypes(n); ok {
+		return out, true
+	}
+	if out, ok := sxSchema(n); ok {
+		return out, true
+	}
 	switch n := n.(type) {
 	case *PatternExpr:
 		return "(pattern " + sx(n.Part) + ")", true
@@ -19,6 +28,9 @@ func sxMore(n Node) (string, bool) {
 		var b strings.Builder
 		if n.Var != "" {
 			b.WriteString(n.Var + "=")
+		}
+		if n.Selector != nil {
+			b.WriteString("<" + selectorName(n.Selector) + "> ")
 		}
 		switch n.Func {
 		case FuncShortestPath:
@@ -88,7 +100,19 @@ func sxMore(n Node) (string, bool) {
 		case DirBoth:
 			body = "<" + body + ">"
 		}
-		return body, true
+		return body + quantString(n.Quant), true
+	case *GroupPattern:
+		var b strings.Builder
+		b.WriteString("(")
+		if n.Var != "" {
+			b.WriteString(n.Var + "=")
+		}
+		for _, e := range n.Elems {
+			b.WriteString(sx(e))
+		}
+		b.WriteString(opt(" WHERE ", n.Where))
+		b.WriteString(")" + quantString(n.Quant))
+		return b.String(), true
 	case *ListComp:
 		return "(listcomp " + n.Var + " IN " + sx(n.In) + opt(" WHERE ", n.Where) + opt(" | ", n.Proj) + ")", true
 	case *PatternComp:
@@ -347,4 +371,26 @@ func TestParseExpr_NestedParensAreLinear(t *testing.T) {
 	if _, err := ParseExpr(src); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func quantString(q *PathQuant) string {
+	if q == nil {
+		return ""
+	}
+	max := ""
+	if q.Max != nil {
+		max = strconv.FormatInt(*q.Max, 10)
+	}
+	return "{" + strconv.FormatInt(q.Min, 10) + "," + max + "}"
+}
+
+func selectorName(s *PathSelector) string {
+	name := map[SelectorKind]string{
+		SelectorAny: "ANY", SelectorAll: "ALL", SelectorAnyShortest: "ANY SHORTEST",
+		SelectorAllShortest: "ALL SHORTEST", SelectorShortest: "SHORTEST", SelectorShortestGroups: "SHORTEST GROUPS",
+	}[s.Kind]
+	if s.K != nil {
+		name += " k=" + sx(s.K)
+	}
+	return name
 }

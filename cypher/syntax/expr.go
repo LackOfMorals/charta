@@ -3,12 +3,13 @@ package syntax
 import (
 	"math"
 	"strconv"
+	"strings"
 )
 
 // Expression grammar and precedence.
 //
-// The levels below follow the openCypher 9 grammar (the same one the ANTLR
-// parser this package replaces uses), lowest binding first:
+// The levels below follow the openCypher 9 grammar (the one the former
+// ANTLR-based parser used), lowest binding first:
 //
 //	OR
 //	XOR
@@ -226,8 +227,24 @@ func (p *parser) parsePredicateTail(l Expr) Expr {
 		case t.Is(KwIs):
 			p.next()
 			negated := p.acceptKw(KwNot)
-			p.expectKw(KwNull)
-			l = &IsNull{Loc{l.Pos()}, l, negated}
+			switch c := p.cur(); {
+			case c.Kind == DOUBLECOLON || c.Is(KwTyped):
+				p.next()
+				l = &TypePredicate{Loc{l.Pos()}, l, p.parseTypeText(), negated}
+			case c.Is(KwNormalized):
+				p.next()
+				l = &Normalized{Loc: Loc{l.Pos()}, X: l, Negated: negated}
+			case isNormalForm(c) && p.peek(1).Is(KwNormalized):
+				p.next()
+				p.next()
+				l = &Normalized{Loc: Loc{l.Pos()}, X: l, Form: upper(c.Text), Negated: negated}
+			default:
+				p.expectKw(KwNull)
+				l = &IsNull{Loc{l.Pos()}, l, negated}
+			}
+		case t.Kind == DOUBLECOLON:
+			p.next()
+			l = &TypePredicate{Loc{l.Pos()}, l, p.parseTypeText(), false}
 		default:
 			return l
 		}
@@ -249,6 +266,14 @@ func (p *parser) parsePostfix() Expr {
 		case COLON:
 			p.next()
 			x = &HasLabels{Loc{x.Pos()}, x, p.parseLabelExpr()}
+		case LBRACE:
+			// `var{.key, …}` is a map projection; a brace after anything
+			// else is not part of the expression.
+			id, ok := x.(*Ident)
+			if !ok {
+				return x
+			}
+			x = p.parseMapProjection(id)
 		default:
 			return x
 		}
@@ -436,6 +461,13 @@ func (p *parser) parseIdentAtom() Expr {
 		return &NullLit{Loc{t.Pos}}
 	case KwCase:
 		return p.parseCase()
+	}
+	if p.subqueryExprAhead() {
+		return p.parseSubqueryExpr()
+	}
+	if (t.isWord("extract") || t.isWord("filter")) && p.peek(1).Kind == LPAREN &&
+		p.peek(2).Kind == IDENT && p.peek(3).Is(KwIn) {
+		p.fail(t.Pos, "%s() is not supported; use a list comprehension instead", strings.ToLower(t.Text))
 	}
 	if kind, ok := p.quantifierAhead(); ok {
 		return p.parseQuantifier(kind)

@@ -19,7 +19,15 @@ func Parse(src string) (*Statement, error) {
 
 func (p *parser) parseStatement() *Statement {
 	st := &Statement{Loc: Loc{p.cur().Pos}, Src: p.src}
-	st.Body = p.parseBody()
+	p.parsePrefixes(st)
+	switch {
+	case p.serverCommandAhead():
+		st.Body = p.parseServerCommand()
+	case p.schemaCommandAhead():
+		st.Body = p.parseSchemaCommand()
+	default:
+		st.Body = p.parseBody(ctxTop)
+	}
 	p.accept(SEMI)
 	if !p.at(EOF) {
 		p.unexpected("end of input")
@@ -27,9 +35,22 @@ func (p *parser) parseStatement() *Statement {
 	return st
 }
 
+// queryCtx says where a query appears, which decides how it may end.
+type queryCtx uint8
+
+const (
+	// ctxTop is a top-level statement or a CALL {} body: it must end with
+	// RETURN, an updating clause, FINISH, CALL or CALL {} (a unit subquery).
+	ctxTop queryCtx = iota
+	// ctxExists is an EXISTS/COUNT body, whose final RETURN is optional.
+	ctxExists
+	// ctxCollect is a COLLECT body, which must end with RETURN.
+	ctxCollect
+)
+
 // parseBody parses a query optionally combined with UNION [ALL].
-func (p *parser) parseBody() Body {
-	first := p.parseSingleQuery()
+func (p *parser) parseBody(ctx queryCtx) Body {
+	first := p.parseSingleQuery(ctx)
 	if !p.atKw(KwUnion) {
 		return first
 	}
@@ -43,7 +64,7 @@ func (p *parser) parseBody() Body {
 		} else if all != u.All {
 			p.fail(t.Pos, "cannot mix UNION and UNION ALL in one statement")
 		}
-		q := p.parseSingleQuery()
+		q := p.parseSingleQuery(ctx)
 		p.requireReturn(q, "UNION")
 		u.Queries = append(u.Queries, q)
 	}
@@ -60,7 +81,7 @@ func (p *parser) requireReturn(q *SingleQuery, ctx string) {
 
 // parseSingleQuery parses clauses until the next token cannot start one, then
 // checks the clause sequence.
-func (p *parser) parseSingleQuery() *SingleQuery {
+func (p *parser) parseSingleQuery(ctx queryCtx) *SingleQuery {
 	q := &SingleQuery{Loc: Loc{p.cur().Pos}}
 	for {
 		c := p.parseClauseOpt()
@@ -72,7 +93,7 @@ func (p *parser) parseSingleQuery() *SingleQuery {
 	if len(q.Clauses) == 0 {
 		p.unexpected("clause")
 	}
-	p.checkClauseOrder(q.Clauses)
+	p.checkClauseOrder(q.Clauses, ctx)
 	return q
 }
 
@@ -83,7 +104,7 @@ func (p *parser) parseSingleQuery() *SingleQuery {
 //   - RETURN, if present, is the last clause;
 //   - a query ends with RETURN, an updating clause, FINISH or a CALL (a CALL
 //     with YIELD may only end a query if it is the only clause).
-func (p *parser) checkClauseOrder(cs []Clause) {
+func (p *parser) checkClauseOrder(cs []Clause, ctx queryCtx) {
 	updated := false
 	for i, c := range cs {
 		switch {
@@ -101,11 +122,24 @@ func (p *parser) checkClauseOrder(cs []Clause) {
 			if i != len(cs)-1 {
 				p.fail(cs[i+1].Pos(), "RETURN must be the last clause of a query, found %s after it", clauseName(cs[i+1]))
 			}
+		case *Finish:
+			if i != len(cs)-1 {
+				p.fail(cs[i+1].Pos(), "FINISH must be the last clause of a query, found %s after it", clauseName(cs[i+1]))
+			}
 		}
 	}
 	last := cs[len(cs)-1]
+	switch ctx {
+	case ctxExists:
+		return
+	case ctxCollect:
+		if _, ok := last.(*Return); !ok {
+			p.fail(last.Pos(), "a COLLECT subquery must end with RETURN")
+		}
+		return
+	}
 	switch last := last.(type) {
-	case *Return, *Finish:
+	case *Return, *Finish, *CallSubquery:
 		return
 	case *Call:
 		if last.Yield != nil && len(cs) > 1 {

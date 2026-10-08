@@ -7,7 +7,6 @@ import "testing"
 var (
 	_ Body = (*SingleQuery)(nil)
 	_ Body = (*UnionQuery)(nil)
-	_ Body = (*NextQuery)(nil)
 	_ Body = (*CreateIndex)(nil)
 	_ Body = (*CreateConstraint)(nil)
 	_ Body = (*DropSchema)(nil)
@@ -18,7 +17,6 @@ var (
 	_ Clause = (*Match)(nil)
 	_ Clause = (*Unwind)(nil)
 	_ Clause = (*Create)(nil)
-	_ Clause = (*Insert)(nil)
 	_ Clause = (*Merge)(nil)
 	_ Clause = (*Set)(nil)
 	_ Clause = (*Remove)(nil)
@@ -29,7 +27,6 @@ var (
 	_ Clause = (*LoadCSV)(nil)
 	_ Clause = (*With)(nil)
 	_ Clause = (*Return)(nil)
-	_ Clause = (*OrderSkipLimit)(nil)
 	_ Clause = (*Filter)(nil)
 	_ Clause = (*Let)(nil)
 	_ Clause = (*Finish)(nil)

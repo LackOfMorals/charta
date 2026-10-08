@@ -42,7 +42,8 @@ graphlite/
 ├── importer.go     ← Import / Export helpers
 ├── migrate.go      ← neo4j migration helpers (to be removed in v2)
 ├── neo4jadapter/   ← neo4j DriverCompat (to be removed in v2)
-├── cypher/         ← parser, plan types, planner, BindingScope
+├── cypher/         ← Parse (syntax AST → Query AST), plan types, planner, BindingScope
+│   └── syntax/     ← hand-written Cypher 25 lexer/parser + typed AST (stdlib only)
 ├── sql/            ← translator + Dialect interface
 ├── store/          ← Store interface + SQLite implementation + DDL
 ├── compat/         ← TCK harness (opt-in: -tags=tck)
@@ -53,6 +54,7 @@ graphlite/
 
 - The `store/` package must NEVER import Cypher types — it works with raw IDs, labels, JSON blobs only.
 - The `cypher/` package must NEVER import `store/` or `sql/`.
+- `cypher/syntax` imports only the standard library (nothing from this module). `cypher/` imports it; it must never import `cypher/`.
 - The `sql/` package translates `cypher.LogicalPlan` → SQL; it may import `cypher/` but not `store/`.
 - All SQL must use parameterised queries — never `fmt.Sprintf` user input into SQL strings.
 - CGO must remain disabled: always use `modernc.org/sqlite`, never `mattn/go-sqlite3`.
@@ -120,7 +122,11 @@ WAL mode is enabled via `PRAGMA journal_mode=WAL` on every open.
 - `types.go` had a second `// Package graphlite ...` doc block (v1-era text referencing Neo4j Aura); it was removed in task-011. Only `driver.go` carries the package doc comment.
 - `testdata/integration_test.go` and `compat/tck_test.go` both define their own `eagerResult`/`collectResult` — they are separate packages and cannot share a common helper without a new exported type.
 - `DB.Close` still takes `context.Context` (only `Tx` methods are context-free); any test calling `db.Close()` without args must be fixed to `db.Close(context.Background())`.
-- `github.com/antlr/antlr4/runtime/Go/antlr` is locked to the 2021 pseudo-version and CANNOT be upgraded: `cloudprivacylabs/opencypher@v1.0.0`'s generated parser calls `DeserializeFromUInt16`, which was removed in antlr4-go v1.4.10. No newer opencypher release exists that uses the updated `github.com/antlr4-go/antlr/v4` module path.
+- `cypher.Parse` = `cypher/syntax.Parse` + lowering (`cypher/parse.go`, `parse_expr.go`). The ANTLR parser and `cloudprivacylabs/opencypher` are gone (go.mod/vendor); the syntax package is the only grammar.
+- The `Query` AST is partly text-based: property-map values, `ReturnItem.ExprText`, `SortItem.ExprText`, `SetItem.ExprText` and `DeleteClause.Exprs` are the verbatim source of the expression, captured by the syntax parser in its `Source`/`Sources`/`ValueSource` fields. List values are `"__list__:a,b"`, a `$param` map is stored under the key `"$"`. Never rebuild this text from the typed tree.
+- `Parse` deliberately differs from the removed ANTLR parser: chained comparisons compare adjacent operands (`a<b<c` → `a<b AND b<c`; ANTLR reused `a`), hop bounds survive a following property map (`[*2..4 {w:1}]`), `SET (n).p = v` fills `SetItem.Expr`, and it accepts `LIMIT` before `SKIP`, `OFFSET`, `NODETACH` and keywords as variable names. `RETURN *`/`WITH *` lower to an empty `Items` slice (the planner reads that as "all variables"), so `RETURN *, x` projects only `x`.
+- `cypher/syntax` parses Cypher 25 including Neo4j's extensions (label expressions, `EXISTS/COUNT/COLLECT {}`, `CALL (a) {} IN TRANSACTIONS`, quantified path patterns and path selectors, map projections, dynamic labels/properties, `IS :: TYPE`, `FILTER`/`LET`/`FINISH`, schema commands, `LOAD CSV`, hints, server-only commands). `cypher.Parse` lowers only what the `Query` AST can express and rejects the rest with a "not supported" error naming the construct. `CYPHER 5` is rejected; `NEXT`, `INSERT` and standalone `ORDER BY` are deliberately not parsed (not documented in the Cypher Manual). Syntax was checked against the Neo4j Cypher Manual, not guessed.
+- `cypher/syntax` follows the openCypher grammar's operator levels (string/list/null operators bind tighter than `+`; unary minus tighter than `^`; `^` left-associative). Operator and clause words (`NOT`, `AND`, `IN`, `WHEN`, …) cannot start an expression; other keywords are valid variable, label and function names.
 - `golang.org/x/sys` is pinned at v0.41.0 (not v0.44.0): v0.44.0 fixes GO-2026-5024 but requires Go 1.25. Revisit when minimum Go version is raised to 1.25.
 - Plan cache (`plan_cache.go`) is per-`DB` and keyed on Cypher string only. `maxPathHops` is implicitly scoped by the owning DB. `glsql.BindParams` always allocates new slices, so the cached pre-BindParams `glsql.Result` is safely shared read-only across goroutines. Avoid shadowing the builtin `cap` — use `size` or similar parameter names.
 - SQLite FOREIGN KEY constraint errors are detected via `strings.Contains(err.Error(), "FOREIGN KEY constraint failed")` — modernc.org/sqlite surfaces the constraint name verbatim in the error string. Catch this in `InsertEdge` callers and return a domain-appropriate error rather than exposing the raw SQLite message.
@@ -128,7 +134,7 @@ WAL mode is enabled via `PRAGMA journal_mode=WAL` on every open.
 - `Result.rawVals`, `ptrs`, and `vals` are pre-allocated in `newResultFromRows` and reused across all `Next` calls. `ptrs[i] = &rawVals[i]` is stable because `rawVals` is never appended to. `newRecord` copies both keys and values internally, so reusing `vals` is safe.
 - `importJSON` uses `io.ReadAll(io.LimitReader(r, importMaxBytes+1))` for size detection. Do NOT replace this with a streaming decoder approach: `json.Decoder` scans bytes one at a time in a whitespace loop, causing `TestImport_TooLarge` (which sends 500MB of spaces via `io.Pipe`) to hang for 30+ seconds.
 - `decodeImportJSON` must handle `null` values for `"nodes"` and `"edges"` keys. When Go marshals a struct with nil slice fields, JSON produces `"nodes":null`; the decoder must treat this as an empty array (check `tok == nil` after `dec.Token()`).
-- `go test -race ./...` with ANTLR-heavy tests is very slow (~60s+ per ANTLR-first test); use `-run TestResult` or similar narrow patterns for fast race-detection of `result.go` changes.
+- `go test -race ./cypher/...` takes about a second now that parsing no longer goes through ANTLR; the whole-module race run is dominated by the SQLite tests in the root package.
 - `node_labels(node_id, label)` junction table is maintained by SQLite triggers (AFTER INSERT / AFTER UPDATE OF labels on nodes). All write paths — including raw SQL from the translator and importer — stay in sync automatically without Go-level changes.
 - SQLite triggers use a recursive CTE to split the comma-separated `labels` column because SQLite has no native STRING_SPLIT function.
 - `node_labels` has `UNIQUE(node_id, label)` so that `INSERT OR IGNORE` in `backfillMigrationSQL` truly prevents duplicate rows. Without a unique constraint, `INSERT OR IGNORE` is a no-op and does NOT deduplicate.

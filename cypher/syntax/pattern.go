@@ -2,11 +2,15 @@ package syntax
 
 // Pattern grammar:
 //
-//	part   := [var '='] [shortestPath|allShortestPaths '('] node (rel node)* [')']
-//	node   := '(' [var] [':' labels] [props] [WHERE expr] ')'
-//	rel    := ['<'] '-' ['[' [var] [':' types] ['*' range] [props] [WHERE expr] ']'] '-' ['>']
-//	range  := [INT] ['..' [INT]]
-//	props  := map-literal | $param
+//	part     := [var '='] [selector] [shortestPath|allShortestPaths '('] element+ [')']
+//	element  := node | rel | group        (no two node patterns may be adjacent)
+//	node     := '(' [var] [':' labels] [props] [WHERE expr] ')'
+//	rel      := ['<'] '-' ['[' [var] [':' types] ['*' range] [props] [WHERE expr] ']'] '-' ['>'] [quant]
+//	group    := '(' [var '='] element+ [WHERE expr] ')' [quant]
+//	quant    := '+' | '*' | '{' n '}' | '{' [n] ',' [m] '}'
+//	selector := ANY [SHORTEST | k] | ALL [SHORTEST] | SHORTEST [k] [GROUP|GROUPS]
+//	range    := [INT] ['..' [INT]]
+//	props    := map-literal | $param
 //
 // Arrows lex as separate tokens ('<', '-', '>'), so "-->" is MINUS MINUS GT.
 
@@ -79,6 +83,7 @@ func (p *parser) patternPrefix(part *PatternPart, allowVar bool) {
 		part.Var, _ = p.name("path variable")
 		p.next() // '='
 	}
+	part.Selector = p.parseSelectorOpt()
 	if fn := p.shortestFuncAhead(); fn != FuncNone {
 		p.next()
 		p.next()
@@ -91,7 +96,7 @@ func (p *parser) patternPrefix(part *PatternPart, allowVar bool) {
 func (p *parser) parsePatternPart() *PatternPart {
 	part := &PatternPart{Loc: Loc{p.cur().Pos}}
 	p.patternPrefix(part, true)
-	part.Elems = p.parseChainFrom(p.parseNodePattern())
+	part.Elems = p.continueElems([]PatternElem{p.parsePathElement()})
 	if part.Func != FuncNone {
 		p.expect(RPAREN)
 	}
@@ -112,20 +117,147 @@ func (p *parser) tryPatternPart(allowVar bool) *PatternPart {
 		p.i, p.depth = start, depth
 		return nil
 	}
-	part.Elems = p.parseChainFrom(first)
+	part.Elems = p.continueElems([]PatternElem{first})
 	if part.Func != FuncNone {
 		p.expect(RPAREN)
 	}
 	return part
 }
 
-// parseChainFrom parses `(rel node)*` after an already-parsed first node.
-func (p *parser) parseChainFrom(first *NodePattern) []PatternElem {
-	elems := []PatternElem{first}
-	for p.atRelStart() {
-		elems = append(elems, p.parseRelPattern(), p.parseNodePattern())
+// continueElems extends a path pattern whose first element is already parsed
+// with further relationships, nodes and parenthesised groups.
+func (p *parser) continueElems(elems []PatternElem) []PatternElem {
+	for {
+		switch {
+		case p.atRelStart():
+			elems = append(elems, p.parseRelPattern(), p.parsePathElement())
+		case p.at(LPAREN):
+			el := p.parsePathElement()
+			if _, isNode := el.(*NodePattern); isNode {
+				if _, prevNode := elems[len(elems)-1].(*NodePattern); prevNode {
+					p.fail(el.Pos(), "two node patterns must be separated by a relationship (or by a quantified path pattern)")
+				}
+			}
+			elems = append(elems, el)
+		default:
+			return elems
+		}
 	}
-	return elems
+}
+
+// parsePathElement parses a node pattern or a parenthesised path pattern.
+func (p *parser) parsePathElement() PatternElem {
+	if p.groupAhead() {
+		return p.parseGroupPattern()
+	}
+	return p.parseNodePattern()
+}
+
+// groupAhead reports whether the '(' at the cursor opens a parenthesised path
+// pattern rather than a node pattern: `((…` or `(var = …`.
+func (p *parser) groupAhead() bool {
+	if !p.at(LPAREN) {
+		return false
+	}
+	return p.peek(1).Kind == LPAREN || (p.peek(1).Kind == IDENT && p.peek(2).Kind == EQ)
+}
+
+func (p *parser) parseGroupPattern() PatternElem {
+	open := p.expect(LPAREN)
+	p.enter()
+	defer p.leave()
+	g := &GroupPattern{Loc: Loc{open.Pos}}
+	if p.at(IDENT) && p.peek(1).Kind == EQ {
+		g.Var, _ = p.name("path variable")
+		p.next() // '='
+	}
+	g.Elems = p.continueElems([]PatternElem{p.parsePathElement()})
+	if p.acceptKw(KwWhere) {
+		g.Where = p.parseExpr()
+	}
+	p.expect(RPAREN)
+	g.Quant = p.parseQuantOpt()
+	return g
+}
+
+// parseQuantOpt parses an optional path quantifier.
+func (p *parser) parseQuantOpt() *PathQuant {
+	t := p.cur()
+	switch t.Kind {
+	case PLUS:
+		p.next()
+		return &PathQuant{Loc: Loc{t.Pos}, Min: 1}
+	case STAR:
+		p.next()
+		return &PathQuant{Loc: Loc{t.Pos}}
+	case LBRACE:
+		p.next()
+		q := &PathQuant{Loc: Loc{t.Pos}}
+		hasMin := p.at(INT)
+		if hasMin {
+			q.Min = p.rangeBound()
+		}
+		if p.accept(COMMA) {
+			if p.at(INT) {
+				m := p.rangeBound()
+				q.Max = &m
+			} else if !hasMin {
+				p.unexpected("quantifier bound")
+			}
+		} else if hasMin {
+			m := q.Min
+			q.Max = &m
+		} else {
+			p.unexpected("quantifier bound")
+		}
+		p.expect(RBRACE)
+		return q
+	}
+	return nil
+}
+
+// parseSelectorOpt parses an optional Neo4j path selector prefix.
+func (p *parser) parseSelectorOpt() *PathSelector {
+	t := p.cur()
+	if t.Kind != IDENT || p.peek(1).Kind == EQ {
+		return nil
+	}
+	sel := &PathSelector{Loc: Loc{t.Pos}}
+	k := func() {
+		if p.at(INT) || p.at(PARAM) {
+			sel.K = p.parseAtom()
+		}
+	}
+	switch {
+	case t.Is(KwAny):
+		p.next()
+		if p.acceptKw(KwShortest) {
+			sel.Kind = SelectorAnyShortest
+		} else {
+			sel.Kind = SelectorAny
+			k()
+		}
+	case t.Is(KwAll):
+		p.next()
+		if p.acceptKw(KwShortest) {
+			sel.Kind = SelectorAllShortest
+		} else {
+			sel.Kind = SelectorAll
+		}
+	case t.Is(KwShortest):
+		p.next()
+		sel.Kind = SelectorShortest
+		k()
+		if p.acceptKw(KwGroups) || p.cur().isWord("group") {
+			if p.cur().isWord("group") {
+				p.next()
+			}
+			sel.Kind = SelectorShortestGroups
+		}
+	default:
+		return nil
+	}
+	return sel
 }
 
 func (p *parser) parseNodePattern() *NodePattern {
@@ -167,6 +299,12 @@ func (p *parser) parseRelPattern() *RelPattern {
 	}
 	p.expect(MINUS)
 	right := p.accept(GT)
+	if q := p.parseQuantOpt(); q != nil {
+		if r.Range != nil {
+			p.fail(q.Pos(), "a relationship cannot have both a *range and a quantifier")
+		}
+		r.Quant = q
+	}
 	switch {
 	case left && right:
 		r.Dir = DirBoth

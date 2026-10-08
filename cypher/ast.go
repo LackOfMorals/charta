@@ -1,62 +1,47 @@
-// Package cypher defines the AST types produced by the graphlite Cypher parser and
-// consumed by the planner and SQL translator. Types are intentionally minimal for
-// the v0.1 feature set; additional clause types are added in later milestones.
+// Package cypher turns Cypher text into the Query AST consumed by the planner
+// and SQL translator, and plans that AST into LogicalPlan nodes.
 //
-// # Parser Coverage Audit (v0.1 target)
+// Parse uses the hand-written cypher/syntax parser (Cypher 25: openCypher 9 plus
+// Neo4j's extensions), which builds a fully typed syntax tree, and lowers it to
+// the smaller Query AST defined in this file. The Query AST is deliberately
+// minimal and partly text-based; constructs it cannot express are rejected by
+// Parse with a "not supported" error until the planner learns them.
 //
-// The table below records what the cloudprivacylabs/opencypher ANTLR parser accepts
-// and what our AST can express for each v0.1 feature.
+// # What the Query AST can express
 //
-//	Feature                              Parser status        AST status
-//	MATCH (n)                            ✅ supported         ✅ NodePattern
-//	MATCH (n:Label)                      ✅ supported         ✅ NodePattern.Labels
-//	MATCH (n:Label {prop: val})          ✅ supported         ✅ NodePattern.Props
-//	MATCH (a:L1:L2) multi-label AND      ✅ supported         ✅ multiple Labels entries; AND semantics required by planner
-//	MATCH (a)-[r:TYPE]->(b) directed     ✅ supported         ✅ RelPattern + direction flags
-//	MATCH (a)-[r:TYPE]-(b) undirected    ✅ supported         ✅ RelPattern (ToLeft=false, ToRight=false)
-//	Multi-hop chains (up to 5 hops)      ✅ supported         ✅ PatternChain slice
-//	WHERE comparisons (=,<>,<,>,<=,>=)   ✅ supported         ✅ ComparisonExpr with correct Op
-//	WHERE AND / OR / NOT                 ✅ supported         ✅ BoolExpr (AND/OR) and NotExpr
-//	WHERE $param references              ✅ supported         ✅ ParamRef nodes in predicate tree
-//	RETURN n.prop AS alias               ✅ supported         ✅ ReturnItem + Alias
-//	RETURN n, r (whole node/rel)         ✅ supported         ✅ ReturnItem with ExprText = variable name
-//	ORDER BY expr ASC/DESC               ✅ supported         ✅ SortItem
-//	LIMIT integer                        ✅ supported         ✅ ReturnClause.Limit
-//	SKIP integer                         ✅ supported         ✅ ReturnClause.Skip
-//	RETURN DISTINCT                      ✅ supported         ✅ ReturnClause.Distinct
-//	CREATE (n:Label {props})             ✅ supported         ✅ CreateClause + NodePattern
-//	CREATE (a)-[:TYPE]->(b)              ✅ supported         ✅ CreateClause + PatternChain
-//	SET n.prop = value                   ✅ supported         ✅ SetItem
-//	SET n.prop = $param                  ✅ supported         ✅ SetItem (ExprText contains param ref)
-//	DELETE n                             ✅ supported         ✅ DeleteClause (Detach=false)
-//	DETACH DELETE n                      ✅ supported         ✅ DeleteClause (Detach=true)
-//	Named $params in property maps       ✅ supported         ⚠️  stored as raw ExprText; task-015 adds resolution
+//	Feature                              Query AST representation
+//	MATCH (n), (n:Label), (n:L1:L2)      NodePattern, Labels (AND semantics)
+//	MATCH (n {prop: val})                NodePattern.Props (raw expression text)
+//	MATCH (a)-[r:TYPE]->(b), <-, -       RelPattern (ToLeft / ToRight)
+//	MATCH (a)-[:T1|T2*1..3]->(b)         RelPattern.Types, VarLength, MinHops, MaxHops
+//	Multi-hop chains                     PatternPart.Chain
+//	OPTIONAL MATCH                       MatchClause.Optional
+//	WHERE                                typed Expr tree (see plan.go)
+//	RETURN / WITH [DISTINCT] AS          ReturnClause, WithClause, ReturnItem
+//	ORDER BY, SKIP, LIMIT ($param ok)    SortItem, Skip/Limit (+ SkipParam/LimitParam on RETURN)
+//	CREATE, MERGE [ON CREATE|MATCH SET]  CreateClause, MergeClause
+//	SET n.p = v, SET n += {map}          SetItem
+//	REMOVE n.p, REMOVE n:Label           RemoveItem
+//	DELETE / DETACH DELETE               DeleteClause
 //
-// # Known Gaps vs. v0.1 Feature List
+// # Known limitations
 //
-//   - GAP-001 (RESOLVED): WHERE clause is now parsed into a typed predicate tree
-//     (ComparisonExpr, BoolExpr, NotExpr, ParamRef, PropExpr, LiteralExpr). Completed
-//     in task-008. Complex unsupported sub-expressions fall back to RawExpr.
-//   - GAP-002: Property map values in CREATE / SET are stored as raw ExprText strings
-//     (the ANTLR CST expression text). Task-015 (parameter binding) will resolve
-//     $param references to concrete values from the caller-supplied map.
-//   - GAP-003: Variable-length path patterns (e.g. (a)-[*1..5]->(b)) are detected
-//     and parse without panic, but the VarLength flag is set on the RelPattern and
-//     the planner must return ErrUnsupportedCypher for v0.1.
-//   - GAP-004: UNION and UNION ALL are parsed correctly by the ANTLR grammar but
-//     are not in scope for v0.1; Parse() returns ErrUnsupportedCypher when unions
-//     are detected.
-//
-// # Grammar Quirks (cloudprivacylabs/opencypher v1.0.0)
-//
-//   - SKIP/LIMIT ordering: the grammar requires SKIP before LIMIT in RETURN clauses
-//     (i.e., "RETURN ... SKIP 5 LIMIT 10"), unlike standard openCypher which permits
-//     LIMIT first. Our parser accepts whichever the grammar allows; the SQL translator
-//     must handle both Skip and Limit being nil independently.
-//   - MATCH (a), (b) syntax: multiple comma-separated patterns in one MATCH clause
-//     produce a single *MatchClause with multiple PatternParts (not multiple MatchClauses).
-//   - Multi-part queries (WITH pipelines) are rejected with ErrUnsupportedCypher; they
-//     will be supported starting at task-024 (v0.2 milestone).
+//   - Property map values in patterns and SET items are carried as the verbatim
+//     source text of each expression (NodePattern.Props, SetItem.ExprText); list
+//     literals are encoded as "__list__:a,b,c" and a $param map is stored under
+//     the key "$". The planner resolves this text against the call's parameters.
+//   - Expression forms the typed tree does not model - multiplicative, power and
+//     unary arithmetic, subscripts, nested property access, most function calls,
+//     comprehensions, pattern predicates, map literals - become RawExpr, which
+//     the translator rejects unless it is a bare identifier.
+//   - UNION, UNWIND, CALL, FOREACH, LOAD CSV, multiple WITH stages, path
+//     selectors, shortestPath() and label expressions beyond simple conjunctions
+//     are not representable and are rejected by Parse.
+//   - RETURN * and WITH * are represented by an empty Items slice (the planner
+//     reads that as "all variables"); `RETURN *, x` therefore projects only x.
+//   - XOR is lowered to BoolExpr{Op: "XOR"}; chained comparisons (a < b < c)
+//     become a conjunction of the adjacent comparisons.
+
 package cypher
 
 // Query is the root AST node produced by Parse. For v0.1, only single-part
@@ -236,7 +221,7 @@ type ReturnItem struct {
 	ExprText string
 	// Alias is the AS alias, or "" if none.
 	Alias string
-	// Expr is the typed expression parsed from the ANTLR CST. Nil when the
+	// Expr is the typed expression built by Parse. Nil when the
 	// item was produced by the legacy ExprText path (existing single-part queries).
 	Expr Expr
 }

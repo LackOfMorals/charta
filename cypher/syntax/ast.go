@@ -22,7 +22,6 @@ package syntax
 //	  statement prefix EXPLAIN/PROFILE, CYPHER 25 [opts]  Statement
 //	  query (clauses)                                     SingleQuery
 //	  UNION / UNION ALL                                   UnionQuery
-//	  NEXT                                                NextQuery
 //	  WHEN … THEN … ELSE …                                Conditional
 //	  CREATE|DROP INDEX / CONSTRAINT, SHOW …              CreateIndex, CreateConstraint, DropSchema, Show
 //	  USE, access control, other server-only commands     ServerCommand
@@ -30,7 +29,7 @@ package syntax
 //	Clauses
 //	  MATCH / OPTIONAL MATCH [WHERE]                      Match
 //	  UNWIND                                              Unwind
-//	  CREATE / INSERT                                     Create, Insert
+//	  CREATE                                              Create
 //	  MERGE [ON CREATE|MATCH SET]                         Merge, MergeAction
 //	  SET (n.p =, n =, n +=, n:Label)                     Set, SetItem
 //	  REMOVE (n.p, n:Label)                               Remove, RemoveItem
@@ -40,7 +39,6 @@ package syntax
 //	  CALL { subquery } [IN TRANSACTIONS]                 CallSubquery, InTransactions
 //	  LOAD CSV                                            LoadCSV
 //	  WITH / RETURN [DISTINCT|*] ORDER BY SKIP|OFFSET LIMIT  With, Return, Projection, ProjectionItem, SortItem
-//	  standalone ORDER BY / SKIP / LIMIT                  OrderSkipLimit
 //	  FILTER, LET, FINISH                                 Filter, Let, Finish
 //
 //	Patterns
@@ -91,6 +89,8 @@ type Statement struct {
 	Src string
 	// Mode is the EXPLAIN/PROFILE prefix, if any.
 	Mode ExplainMode
+	// Version is the language version of a `CYPHER 25` prefix, or "".
+	Version string
 	// Options holds `CYPHER 25 key=value …` options, in source order.
 	Options []QueryOption
 	// Body is the statement proper.
@@ -133,12 +133,6 @@ type UnionQuery struct {
 	All     bool
 }
 
-// NextQuery chains queries with NEXT: each part's result feeds the next.
-type NextQuery struct {
-	Loc
-	Parts []Body
-}
-
 // CreateIndex is CREATE [kind] INDEX [name] [IF NOT EXISTS] FOR … ON ….
 type CreateIndex struct {
 	Loc
@@ -146,9 +140,13 @@ type CreateIndex struct {
 	Name        string
 	IfNotExists bool
 	// Target is the NodePattern or RelPattern the index is FOR.
-	Target     PatternElem
+	Target PatternElem
+	// Properties are the indexed property expressions (n.prop, …). For a
+	// LOOKUP index they hold the single labels(n)/type(r) call.
 	Properties []Expr
-	Options    Expr // OPTIONS map, or nil
+	// Each is true for `ON EACH …` (LOOKUP and FULLTEXT indexes).
+	Each    bool
+	Options Expr // OPTIONS map, or nil
 }
 
 // CreateConstraint is CREATE CONSTRAINT [name] [IF NOT EXISTS] FOR … REQUIRE ….
@@ -215,7 +213,6 @@ type WhenBranch struct {
 
 func (*SingleQuery) bodyNode()      {}
 func (*UnionQuery) bodyNode()       {}
-func (*NextQuery) bodyNode()        {}
 func (*CreateIndex) bodyNode()      {}
 func (*CreateConstraint) bodyNode() {}
 func (*DropSchema) bodyNode()       {}
@@ -268,12 +265,6 @@ type Unwind struct {
 
 // Create is CREATE pattern.
 type Create struct {
-	Loc
-	Patterns []*PatternPart
-}
-
-// Insert is the GQL-style INSERT pattern.
-type Insert struct {
 	Loc
 	Patterns []*PatternPart
 }
@@ -390,19 +381,30 @@ type YieldItem struct {
 type CallSubquery struct {
 	Loc
 	Optional bool
-	// Scoped is true when a variable-scope clause `(a, b)` (possibly empty) is present.
-	Scoped  bool
-	Imports []string
-	Body    Body
-	InTx    *InTransactions
+	// Scoped is true when a variable-scope clause `(a, b)`, `(*)` or `()` is
+	// present; without one, imports (if any) come from a leading WITH in Body.
+	Scoped bool
+	// ImportAll is true for `CALL (*) { … }`.
+	ImportAll bool
+	Imports   []string
+	Body      Body
+	InTx      *InTransactions
 }
 
 // InTransactions is the IN TRANSACTIONS suffix of CALL {}. Parsed; executed as
 // a single transaction or rejected by the planner.
 type InTransactions struct {
 	Loc
-	BatchSize Expr   // OF n ROWS, or nil
-	OnError   string // CONTINUE, BREAK, FAIL, or ""
+	// Concurrent is true for IN [n] CONCURRENT TRANSACTIONS; Concurrency is
+	// the optional n.
+	Concurrent  bool
+	Concurrency Expr
+	BatchSize   Expr   // OF n ROWS, or nil
+	Disjoint    string // NONE, AUTO, or "" (an expression list is not kept)
+	ReportAs    string // REPORT STATUS AS name, or ""
+	OnError     string // CONTINUE, BREAK, FAIL, RETRY, or ""
+	RetryFor    Expr   // RETRY FOR n SECONDS, or nil
+	RetryThen   string // CONTINUE, BREAK, FAIL, or ""
 }
 
 // LoadCSV is LOAD CSV [WITH HEADERS] FROM url AS var [FIELDTERMINATOR s].
@@ -458,14 +460,6 @@ type SortItem struct {
 	Source string
 }
 
-// OrderSkipLimit is a standalone ORDER BY / SKIP / LIMIT clause (Cypher 25).
-type OrderSkipLimit struct {
-	Loc
-	Order []SortItem
-	Skip  Expr
-	Limit Expr
-}
-
 // Filter is the Cypher 25 FILTER [WHERE] expr clause.
 type Filter struct {
 	Loc
@@ -488,25 +482,23 @@ type LetItem struct {
 // Finish is the Cypher 25 FINISH clause (no result).
 type Finish struct{ Loc }
 
-func (*Match) clauseNode()          {}
-func (*Unwind) clauseNode()         {}
-func (*Create) clauseNode()         {}
-func (*Insert) clauseNode()         {}
-func (*Merge) clauseNode()          {}
-func (*Set) clauseNode()            {}
-func (*Remove) clauseNode()         {}
-func (*Delete) clauseNode()         {}
-func (*Foreach) clauseNode()        {}
-func (*Call) clauseNode()           {}
-func (*CallSubquery) clauseNode()   {}
-func (*LoadCSV) clauseNode()        {}
-func (*With) clauseNode()           {}
-func (*Return) clauseNode()         {}
-func (*OrderSkipLimit) clauseNode() {}
-func (*Filter) clauseNode()         {}
-func (*Let) clauseNode()            {}
-func (*Finish) clauseNode()         {}
-func (*Conditional) clauseNode()    {}
+func (*Match) clauseNode()        {}
+func (*Unwind) clauseNode()       {}
+func (*Create) clauseNode()       {}
+func (*Merge) clauseNode()        {}
+func (*Set) clauseNode()          {}
+func (*Remove) clauseNode()       {}
+func (*Delete) clauseNode()       {}
+func (*Foreach) clauseNode()      {}
+func (*Call) clauseNode()         {}
+func (*CallSubquery) clauseNode() {}
+func (*LoadCSV) clauseNode()      {}
+func (*With) clauseNode()         {}
+func (*Return) clauseNode()       {}
+func (*Filter) clauseNode()       {}
+func (*Let) clauseNode()          {}
+func (*Finish) clauseNode()       {}
+func (*Conditional) clauseNode()  {}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Patterns
@@ -611,6 +603,8 @@ type Range struct {
 // `((a)-[:R]->(b) WHERE cond){1,5}`.
 type GroupPattern struct {
 	Loc
+	// Var is the path variable of `(p = …)`, or "".
+	Var   string
 	Elems []PatternElem
 	Where Expr
 	// Quant is nil for an unquantified group.

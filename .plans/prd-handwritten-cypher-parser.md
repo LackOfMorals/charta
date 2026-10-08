@@ -40,7 +40,7 @@ Delivered in tiers. Exact syntax must be checked against the current Neo4j Cyphe
 - Literals/functions: temporal and spatial literals/constructors (`datetime()`, `date()`, `duration()`, `point()`), `toXxxOrNull`, the Neo4j scalar/aggregate/string/list/math function library (name resolution is a planner concern; the parser treats them as `FuncCall`).
 - Query prefix `CYPHER 25` and `CYPHER runtime=…` options (parsed, validated, ignored); other versions rejected.
 
-**Tier B — Cypher 25 / GQL-aligned additions (always parsed; executed as the planner supports them):** `FILTER`, `LET`, `NEXT`, `OFFSET` (alias of `SKIP`), `INSERT`, `FINISH`, `WHEN … THEN` conditional queries, `ORDER BY`/`LIMIT` as standalone statements.
+**Tier B — Cypher 25 additions (always parsed; executed as the planner supports them):** `FILTER`, `LET`, `FINISH`, `OFFSET` (alias of `SKIP`), and `WHEN … THEN { } ELSE { }` conditional bodies inside `CALL`/`COLLECT` subqueries — all verified against the Cypher Manual. **Deferred until the manual documents them:** `NEXT`, `INSERT` and a standalone `ORDER BY`/`LIMIT` statement.
 
 Because the TCK only covers openCypher, Neo4j-extension coverage comes from: examples in the Neo4j Cypher Manual (turned into golden tests), a Neo4j-extension scenario suite added under `compat/testdata/neo4j/` (same Gherkin format as the TCK), and, optionally, spot comparison against a live Neo4j instance.
 

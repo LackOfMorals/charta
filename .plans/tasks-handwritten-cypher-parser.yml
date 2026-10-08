@@ -192,7 +192,7 @@ tasks:
       relationship patterns and in WHERE label predicates. Replace plain
       label/type lists in the AST with LabelExpr/RelTypeExpr (a plain list
       remains the simple case). Update openCypher `:A|:B` legacy form.
-    status: pending
+    status: completed
     dependencies: [task-009]
     acceptance_criteria:
       - "Golden tests for every operator and precedence (! > & > |)"
@@ -205,7 +205,7 @@ tasks:
       COLLECT { ... }, CALL { ... } with importing WITH / scoped variable
       clause, OPTIONAL CALL, and `IN TRANSACTIONS [OF n ROWS] [ON ERROR …]`
       (parsed; execution is a non-goal).
-    status: pending
+    status: completed
     dependencies: [task-012]
     acceptance_criteria:
       - "Nested subqueries and subqueries inside WHERE/RETURN parse with golden tests"
@@ -219,7 +219,7 @@ tasks:
       WHERE inside parenthesised and relationship patterns. Handle
       `(` disambiguation (node vs parenthesised expr vs quantified path)
       with bounded lookahead.
-    status: pending
+    status: completed
     dependencies: [task-028]
     acceptance_criteria:
       - "Manual examples for QPPs and selectors parse; ambiguity tests included"
@@ -231,7 +231,7 @@ tasks:
       `n{.name, .age, k: expr, .*, v}`, `$(expr)` in labels/types, `n[$prop]`
       dynamic property access, SET/REMOVE with dynamic labels,
       `IS [NOT] :: TYPE`, `IS [NOT] NORMALIZED`.
-    status: pending
+    status: completed
     dependencies: [task-006]
     acceptance_criteria:
       - "Golden tests for each form; error positions are exact for malformed projections"
@@ -247,30 +247,33 @@ tasks:
       Server-only commands (USE, user/role/database management, GRANT/DENY)
       parse to a ServerOnlyCommand node so the planner can return a clear
       'not supported in graphlite' error.
-    status: pending
+    status: completed
     dependencies: [task-012]
     acceptance_criteria:
       - "Each statement kind parses into a typed node; server-only commands produce ServerOnlyCommand"
       - "Index/constraint node shapes agree with the property-indexes and vector-search PRDs"
 
   - id: task-033
-    title: "Cypher 25 / GQL-aligned additions and removed-syntax rejection"
+    title: "Cypher 25 clauses and removed-syntax rejection"
     description: |
-      Always-on Cypher 25 grammar (no dialect option): FILTER, LET, NEXT,
-      OFFSET, INSERT, FINISH, WHEN…THEN conditional queries, standalone
-      ORDER BY / LIMIT statements. `CYPHER 25` prefix accepted; `CYPHER 5`
-      or other versions rejected with a clear error. Reject syntax removed
-      in Cypher 25 with an error that says it was removed. Verify keyword
-      lists and the removed-syntax list against the current Cypher Manual
-      and record the version checked in the file comment.
-    status: pending
+      Always-on Cypher 25 grammar (no dialect option), verified against the
+      Cypher Manual: FILTER [WHERE] expr, LET v = e [, v = e], FINISH (must be
+      last), OFFSET (alias of SKIP), WHEN … THEN { } [ELSE { }] bodies inside
+      CALL / COLLECT (done in task-029), `CYPHER 25 [key=value]` prefix;
+      `CYPHER 5` / other versions are rejected with "graphlite implements
+      Cypher 25". The removed list functions extract(x IN …) / filter(x IN …)
+      are rejected with a pointer to list comprehensions.
+      DEFERRED (not found in the manual, so not guessed): NEXT, INSERT and a
+      standalone ORDER BY/SKIP/LIMIT statement. Their placeholder AST nodes
+      were removed; add them when the manual documents the syntax.
+    status: completed
     dependencies: [task-029, task-031]
     acceptance_criteria:
-      - "All Tier B forms parse; `CYPHER 5` and removed-syntax inputs return errors naming Cypher 25"
-      - "Keyword list source/version is documented"
+      - "FILTER, LET, FINISH, OFFSET and conditional bodies parse; CYPHER 5 and extract()/filter() return errors that say what to use instead"
+      - "NEXT / INSERT / standalone ORDER BY are explicitly deferred in this file and the PRD"
 
   - id: task-034
-    title: "Neo4j-extension scenario suite (Gherkin)"
+    title: "Neo4j-extension scenario suite (Gherkin) — blocked on execution support (iteration 10)"
     description: |
       Create compat/testdata/neo4j/*.feature in the TCK Gherkin format,
       derived from Neo4j Cypher Manual examples, covering every Tier A
@@ -321,7 +324,7 @@ tasks:
       `go mod tidy` and `go mod vendor`. Update AGENTS.md (ANTLR pin note,
       slow -race note, package layout) and cypher/ast.go package comment
       (grammar-quirk section).
-    status: pending
+    status: completed
     dependencies: [task-015]
     acceptance_criteria:
       - "grep -r antlr go.mod vendor/modules.txt returns nothing"

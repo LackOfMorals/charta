@@ -192,7 +192,7 @@ func TestTranslate_OrderByAscDesc(t *testing.T) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 func TestTranslate_LimitSkip(t *testing.T) {
-	// Grammar quirk: SKIP before LIMIT in cloudprivacylabs/opencypher.
+	// SKIP and LIMIT are independent in the Query AST; this is the SKIP-then-LIMIT spelling.
 	result := translateCypher(t,
 		`MATCH (n:Person) RETURN n.name SKIP 5 LIMIT 10`)
 	containsAll(t, result,
@@ -219,7 +219,6 @@ func TestTranslate_LimitOnly(t *testing.T) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 func TestTranslate_SkipOnly(t *testing.T) {
-	// Grammar quirk: SKIP precedes LIMIT in cloudprivacylabs/opencypher.
 	// With SKIP only (no LIMIT), the translator must emit LIMIT -1 OFFSET n
 	// because SQLite rejects a bare OFFSET clause without a preceding LIMIT.
 	result := translateCypher(t, `MATCH (n:Person) RETURN n.name SKIP 3`)

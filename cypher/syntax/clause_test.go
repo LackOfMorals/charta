@@ -99,7 +99,24 @@ func sxYield(y *Yield) string {
 func sxClauses(n Node) (string, bool) {
 	switch n := n.(type) {
 	case *Statement:
-		return sx(n.Body), true
+		var prefix string
+		switch n.Mode {
+		case ModeExplain:
+			prefix += "EXPLAIN "
+		case ModeProfile:
+			prefix += "PROFILE "
+		}
+		if n.Version != "" || len(n.Options) > 0 {
+			prefix += "CYPHER"
+			if n.Version != "" {
+				prefix += " " + n.Version
+			}
+			for _, o := range n.Options {
+				prefix += " " + o.Key + "=" + o.Value
+			}
+			prefix += " "
+		}
+		return prefix + sx(n.Body), true
 	case *SingleQuery:
 		parts := make([]string, len(n.Clauses))
 		for i, c := range n.Clauses {
@@ -121,7 +138,11 @@ func sxClauses(n Node) (string, bool) {
 		if n.Optional {
 			s = "OPTIONAL MATCH "
 		}
-		return s + sxParts(n.Patterns) + opt(" WHERE ", n.Where), true
+		hints := ""
+		for _, h := range n.Hints {
+			hints += " USING<" + h.Kind + ">(" + h.Text + ")"
+		}
+		return s + sxParts(n.Patterns) + hints + opt(" WHERE ", n.Where), true
 	case *Unwind:
 		return "UNWIND " + sx(n.Expr) + " AS " + n.Var, true
 	case *With:
@@ -363,9 +384,8 @@ func TestParse_Errors(t *testing.T) {
 		{"foreach empty body", "FOREACH (x IN l | )", 1, 19, "unexpected token"},
 		{"foreach missing pipe", "FOREACH (x IN l CREATE (n))", 1, 17, "unexpected token"},
 		{"optional alone", "OPTIONAL RETURN 1", 1, 10, "unexpected token"},
-		{"call subquery not yet", "CALL { RETURN 1 }", 1, 6, "not supported yet"},
 		{"call with yield then more", "MATCH (n) CALL p() YIELD x", 1, 11, "cannot conclude with CALL"},
-		{"call without name", "CALL ()", 1, 6, "not supported yet"},
+		{"call scope without body", "CALL ()", 1, 8, "end of input"},
 		{"call yield trailing comma", "CALL p() YIELD a,", 1, 18, "end of input"},
 		{"union mixed", "RETURN 1 UNION RETURN 2 UNION ALL RETURN 3", 1, 25, "cannot mix"},
 		{"union part without return", "MATCH (n) RETURN n UNION CREATE (m)", 1, 26, "must end with RETURN"},
