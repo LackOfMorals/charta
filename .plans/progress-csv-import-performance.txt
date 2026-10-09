@@ -42,3 +42,12 @@ Change 3 (streaming CSV import): importCSVNodes/Edges read and insert row by row
   no constraint or vector index (it used to re-read every imported row to find that out).
   BenchmarkImportCSVNodes 101k -> 122k rows/s, ...Edges 137k -> 168k rows/s.
   Full 3.1M-request import: 2m17s -> 1m56s (108k nodes+rels/s); peak heap during import 334 MiB -> 31 MiB.
+
+Change 4 (scan memory) — partial. scanNodes: a whole-label scan now drives from node_labels (JOIN; raw SQLite 2.4 s -> 1.5 s for
+  3.1M nodes) and decodes rows as they arrive instead of buffering their text. "count requests by status" 6.8 s -> 6.1 s,
+  peak RSS 6.5 -> 6.2 GB. Measured, did NOT help: GOGC off/400, SQLite cache_size, mmap_size.
+  Why it is still slow: the executor materialises a row map, a Node (+Props map, Labels slice) and a cache entry per node:
+  ~2 KB and ~1.3 us per node of Go allocation (runtime.madvise ~20% of CPU, GC ~22%); SQLite itself is ~2 s of the 6 s.
+  Real fixes need a design choice: (a) streaming MATCH->aggregate without materialising rows, (b) pushing simple
+  aggregations (count/min/max/sum grouped by property) down to SQL GROUP BY json_extract, (c) lighter nodes
+  (lazy props), (d) cache eviction for read-only statements.
