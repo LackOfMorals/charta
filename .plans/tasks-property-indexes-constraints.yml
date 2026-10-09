@@ -82,7 +82,8 @@ tasks:
       (idx_auto_np_*), asserting SEARCH ... USING INDEX rather than SCAN. Also assert relationship property
       indexes (CREATE INDEX FOR ()-[r:R]-() ON (r.p)) are created; and decide whether interp should use them:
       if lookups by relationship property are not served by an index, add the hint path in match.go expand().
-    status: pending
+    status: completed
+    notes: "Done: plan tests; relationship-first matching added so relationship property indexes are actually used (decision recorded in the progress file)."
     dependencies:
       - task-001
     acceptance_criteria:
@@ -108,7 +109,8 @@ tasks:
     description: |
       Tests: definitions and backing indexes persist after closing and reopening a file database; Snapshot
       copies the graphlite_schema table; constraint enforcement still works after reopen without any warm-up.
-    status: pending
+    status: completed
+    notes: "Done: schema_persist_test.go (reopen and Snapshot)."
     dependencies:
       - task-001
     acceptance_criteria:
@@ -121,7 +123,8 @@ tasks:
       Add a benchmark at 100k+ nodes for MATCH (n:L {p: $v}): no index, declared index and automatic index.
       Record results in the progress file. (At 2,000 nodes the automatic index already turns a 600 us lookup
       into 20 us.)
-    status: pending
+    status: completed
+    notes: "Done: BenchmarkPropertyLookup, 700-760x; numbers in .plans/progress-property-indexes-constraints.txt."
     dependencies:
       - task-005
     acceptance_criteria:

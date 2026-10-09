@@ -71,6 +71,9 @@ func (ex *exec) matchPart(part *syntax.PatternPart, r row, used map[int64]bool, 
 		}
 		return nil
 	}
+	if handled, err := ex.matchRelFirst(part, r, used, finish); handled || err != nil {
+		return err
+	}
 	first := part.Elems[0].(*syntax.NodePattern)
 	return ex.forEachStart(first, r, func(n *Node, r2 row) error {
 		return ex.walk(part.Elems, 1, n, r2, &pathState{nodes: []*Node{n}}, used, finish)

@@ -105,6 +105,7 @@ func Open(path string, opts ...Option) (*DB, error) {
 	d.eng.MaxPathHops = cfg.maxPathHops
 	d.eng.ImportDir = cfg.importDir
 	d.eng.VectorCacheBytes = cfg.vectorCache
+	d.eng.NoAutoIndexes = cfg.noAutoIndex
 	return d, nil
 }
 

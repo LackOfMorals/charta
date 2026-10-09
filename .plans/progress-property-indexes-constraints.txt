@@ -1,0 +1,23 @@
+PROGRESS: property-indexes-constraints (2026-10-09)
+
+DONE
+  task-001/002  Cypher schema commands and enforcement (earlier PR).
+  task-003/004  graphlite.ErrConstraintViolation and the Go API (PR #14).
+  task-005      EXPLAIN QUERY PLAN tests (cypher/interp/plan_internal_test.go) show declared,
+                constraint-backing, automatic and relationship property indexes are used.
+                DECISION (the plan left it open): relationship property indexes WERE NOT used by the
+                engine - lookups started from a node scan and walked adjacency lists, so the index
+                helped nothing. Added relationship-first matching (relfirst.go): a single-hop pattern
+                with pushable relationship property equalities and unconstrained ends is answered by
+                a property lookup on edges. Verified against the node-first plan on random graphs.
+  task-007      Schema, constraints and vector indexes survive reopening and Snapshot (memory and
+                file sources); enforcement works with no warm-up.
+  task-008      Benchmark BenchmarkPropertyLookup, 100,000 nodes + 100,000 relationships, Apple M5 Max:
+                  node lookup by property      no index 25.1 ms   declared index 33 us   automatic index 83 us
+                  relationship lookup by prop  no index 28.1 ms   declared index 40 us
+                (700-760x). New option WithoutAutomaticIndexes (needed to measure the baseline and
+                useful for users who want to own the schema).
+
+REMAINING
+  task-006      Constraints during bulk Import; schema in Export/Import (next PR).
+  task-009      Final docs/verification.

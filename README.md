@@ -124,7 +124,7 @@ var cv *graphlite.ErrConstraintViolation
 if errors.As(err, &cv) && cv.Kind == "UNIQUENESS" { /* cv.Label, cv.Properties, cv.Name */ }
 ```
 
-A constraint cannot be created over data that already breaks it. Uniqueness works for multi-label nodes. Indexes are SQLite expression indexes, so equality lookups on an indexed property stop scanning; graphlite also creates one automatically once a property has narrowed a few scans on a graph of 500 or more nodes.
+A constraint cannot be created over data that already breaks it. Uniqueness works for multi-label nodes. Indexes are SQLite expression indexes, so equality lookups on an indexed property stop scanning: on 100,000 nodes a lookup by property drops from 25 ms to 33 µs (and a relationship lookup, `MATCH ()-[r:R {w: $v}]->()`, from 28 ms to 40 µs, with an index created by `CREATE INDEX FOR ()-[r:R]-() ON (r.w)`). graphlite also creates a node index automatically once a property has narrowed a few scans on a graph of 500 or more nodes; `WithoutAutomaticIndexes` turns that off. The schema is stored in the database file, so it survives reopening and `Snapshot`.
 
 ### Vector search
 
