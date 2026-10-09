@@ -130,7 +130,7 @@ type Registry interface {
 	Lookup(name string) (*Signature, bool)
 }
 
-// Builtin signatures of the procedures graphlite provides itself.
+// Builtin signatures of the procedures charta provides itself.
 var Builtin = []*Signature{
 	{Name: "db.labels", Outputs: []Param{{Name: "label", Type: "STRING"}}},
 	{Name: "db.relationshipTypes", Outputs: []Param{{Name: "relationshipType", Type: "STRING"}}},

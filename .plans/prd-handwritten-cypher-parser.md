@@ -4,20 +4,20 @@
 
 `cypher.Parse` (`cypher/parser.go`, 1.7k lines) wraps the ANTLR-generated `cloudprivacylabs/opencypher` parser. Measured cost is ~9.5 ms / 13 MB / 135k allocs per parse of an ordinary query. The dependency is pinned to a 2021 ANTLR runtime that cannot be upgraded (`DeserializeFromUInt16` removed upstream; no newer opencypher release), adds ~1.6 MB / 30k lines of vendored generated code, and forces the wrapper to re-serialise expression text out of the CST (91 `GetText()` calls, `exprText`/`encodePropertyExprText`, `RawExpr` fallbacks, property maps stored as `ExprText` strings — GAP-002).
 
-graphlite is a lightweight embedded graph database aimed at **Neo4j developers**, so the target language is **openCypher 9 plus Neo4j's Cypher extensions** — Neo4j-flavoured syntax is a feature, not a non-goal. This PRD replaces ANTLR with a hand-written lexer + recursive-descent/precedence-climbing parser in its **own package**, `cypher/syntax`, that implements the **complete openCypher 9 grammar and the Neo4j extensions listed below** and produces a fully typed AST. It is delivered over several iterations, with ANTLR kept in place and used as a differential-testing oracle until cut-over.
+charta is a lightweight embedded graph database aimed at **Neo4j developers**, so the target language is **openCypher 9 plus Neo4j's Cypher extensions** — Neo4j-flavoured syntax is a feature, not a non-goal. This PRD replaces ANTLR with a hand-written lexer + recursive-descent/precedence-climbing parser in its **own package**, `cypher/syntax`, that implements the **complete openCypher 9 grammar and the Neo4j extensions listed below** and produces a fully typed AST. It is delivered over several iterations, with ANTLR kept in place and used as a differential-testing oracle until cut-over.
 
 ## Goals
 
-- New package `github.com/LackOfMorals/graphlite/v2/cypher/syntax`: lexer, parser, fully typed AST, positioned errors. No dependency on ANTLR, `store/`, or `sql/`.
+- New package `github.com/LackOfMorals/charta/cypher/syntax`: lexer, parser, fully typed AST, positioned errors. No dependency on ANTLR, `store/`, or `sql/`.
 - Accepts the whole openCypher 9 language plus the Neo4j extensions (see "Neo4j extensions") (all clauses, all expression forms, all pattern forms, `UNION`, `CALL`, `FOREACH`, list/pattern comprehensions, quantifier predicates, `reduce`, `CASE`, named paths, `shortestPath`/`allShortestPaths`, parameters, map/list literals, slicing).
 - Parse cost ≥100x lower than ANTLR (target < 100 µs, < 300 allocs for the benchmark query).
 - Rich syntax errors (line:col, offending token, expected set) in the style of openCypher TCK `SyntaxError` categories.
 - Remove `github.com/antlr/antlr4/...` and `github.com/cloudprivacylabs/opencypher` from `go.mod` and `vendor/`.
-- End state: **every openCypher TCK scenario passes**, plus a graphlite-maintained Neo4j-extension scenario suite with an empty skip list in `compat/tck_test.go` (see "Scope of 'complete'").
+- End state: **every openCypher TCK scenario passes**, plus a charta-maintained Neo4j-extension scenario suite with an empty skip list in `compat/tck_test.go` (see "Scope of 'complete'").
 
 ## Non-Goals
 
-- Server-only Neo4j features that have no meaning for an embedded single-file store: `USE` (multi-database), `SHOW` for users/roles/databases, `GRANT/DENY` and other access-control statements, `LOAD CSV FROM <url>` with remote URLs, `CALL ... IN CONCURRENT TRANSACTIONS`. These are **parsed where cheap** (so users get a clear "not supported in graphlite" error rather than a syntax error) but not executed.
+- Server-only Neo4j features that have no meaning for an embedded single-file store: `USE` (multi-database), `SHOW` for users/roles/databases, `GRANT/DENY` and other access-control statements, `LOAD CSV FROM <url>` with remote URLs, `CALL ... IN CONCURRENT TRANSACTIONS`. These are **parsed where cheap** (so users get a clear "not supported in charta" error rather than a syntax error) but not executed.
 - Query-planner hints (`USING INDEX`, `USING JOIN`, `USING SCAN`) are parsed and ignored.
 - A general-purpose Cypher tool (formatter, LSP, other dialect targets).
 - Query optimisation changes beyond what new syntax requires.
@@ -26,7 +26,7 @@ graphlite is a lightweight embedded graph database aimed at **Neo4j developers**
 
 Delivered in tiers. Exact syntax must be checked against the current Neo4j Cypher Manual during each task (the list below is the scope, not the grammar source).
 
-**Target language: Cypher 25 only.** There is a single dialect — no `Dialect` option and no Cypher 5 mode. `CYPHER 25` prefixes are accepted; `CYPHER 5` (or any other version) is rejected with a clear "graphlite implements Cypher 25" error. Syntax that Cypher 25 removed or changed (e.g. legacy `filter()`/`extract()`, deprecated pattern/label forms, implicit-import `CALL {}`) is **not** supported, to be confirmed item by item against the current Cypher Manual's list of Cypher 25 changes. Where the openCypher TCK exercises such removed syntax, the scenario goes on a documented exclusion list (with the reason) rather than being supported.
+**Target language: Cypher 25 only.** There is a single dialect — no `Dialect` option and no Cypher 5 mode. `CYPHER 25` prefixes are accepted; `CYPHER 5` (or any other version) is rejected with a clear "charta implements Cypher 25" error. Syntax that Cypher 25 removed or changed (e.g. legacy `filter()`/`extract()`, deprecated pattern/label forms, implicit-import `CALL {}`) is **not** supported, to be confirmed item by item against the current Cypher Manual's list of Cypher 25 changes. Where the openCypher TCK exercises such removed syntax, the scenario goes on a documented exclusion list (with the reason) rather than being supported.
 
 **Tier A — core Neo4j extensions (parser iterations):**
 - Label expressions: `:A&B`, `:A|B`, `:!A`, `:%`, parenthesised; relationship type expressions (`[:R1|R2]`, `[:!R]`); label predicates `n:A&(B|C)` in WHERE.
@@ -36,7 +36,7 @@ Delivered in tiers. Exact syntax must be checked against the current Neo4j Cyphe
 - Type predicates `IS [NOT] :: TYPE`, `valueType()`; `IS [NOT] NORMALIZED`; `elementId()`, `nodes()`, `relationships()`.
 - `MERGE`/`CREATE`/`SET` Neo4j forms (`SET n:Label`, `SET n += {…}`, `SET n = $map`), `REMOVE n:Label`, `FOREACH`, `UNWIND`, `OPTIONAL CALL`, `YIELD *`.
 - `CALL db.xxx() YIELD` procedure calls; `EXPLAIN` / `PROFILE` prefixes (parsed; EXPLAIN may return the plan).
-- Schema commands used by graphlite's own index/constraint work: `CREATE|DROP INDEX`, `CREATE|DROP CONSTRAINT`, `SHOW INDEXES|CONSTRAINTS` (executed per `prd-property-indexes-constraints.md`), vector index forms per `prd-vector-search.md`.
+- Schema commands used by charta's own index/constraint work: `CREATE|DROP INDEX`, `CREATE|DROP CONSTRAINT`, `SHOW INDEXES|CONSTRAINTS` (executed per `prd-property-indexes-constraints.md`), vector index forms per `prd-vector-search.md`.
 - Literals/functions: temporal and spatial literals/constructors (`datetime()`, `date()`, `duration()`, `point()`), `toXxxOrNull`, the Neo4j scalar/aggregate/string/list/math function library (name resolution is a planner concern; the parser treats them as `FuncCall`).
 - Query prefix `CYPHER 25` and `CYPHER runtime=…` options (parsed, validated, ignored); other versions rejected.
 

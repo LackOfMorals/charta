@@ -1,13 +1,13 @@
-# PRD: graphlite v2 API Redesign
+# PRD: charta v2 API Redesign
 
 ## Overview
 
-graphlite v1.x carries the neo4j Go driver as an indirect dependency and shapes its public API around `neo4j.DriverWithContext`. This creates unnecessary dependency weight for users who just want a lightweight embedded graph database, and it locks graphlite's design to Neo4j's release cycle. v2.0 removes the neo4j driver dependency entirely, defines a clean public API that graphlite owns outright, and provides example programs to cover the common side-by-side usage patterns developers need.
+charta v1.x carries the neo4j Go driver as an indirect dependency and shapes its public API around `neo4j.DriverWithContext`. This creates unnecessary dependency weight for users who just want a lightweight embedded graph database, and it locks charta's design to Neo4j's release cycle. v2.0 removes the neo4j driver dependency entirely, defines a clean public API that charta owns outright, and provides example programs to cover the common side-by-side usage patterns developers need.
 
 ## Goals
 
-- Remove `github.com/neo4j/neo4j-go-driver` as a dependency (direct or indirect) from the graphlite module.
-- Define a minimal, stable public API surface that graphlite owns outright.
+- Remove `github.com/neo4j/neo4j-go-driver` as a dependency (direct or indirect) from the charta module.
+- Define a minimal, stable public API surface that charta owns outright.
 - Keep the API immediately recognisable to developers familiar with the neo4j Go driver v6, without being a structural copy of it.
 - Provide working example programs for common side-by-side usage with the neo4j driver.
 - Update the README to reflect the new value proposition.
@@ -15,9 +15,9 @@ graphlite v1.x carries the neo4j Go driver as an indirect dependency and shapes 
 
 ## Non-Goals
 
-- graphlite will not implement the Bolt wire protocol or run as a network server.
-- graphlite will not provide a first-party `CopyFrom`/`CopyTo` method — this becomes user-space code, documented by examples.
-- graphlite will not provide a compat shim that satisfies `neo4j.Driver` or `neo4j.DriverWithContext`.
+- charta will not implement the Bolt wire protocol or run as a network server.
+- charta will not provide a first-party `CopyFrom`/`CopyTo` method — this becomes user-space code, documented by examples.
+- charta will not provide a compat shim that satisfies `neo4j.Driver` or `neo4j.DriverWithContext`.
 - No spatial types (Point2D/3D), ML vector types, or neo4j temporal types beyond JSON-serialisable Go primitives.
 - No `SessionConfig`, `BookmarkManager`, `AccessMode`, or `TransactionConfig` — no cluster, no causal consistency.
 
@@ -41,11 +41,11 @@ graphlite v1.x carries the neo4j Go driver as an indirect dependency and shapes 
 - REQ-F-014: All structured error types (`ErrUnsupportedCypher`, `ErrMissingParameter`, `ErrImportDepthExceeded`, `ErrImportTooLarge`) are retained with existing fields.
 - REQ-F-015: `ErrReadOnly` sentinel is retained.
 - REQ-F-016: `ResultSummary` and `Counters` interfaces are retained.
-- REQ-F-017: Working example programs are provided under `examples/` for: backend switch, copy-from-Neo4j, copy-to-Neo4j. Each has its own `go.mod` that imports both graphlite and the neo4j driver.
+- REQ-F-017: Working example programs are provided under `examples/` for: backend switch, copy-from-Neo4j, copy-to-Neo4j. Each has its own `go.mod` that imports both charta and the neo4j driver.
 
 ### Non-Functional Requirements
 
-- REQ-NF-001: `go get github.com/LackOfMorals/graphlite` must not transitively pull in `github.com/neo4j/neo4j-go-driver` at any version.
+- REQ-NF-001: `go get github.com/LackOfMorals/charta` must not transitively pull in `github.com/neo4j/neo4j-go-driver` at any version.
 - REQ-NF-002: `go vet ./...` passes with no exported symbols beyond those listed in the API surface.
 - REQ-NF-003: openCypher TCK pass rate remains 100% (235/235 scenarios).
 - REQ-NF-004: All existing unit and integration tests pass (updated where needed for the new API).
@@ -81,7 +81,7 @@ graphlite v1.x carries the neo4j Go driver as an indirect dependency and shapes 
 ## Acceptance Criteria
 
 - [ ] `go.mod` contains no reference to `github.com/neo4j/neo4j-go-driver` at any version.
-- [ ] `go get github.com/LackOfMorals/graphlite` does not pull in the neo4j driver transitively.
+- [ ] `go get github.com/LackOfMorals/charta` does not pull in the neo4j driver transitively.
 - [ ] TCK pass rate is 100% (235/235).
 - [ ] All unit tests pass (`go test -tags=unit ./...`).
 - [ ] `go vet ./...` passes cleanly.

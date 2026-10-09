@@ -1,11 +1,11 @@
-# graphlite
+# charta
 
 **Zero-infrastructure embedded property graph database for Go — openCypher over SQLite.**
 
-graphlite stores a labelled property graph in a local SQLite file (or in memory) and accepts queries written in openCypher. There is no external process to start, no driver dependency to manage, and no network — just open a file and query.
+charta stores a labelled property graph in a local SQLite file (or in memory) and accepts queries written in openCypher. There is no external process to start, no driver dependency to manage, and no network — just open a file and query.
 
 ```go
-db, err := graphlite.Open(":memory:")
+db, err := charta.Open(":memory:")
 result, err := db.RunQuery(ctx, `MATCH (n:Person) RETURN n.name AS name`, nil)
 for result.Next(ctx) {
     fmt.Println(result.Record().Values()[0])
@@ -14,20 +14,20 @@ for result.Next(ctx) {
 
 ---
 
-## Why graphlite
+## Why charta
 
 - **Tests run without infrastructure.** No Docker container to spin up, no port to reserve, no shared state between CI workers.
 - **Development is friction-free.** Clone the repo, run `go test` — it works. No `docker compose up`.
-- **No driver dependency.** graphlite has no dependency on the neo4j Go driver package. Add it to any project without import conflicts.
-- **Use alongside Neo4j.** The `examples/` directory shows patterns for switching between a local graphlite database and a remote Neo4j instance, copying data in either direction, and running the same Cypher queries against both backends.
+- **No driver dependency.** charta has no dependency on the neo4j Go driver package. Add it to any project without import conflicts.
+- **Use alongside Neo4j.** The `examples/` directory shows patterns for switching between a local charta database and a remote Neo4j instance, copying data in either direction, and running the same Cypher queries against both backends.
 
-graphlite is intentionally embedded-only. It does not implement the Bolt wire protocol and is not designed to run as a standalone server. Staying embedded means staying zero-infrastructure, CGO-free, and deployable anywhere Go runs.
+charta is intentionally embedded-only. It does not implement the Bolt wire protocol and is not designed to run as a standalone server. Staying embedded means staying zero-infrastructure, CGO-free, and deployable anywhere Go runs.
 
 ---
 
 ## Cypher Compatibility
 
-graphlite passes **every scenario of the openCypher Technology Compatibility Kit** that applies to Cypher 25 (3,895 scenarios; the few that rely on syntax Cypher 25 removed are listed with reasons in `compat/testdata/excluded.txt`). Queries are parsed by a hand-written Cypher 25 parser, checked by a semantic analysis pass that reports the standard error classes and codes, and run by a Go interpreter over SQLite.
+charta passes **every scenario of the openCypher Technology Compatibility Kit** that applies to Cypher 25 (3,895 scenarios; the few that rely on syntax Cypher 25 removed are listed with reasons in `compat/testdata/excluded.txt`). Queries are parsed by a hand-written Cypher 25 parser, checked by a semantic analysis pass that reports the standard error classes and codes, and run by a Go interpreter over SQLite.
 
 | Feature | Supported |
 |---|:---:|
@@ -59,7 +59,7 @@ Unsupported features return `ErrUnsupportedCypher` — they never silently produ
 ## Install
 
 ```bash
-go get github.com/LackOfMorals/graphlite
+go get github.com/LackOfMorals/charta
 ```
 
 Requires Go 1.26+. No CGO required. Works on Linux (amd64/arm64), macOS (arm64), and Windows (amd64).
@@ -71,18 +71,18 @@ Requires Go 1.26+. No CGO required. Works on Linux (amd64/arm64), macOS (arm64),
 ### Opening a database
 
 ```go
-import "github.com/LackOfMorals/graphlite"
+import "github.com/LackOfMorals/charta"
 
 // In-memory — transient, great for tests
-db, err := graphlite.Open(":memory:")
+db, err := charta.Open(":memory:")
 
 // File-backed — persists across restarts
-db, err := graphlite.Open("/var/data/graph.db")
+db, err := charta.Open("/var/data/graph.db")
 
 // With options
-db, err := graphlite.Open("graph.db",
-    graphlite.WithBusyTimeout(5*time.Second),
-    graphlite.WithReadOnly(),
+db, err := charta.Open("graph.db",
+    charta.WithBusyTimeout(5*time.Second),
+    charta.WithReadOnly(),
 )
 
 defer db.Close(ctx)
@@ -91,7 +91,7 @@ defer db.Close(ctx)
 In tests, use `NewTestDB` to open an in-memory database that is closed automatically when the test ends:
 
 ```go
-db := graphlite.NewTestDB(t)
+db := charta.NewTestDB(t)
 ```
 
 ### Concurrency
@@ -122,11 +122,11 @@ schema, err := db.ListSchema(ctx) // []SchemaInfo; db.DropIndex / db.DropConstra
 Constraints are checked when a statement finishes, over the nodes and relationships it created or changed, and a violation rolls the whole statement back with a structured error:
 
 ```go
-var cv *graphlite.ErrConstraintViolation
+var cv *charta.ErrConstraintViolation
 if errors.As(err, &cv) && cv.Kind == "UNIQUENESS" { /* cv.Label, cv.Properties, cv.Name */ }
 ```
 
-A constraint cannot be created over data that already breaks it. Uniqueness works for multi-label nodes. Bulk `Import` is checked too: after the rows are inserted and before the import commits, every imported node and relationship is validated, and a violation fails the whole import with `*ErrConstraintViolation`. `Export` (JSON) writes the indexes and constraints in a `"schema"` section (Cypher `CREATE … IF NOT EXISTS` statements), and `Import` replays them after the data, in the same transaction, so a copy of a database keeps its schema. Indexes are SQLite expression indexes, so equality lookups on an indexed property stop scanning: on 100,000 nodes a lookup by property drops from 25 ms to 33 µs (and a relationship lookup, `MATCH ()-[r:R {w: $v}]->()`, from 28 ms to 40 µs, with an index created by `CREATE INDEX FOR ()-[r:R]-() ON (r.w)`). graphlite also creates a node index automatically once a property has narrowed a few scans on a graph of 500 or more nodes; `WithoutAutomaticIndexes` turns that off. The schema is stored in the database file, so it survives reopening and `Snapshot`.
+A constraint cannot be created over data that already breaks it. Uniqueness works for multi-label nodes. Bulk `Import` is checked too: after the rows are inserted and before the import commits, every imported node and relationship is validated, and a violation fails the whole import with `*ErrConstraintViolation`. `Export` (JSON) writes the indexes and constraints in a `"schema"` section (Cypher `CREATE … IF NOT EXISTS` statements), and `Import` replays them after the data, in the same transaction, so a copy of a database keeps its schema. Indexes are SQLite expression indexes, so equality lookups on an indexed property stop scanning: on 100,000 nodes a lookup by property drops from 25 ms to 33 µs (and a relationship lookup, `MATCH ()-[r:R {w: $v}]->()`, from 28 ms to 40 µs, with an index created by `CREATE INDEX FOR ()-[r:R]-() ON (r.w)`). charta also creates a node index automatically once a property has narrowed a few scans on a graph of 500 or more nodes; `WithoutAutomaticIndexes` turns that off. The schema is stored in the database file, so it survives reopening and `Snapshot`.
 
 ### Vector search
 
@@ -198,7 +198,7 @@ result, err := db.RunQuery(ctx, `MATCH (n:Person) RETURN n`, nil)
 records, err := result.Collect(ctx)
 for _, rec := range records {
     node, _ := rec.Get("n")
-    fmt.Println(node.(*graphlite.Node).Props)
+    fmt.Println(node.(*charta.Node).Props)
 }
 ```
 
@@ -207,7 +207,7 @@ for _, rec := range records {
 ```go
 result, err := db.RunQuery(ctx, `MATCH (n:Person {name: "Alice"}) RETURN n`, nil)
 rec, err := result.Single(ctx)
-// err is graphlite.ErrNoRecords or graphlite.ErrMultipleRecords when applicable
+// err is charta.ErrNoRecords or charta.ErrMultipleRecords when applicable
 ```
 
 ### Generic helpers
@@ -216,21 +216,21 @@ Use the generic helpers for typed property and record access:
 
 ```go
 // Extract a typed property from a Node or Relationship
-age, err := graphlite.GetProperty[int64](node, "age")
+age, err := charta.GetProperty[int64](node, "age")
 
 // Extract a typed value from a Record column
-name, isNil, err := graphlite.GetRecordValue[string](rec, "name")
+name, isNil, err := charta.GetRecordValue[string](rec, "name")
 
 // Collect all records as a typed slice using a mapper
 result, _ := db.RunQuery(ctx, `MATCH (n:Person) RETURN n.name AS name`, nil)
-names, err := graphlite.CollectT(ctx, result, func(rec *graphlite.Record) (string, error) {
-    return graphlite.GetRecordValue[string](rec, "name")
+names, err := charta.CollectT(ctx, result, func(rec *charta.Record) (string, error) {
+    return charta.GetRecordValue[string](rec, "name")
 })
 
 // Single with a mapper
 result, _ := db.RunQuery(ctx, `MATCH (n:Person {name: "Alice"}) RETURN n`, nil)
-node, err := graphlite.SingleT(ctx, result, func(rec *graphlite.Record) (*graphlite.Node, error) {
-    n, _, err := graphlite.GetRecordValue[*graphlite.Node](rec, "n")
+node, err := charta.SingleT(ctx, result, func(rec *charta.Record) (*charta.Node, error) {
+    n, _, err := charta.GetRecordValue[*charta.Node](rec, "n")
     return n, err
 })
 ```
@@ -240,13 +240,13 @@ node, err := graphlite.SingleT(ctx, result, func(rec *graphlite.Record) (*graphl
 ```go
 // Import from JSON
 f, _ := os.Open("testdata/graph.json")
-if err := db.Import(ctx, f, graphlite.FormatJSON); err != nil {
+if err := db.Import(ctx, f, charta.FormatJSON); err != nil {
     log.Fatal(err)
 }
 
 // Export to JSON
 var buf bytes.Buffer
-if err := db.Export(ctx, &buf, graphlite.FormatJSON); err != nil {
+if err := db.Export(ctx, &buf, charta.FormatJSON); err != nil {
     log.Fatal(err)
 }
 ```
@@ -256,7 +256,7 @@ if err := db.Export(ctx, &buf, graphlite.FormatJSON); err != nil {
 `Snapshot` writes an atomic, consistent copy of the database to a file using SQLite `VACUUM INTO`. Works on both file-backed and in-memory databases.
 
 ```go
-db, _ := graphlite.Open(":memory:")
+db, _ := charta.Open(":memory:")
 // ... build or import graph data ...
 
 if err := db.Snapshot("/var/data/graph-checkpoint.db"); err != nil {
@@ -264,20 +264,20 @@ if err := db.Snapshot("/var/data/graph-checkpoint.db"); err != nil {
 }
 
 // Reopen the snapshot as a normal database.
-snap, _ := graphlite.Open("/var/data/graph-checkpoint.db")
+snap, _ := charta.Open("/var/data/graph-checkpoint.db")
 ```
 
 ---
 
-## Examples: graphlite alongside Neo4j
+## Examples: charta alongside Neo4j
 
-The `examples/` directory contains three self-contained programs. Each has its own `go.mod` that imports both graphlite and the neo4j Go driver, so they do not affect the root module.
+The `examples/` directory contains three self-contained programs. Each has its own `go.mod` that imports both charta and the neo4j Go driver, so they do not affect the root module.
 
 | Example | What it shows |
 |---|---|
-| `examples/backend_switch/` | Choose graphlite or Neo4j at startup via an env var; both run the same Cypher query |
-| `examples/copy_from_neo4j/` | Seed a local graphlite database from a running Neo4j instance |
-| `examples/copy_to_neo4j/` | Push a graphlite sub-graph to a remote Neo4j cluster |
+| `examples/backend_switch/` | Choose charta or Neo4j at startup via an env var; both run the same Cypher query |
+| `examples/copy_from_neo4j/` | Seed a local charta database from a running Neo4j instance |
+| `examples/copy_to_neo4j/` | Push a charta sub-graph to a remote Neo4j cluster |
 
 Run any example with `go run .` from its directory. See the comment block at the top of each `main.go` for environment variable configuration.
 
@@ -347,9 +347,9 @@ Run any example with `go run .` from its directory. See the comment block at the
 ## Architecture
 
 ```
-graphlite/
+charta/
 ├── types.go          ← Node, Relationship, Record, error types
-├── driver.go         ← graphlite.Open, DB, RunQuery, BeginTx
+├── driver.go         ← charta.Open, DB, RunQuery, BeginTx
 ├── tx.go             ← Tx type (Run, Commit, Rollback, Close)
 ├── result.go         ← Result cursor (Next, Record, Err, Keys, Collect, Single, Consume)
 ├── helpers.go        ← generic helpers (GetProperty, GetRecordValue, CollectT, SingleT)
@@ -368,9 +368,9 @@ graphlite/
 ├── compat/
 │   └── tck_test.go   ← openCypher TCK harness (opt-in: -tags=tck)
 ├── examples/
-│   ├── backend_switch/   ← switch between graphlite and Neo4j at runtime
-│   ├── copy_from_neo4j/  ← seed graphlite from a Neo4j instance
-│   └── copy_to_neo4j/    ← push graphlite data to a Neo4j instance
+│   ├── backend_switch/   ← switch between charta and Neo4j at runtime
+│   ├── copy_from_neo4j/  ← seed charta from a Neo4j instance
+│   └── copy_to_neo4j/    ← push charta data to a Neo4j instance
 └── bench/
     └── *.go          ← benchmark suite
 ```

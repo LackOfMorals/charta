@@ -17,9 +17,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/LackOfMorals/graphlite/v2/cypher/spatial"
-	"github.com/LackOfMorals/graphlite/v2/cypher/temporal"
-	"github.com/LackOfMorals/graphlite/v2/cypher/vector"
+	"github.com/LackOfMorals/charta/cypher/spatial"
+	"github.com/LackOfMorals/charta/cypher/temporal"
+	"github.com/LackOfMorals/charta/cypher/vector"
 )
 
 // Value types used at run time:

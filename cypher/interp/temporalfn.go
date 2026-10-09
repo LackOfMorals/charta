@@ -4,8 +4,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/LackOfMorals/graphlite/v2/cypher/spatial"
-	"github.com/LackOfMorals/graphlite/v2/cypher/temporal"
+	"github.com/LackOfMorals/charta/cypher/spatial"
+	"github.com/LackOfMorals/charta/cypher/temporal"
 )
 
 // spatialFunction evaluates point() and the point.* functions.

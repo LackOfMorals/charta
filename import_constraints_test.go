@@ -1,4 +1,4 @@
-package graphlite_test
+package charta_test
 
 import (
 	"bytes"
@@ -8,15 +8,15 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/LackOfMorals/graphlite/v2"
+	"github.com/LackOfMorals/charta"
 )
 
-func nodeCount(t *testing.T, db *graphlite.DB) int64 {
+func nodeCount(t *testing.T, db *charta.DB) int64 {
 	t.Helper()
 	return count(t, db, "MATCH (n) RETURN count(n)")
 }
 
-func mustRun(t *testing.T, db *graphlite.DB, qs ...string) {
+func mustRun(t *testing.T, db *charta.DB, qs ...string) {
 	t.Helper()
 	for _, q := range qs {
 		if _, err := db.RunQuery(context.Background(), q, nil); err != nil {
@@ -48,8 +48,8 @@ func TestImportEnforcesConstraints(t *testing.T) {
 			db := openMemDB(t)
 			mustRun(t, db, tt.setup, "CREATE (:Person {email: 'taken', name: 'x', age: 1})")
 			before := nodeCount(t, db)
-			err := db.Import(ctx, strings.NewReader(tt.doc), graphlite.FormatJSON)
-			var cv *graphlite.ErrConstraintViolation
+			err := db.Import(ctx, strings.NewReader(tt.doc), charta.FormatJSON)
+			var cv *charta.ErrConstraintViolation
 			if !errors.As(err, &cv) || cv.Kind != tt.kind {
 				t.Fatalf("got %v, want a %s violation", err, tt.kind)
 			}
@@ -65,8 +65,8 @@ func TestImportCSVEnforcesConstraints(t *testing.T) {
 	db := openMemDB(t)
 	mustRun(t, db, "CREATE CONSTRAINT FOR (p:Person) REQUIRE p.email IS UNIQUE")
 	nodes := ":ID,:LABEL,email:string\n1,Person,a\n2,Person,a\n"
-	err := db.Import(ctx, strings.NewReader(nodes), graphlite.FormatCSVNodes)
-	var cv *graphlite.ErrConstraintViolation
+	err := db.Import(ctx, strings.NewReader(nodes), charta.FormatCSVNodes)
+	var cv *charta.ErrConstraintViolation
 	if !errors.As(err, &cv) || cv.Kind != "UNIQUENESS" {
 		t.Fatalf("csv nodes: %v", err)
 	}
@@ -74,7 +74,7 @@ func TestImportCSVEnforcesConstraints(t *testing.T) {
 		t.Error("nothing may be imported")
 	}
 	ok := ":ID,:LABEL,email:string\n1,Person,a\n2,Person,b\n"
-	if err := db.Import(ctx, strings.NewReader(ok), graphlite.FormatCSVNodes); err != nil {
+	if err := db.Import(ctx, strings.NewReader(ok), charta.FormatCSVNodes); err != nil {
 		t.Fatal(err)
 	}
 
@@ -82,7 +82,7 @@ func TestImportCSVEnforcesConstraints(t *testing.T) {
 	ids := count(t, db, "MATCH (p:Person {email: 'a'}) RETURN id(p)")
 	ids2 := count(t, db, "MATCH (p:Person {email: 'b'}) RETURN id(p)")
 	edges := ":START_ID,:END_ID,:TYPE\n" + itoa(ids) + "," + itoa(ids2) + ",KNOWS\n"
-	err = db.Import(ctx, strings.NewReader(edges), graphlite.FormatCSVEdges)
+	err = db.Import(ctx, strings.NewReader(edges), charta.FormatCSVEdges)
 	if !errors.As(err, &cv) || cv.Kind != "EXISTENCE" || cv.EntityType != "RELATIONSHIP" {
 		t.Fatalf("csv edges: %v", err)
 	}
@@ -102,7 +102,7 @@ func TestImportedVectorsAreSearchable(t *testing.T) {
 		t.Fatalf("before the import %v", got)
 	}
 	doc := `{"nodes":[{"id":"a","labels":["Doc"],"props":{"id":2,"e":[0,0,1]}},{"id":"b","labels":["Doc"],"props":{"id":3,"e":[5,5,5]}}]}`
-	if err := db.Import(ctx, strings.NewReader(doc), graphlite.FormatJSON); err != nil {
+	if err := db.Import(ctx, strings.NewReader(doc), charta.FormatJSON); err != nil {
 		t.Fatal(err)
 	}
 	if got := search(t, dbRunner{db}, []float64{0, 0, 0}, 5); !sameIDs(got, []int64{2, 3, 1}) {
@@ -120,7 +120,7 @@ func TestExportImportCarriesTheSchema(t *testing.T) {
 		"CREATE INDEX rated_idx FOR ()-[r:RATED]-() ON (r.stars)",
 		"CREATE INDEX odd FOR (n:`Odd label`) ON (n.`a prop`)")
 	var buf bytes.Buffer
-	if err := src.Export(ctx, &buf, graphlite.ExportFormatJSON); err != nil {
+	if err := src.Export(ctx, &buf, charta.ExportFormatJSON); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(buf.String(), `"schema"`) {
@@ -128,13 +128,13 @@ func TestExportImportCarriesTheSchema(t *testing.T) {
 	}
 
 	dst := openMemDB(t)
-	if err := dst.Import(ctx, bytes.NewReader(buf.Bytes()), graphlite.FormatJSON); err != nil {
+	if err := dst.Import(ctx, bytes.NewReader(buf.Bytes()), charta.FormatJSON); err != nil {
 		t.Fatal(err)
 	}
 	checkSchemaEnforced(t, dst)
 	want, _ := src.ListSchema(ctx)
 	got, _ := dst.ListSchema(ctx)
-	key := func(s graphlite.SchemaInfo) string {
+	key := func(s charta.SchemaInfo) string {
 		return s.Name + "|" + s.Type + "|" + s.EntityType + "|" + strings.Join(s.Labels, ",") + "|" + strings.Join(s.Properties, ",")
 	}
 	seen := map[string]bool{}
@@ -149,8 +149,8 @@ func TestExportImportCarriesTheSchema(t *testing.T) {
 
 	// Importing the same file again is harmless for the schema (IF NOT EXISTS) but the
 	// data now conflicts with the unique constraint, atomically.
-	err := dst.Import(ctx, bytes.NewReader(buf.Bytes()), graphlite.FormatJSON)
-	var cv *graphlite.ErrConstraintViolation
+	err := dst.Import(ctx, bytes.NewReader(buf.Bytes()), charta.FormatJSON)
+	var cv *charta.ErrConstraintViolation
 	if !errors.As(err, &cv) {
 		t.Errorf("re-importing duplicates must violate the constraint: %v", err)
 	}
@@ -162,7 +162,7 @@ func TestImportRejectsNonSchemaStatements(t *testing.T) {
 	mustRun(t, db, "CREATE (:Keep)")
 	for _, stmt := range []string{"MATCH (n) DETACH DELETE n", "CREATE (:Evil)", "RETURN 1"} {
 		doc := `{"nodes":[],"schema":["` + stmt + `"]}`
-		if err := db.Import(ctx, strings.NewReader(doc), graphlite.FormatJSON); err == nil {
+		if err := db.Import(ctx, strings.NewReader(doc), charta.FormatJSON); err == nil {
 			t.Errorf("%q must be rejected", stmt)
 		}
 	}

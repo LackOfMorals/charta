@@ -5,7 +5,7 @@ import (
 	"sort"
 	"sync/atomic"
 
-	"github.com/LackOfMorals/graphlite/v2/cypher/syntax"
+	"github.com/LackOfMorals/charta/cypher/syntax"
 )
 
 // groupVars lists the variables a group pattern declares, in order.

@@ -1,4 +1,4 @@
-package graphlite_test
+package charta_test
 
 import (
 	"context"
@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/LackOfMorals/graphlite/v2"
+	"github.com/LackOfMorals/charta"
 )
 
 func TestSchemaGoAPI(t *testing.T) {
@@ -29,7 +29,7 @@ func TestSchemaGoAPI(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var idx, con *graphlite.SchemaInfo
+	var idx, con *charta.SchemaInfo
 	for i := range info {
 		switch {
 		case !info[i].IsConstraint && info[i].Type == "RANGE" && info[i].OwningConstraint == "":
@@ -117,7 +117,7 @@ func TestConstraintViolationIsAStructuredError(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, err := db.RunQuery(ctx, "CREATE (:Person {email: 'a@x.com'})", nil)
-	var cv *graphlite.ErrConstraintViolation
+	var cv *charta.ErrConstraintViolation
 	if !errors.As(err, &cv) {
 		t.Fatalf("got %T %v, want *ErrConstraintViolation", err, err)
 	}

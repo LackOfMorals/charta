@@ -2,7 +2,7 @@
 
 ## Overview
 
-Three automated skill reviews (`golang-security`, `golang-performance`, `golang-design-patterns`) were run against the graphlite codebase and produced 22 actionable findings documented in `docs/skill-review.md`. This PRD captures all findings as implementable requirements, grouped by category and ordered by priority. The work spans security hardening (SQL injection, access-control bypass, foreign-key enforcement, DoS vectors, path traversal), performance improvements (query plan cache, indexed label lookup, allocation reduction, streaming imports, benchmark suite), and structural design improvements (transaction duplication elimination, idempotent rollback, context-aware iteration, typed Labels).
+Three automated skill reviews (`golang-security`, `golang-performance`, `golang-design-patterns`) were run against the charta codebase and produced 22 actionable findings documented in `docs/skill-review.md`. This PRD captures all findings as implementable requirements, grouped by category and ordered by priority. The work spans security hardening (SQL injection, access-control bypass, foreign-key enforcement, DoS vectors, path traversal), performance improvements (query plan cache, indexed label lookup, allocation reduction, streaming imports, benchmark suite), and structural design improvements (transaction duplication elimination, idempotent rollback, context-aware iteration, typed Labels).
 
 ## Goals
 
@@ -101,7 +101,7 @@ Three automated skill reviews (`golang-security`, `golang-performance`, `golang-
 **REQ-F-PERF-003: Remove redundant `GetNode` lookups on CSV edge import**
 - File: `importer.go`, `importCSVEdges` function (approximately line 308 area and surrounding edge import loop)
 - Two `SELECT` round-trips per edge row are executed to validate that the start and end nodes exist before inserting the edge. Once `PRAGMA foreign_keys = ON` is enforced (REQ-F-SEC-003), the database engine enforces this constraint natively.
-- Requirement: Remove the two `GetNode` / existence-check calls per edge row in `importCSVEdges`. Rely on the foreign key constraint to reject dangling edges. Handle the resulting SQLite `FOREIGN KEY constraint failed` error and map it to the appropriate graphlite error type.
+- Requirement: Remove the two `GetNode` / existence-check calls per edge row in `importCSVEdges`. Rely on the foreign key constraint to reject dangling edges. Handle the resulting SQLite `FOREIGN KEY constraint failed` error and map it to the appropriate charta error type.
 - Acceptance: CSV edge import throughput improves measurably (tracked by `BenchmarkImportCSVEdges` in REQ-F-PERF-006). No regression in correctness: importing an edge with a non-existent node ID still fails with a clear error.
 
 **REQ-F-PERF-004: Eliminate triple JSON parse pass in `importJSON`**
@@ -256,7 +256,7 @@ The remediation is complete when all of the following are true:
 
 1. **Plan cache size:** Should the query plan cache be unbounded (simplest, safe for typical use), or capped at a configurable limit via `WithPlanCacheSize(n int)`? An unbounded cache risks memory growth if the application generates many distinct Cypher strings dynamically.
 
-2. **`Labels` type in public API:** Should `Node.Labels` become `graphlite.Labels` (a named type with marshal/unmarshal methods) or `[]string` (simpler, no new type)? The named type allows future behaviour changes without a breaking API change; `[]string` is more immediately usable.
+2. **`Labels` type in public API:** Should `Node.Labels` become `charta.Labels` (a named type with marshal/unmarshal methods) or `[]string` (simpler, no new type)? The named type allows future behaviour changes without a breaking API change; `[]string` is more immediately usable.
 
 3. **MaxHops behaviour — clamp vs. error:** Should a `MaxHops` value exceeding the cap (a) silently clamp to the cap (callers get results but fewer than requested), or (b) return an error (callers know their query was rejected)? Clamping is more user-friendly; erroring is safer and more explicit.
 

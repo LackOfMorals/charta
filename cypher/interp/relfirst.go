@@ -4,7 +4,7 @@ import (
 	"strings"
 	"sync/atomic"
 
-	"github.com/LackOfMorals/graphlite/v2/cypher/syntax"
+	"github.com/LackOfMorals/charta/cypher/syntax"
 )
 
 // relFirstDisabled turns the relationship-first strategy off; tests use it to

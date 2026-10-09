@@ -1,4 +1,4 @@
-package graphlite
+package charta
 
 import "context"
 

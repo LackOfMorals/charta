@@ -1,6 +1,6 @@
 package analyze
 
-import "github.com/LackOfMorals/graphlite/v2/cypher/syntax"
+import "github.com/LackOfMorals/charta/cypher/syntax"
 
 type patMode uint8
 

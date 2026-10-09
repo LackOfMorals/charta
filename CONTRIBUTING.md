@@ -1,13 +1,13 @@
-# Contributing to graphlite
+# Contributing to charta
 
-Thank you for your interest in contributing to graphlite. This document covers prerequisites, how to run all test suites, how to add a new Cypher feature, and the benchmark baseline process.
+Thank you for your interest in contributing to charta. This document covers prerequisites, how to run all test suites, how to add a new Cypher feature, and the benchmark baseline process.
 
 ---
 
 ## Prerequisites
 
 - Go 1.26 or newer (matches the `go` directive in `go.mod`)
-- No CGO required — graphlite uses `modernc.org/sqlite`, a pure-Go SQLite driver
+- No CGO required — charta uses `modernc.org/sqlite`, a pure-Go SQLite driver
 - `git` for version control
 
 No Docker, no database server, no external services. Everything runs in-process.
@@ -17,12 +17,12 @@ No Docker, no database server, no external services. Everything runs in-process.
 ## Getting started
 
 ```bash
-git clone https://github.com/LackOfMorals/graphlite.git
-cd graphlite
+git clone https://github.com/LackOfMorals/charta.git
+cd charta
 
 # If vendor/ is absent, populate it and restore the neo4j vendor shim
 go mod vendor
-tail -n +3 scripts/graphlite_bridge.go > vendor/github.com/neo4j/neo4j-go-driver/v6/neo4j/graphlite_bridge.go
+tail -n +3 scripts/charta_bridge.go > vendor/github.com/neo4j/neo4j-go-driver/v6/neo4j/charta_bridge.go
 
 # Verify the build
 CGO_ENABLED=0 go build ./...
@@ -41,7 +41,7 @@ CGO_ENABLED=0 go test -count=1 ./...
 This runs all unit tests (parser, analysis, interpreter, store) and the integration tests under each package. The `testdata/` package must be run explicitly:
 
 ```bash
-CGO_ENABLED=0 go test github.com/LackOfMorals/graphlite/testdata
+CGO_ENABLED=0 go test github.com/LackOfMorals/charta/testdata
 ```
 
 ### Property-based tests (rapid)
@@ -143,7 +143,7 @@ When a change may affect query performance, capture a new baseline:
 
 Additions (new exported symbols) and bug fixes that correct documented-incorrect behaviour are not considered breaking changes.
 
-This commitment covers the root package (`github.com/LackOfMorals/graphlite`) and its sub-packages. Internal packages (sub-packages not documented for external use) are exempt.
+This commitment covers the root package (`github.com/LackOfMorals/charta`) and its sub-packages. Internal packages (sub-packages not documented for external use) are exempt.
 
 For the compatibility table of supported Cypher features, see [README.md — Cypher Compatibility](README.md#cypher-compatibility).
 
@@ -159,4 +159,4 @@ For the compatibility table of supported Cypher features, see [README.md — Cyp
 - `CGO_ENABLED=0 go test -count=1 ./...` must pass with no failures.
 - Doc comments are required on all exported symbols (types, functions, methods, constants).
 - Follow the existing code style (no external linter configuration is required).
-- Commit messages should be of the form `graphlite-task-NNN: short description`.
+- Commit messages should be of the form `charta-task-NNN: short description`.

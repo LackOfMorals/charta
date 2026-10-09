@@ -1,8 +1,8 @@
 package analyze
 
 import (
-	"github.com/LackOfMorals/graphlite/v2/cypher/proc"
-	"github.com/LackOfMorals/graphlite/v2/cypher/syntax"
+	"github.com/LackOfMorals/charta/cypher/proc"
+	"github.com/LackOfMorals/charta/cypher/syntax"
 )
 
 // CheckParams reports a ParameterMissing error when a standalone CALL without

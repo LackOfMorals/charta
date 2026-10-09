@@ -9,7 +9,7 @@
 # identifiers. The TCK predates these removals.
 #
 # Every entry must name the removed construct. Keep this list short: anything
-# that is merely unsupported by graphlite belongs in unsupportedPatterns
+# that is merely unsupported by charta belongs in unsupportedPatterns
 # (tck_test.go), not here.
 clauses/merge/Merge6.feature :: [6] Copying properties from node with ON CREATE :: SET with a relationship/node on the right-hand side is removed in Cypher 25 (use properties())
 clauses/merge/Merge7.feature :: [4] Copying properties from node with ON MATCH :: SET with a relationship/node on the right-hand side is removed in Cypher 25 (use properties())

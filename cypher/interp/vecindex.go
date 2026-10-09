@@ -8,7 +8,7 @@ import (
 	"sync"
 	"unsafe"
 
-	"github.com/LackOfMorals/graphlite/v2/cypher/vector"
+	"github.com/LackOfMorals/charta/cypher/vector"
 )
 
 // Vector search keeps one in-memory matrix per vector index (see

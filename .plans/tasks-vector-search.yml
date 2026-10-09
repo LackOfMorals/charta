@@ -89,7 +89,7 @@ tasks:
       cap. The cache is shared by concurrent readers: guard it with an RWMutex and publish immutable snapshots
       (copy-on-write of the id/row slices) so a search never sees a half-updated matrix.
       If building from JSON is too slow for large indexes (about 1 s per 100k), add a binary side table
-      graphlite_vectors(index_id, node_id, blob) maintained in graph.finish() and build the cache from it.
+      charta_vectors(index_id, node_id, blob) maintained in graph.finish() and build the cache from it.
     status: completed
     notes: "PR #12 (design note in progress file: RWMutex matrix, not copy-on-write)"
     dependencies:

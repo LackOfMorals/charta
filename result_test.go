@@ -1,17 +1,17 @@
-package graphlite_test
+package charta_test
 
 import (
 	"context"
 	"errors"
 	"testing"
 
-	"github.com/LackOfMorals/graphlite/v2"
+	"github.com/LackOfMorals/charta"
 )
 
-// openDB opens an in-memory graphlite database for use in result-layer tests.
-func openDB(t *testing.T) *graphlite.DB {
+// openDB opens an in-memory charta database for use in result-layer tests.
+func openDB(t *testing.T) *charta.DB {
 	t.Helper()
-	db, err := graphlite.Open(":memory:")
+	db, err := charta.Open(":memory:")
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
@@ -214,7 +214,7 @@ func TestResult_NodeProjection(t *testing.T) {
 	if !ok {
 		t.Fatal("expected key 'n' in record")
 	}
-	node, ok := val.(*graphlite.Node)
+	node, ok := val.(*charta.Node)
 	if !ok {
 		t.Fatalf("expected *Node got %T: %v", val, val)
 	}
@@ -253,7 +253,7 @@ func TestResult_RelationshipProjection(t *testing.T) {
 	if !ok {
 		t.Fatal("expected key 'r' in record")
 	}
-	rel, ok := val.(*graphlite.Relationship)
+	rel, ok := val.(*charta.Relationship)
 	if !ok {
 		t.Fatalf("expected *Relationship got %T: %v", val, val)
 	}
@@ -281,7 +281,7 @@ func TestResult_NoLabels(t *testing.T) {
 		t.Fatalf("expected one record; err=%v", qr.Err())
 	}
 	val, _ := qr.Record().Get("n")
-	node, ok := val.(*graphlite.Node)
+	node, ok := val.(*charta.Node)
 	if !ok {
 		t.Fatalf("expected *Node got %T", val)
 	}
@@ -385,7 +385,7 @@ func TestSingle_ErrNoRecords(t *testing.T) {
 		t.Fatalf("RunQuery: %v", err)
 	}
 	_, err = qr.Single(ctx)
-	if !errors.Is(err, graphlite.ErrNoRecords) {
+	if !errors.Is(err, charta.ErrNoRecords) {
 		t.Errorf("expected ErrNoRecords, got %v", err)
 	}
 }
@@ -403,7 +403,7 @@ func TestSingle_ErrMultipleRecords(t *testing.T) {
 		t.Fatalf("RunQuery: %v", err)
 	}
 	_, err = qr.Single(ctx)
-	if !errors.Is(err, graphlite.ErrMultipleRecords) {
+	if !errors.Is(err, charta.ErrMultipleRecords) {
 		t.Errorf("expected ErrMultipleRecords, got %v", err)
 	}
 }

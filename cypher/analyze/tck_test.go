@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/LackOfMorals/graphlite/v2/cypher/analyze"
-	"github.com/LackOfMorals/graphlite/v2/cypher/syntax"
+	"github.com/LackOfMorals/charta/cypher/analyze"
+	"github.com/LackOfMorals/charta/cypher/syntax"
 )
 
 // tckCase is one concrete (outline-expanded) TCK scenario.

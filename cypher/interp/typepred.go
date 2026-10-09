@@ -5,8 +5,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/LackOfMorals/graphlite/v2/cypher/temporal"
-	"github.com/LackOfMorals/graphlite/v2/cypher/vector"
+	"github.com/LackOfMorals/charta/cypher/temporal"
+	"github.com/LackOfMorals/charta/cypher/vector"
 )
 
 // A value type as written after `IS ::` or reported by valueType(), reduced to

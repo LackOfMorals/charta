@@ -3,7 +3,7 @@ package analyze
 import (
 	"sort"
 
-	"github.com/LackOfMorals/graphlite/v2/cypher/syntax"
+	"github.com/LackOfMorals/charta/cypher/syntax"
 )
 
 // projectionClause analyses a WITH or RETURN: output names, grouping, ORDER BY,

@@ -1,4 +1,4 @@
-package graphlite_test
+package charta_test
 
 import (
 	"context"
@@ -9,13 +9,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/LackOfMorals/graphlite/v2"
+	"github.com/LackOfMorals/charta"
 )
 
-func openFileDB(t *testing.T, opts ...graphlite.Option) (*graphlite.DB, string) {
+func openFileDB(t *testing.T, opts ...charta.Option) (*charta.DB, string) {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "g.db")
-	db, err := graphlite.Open(path, opts...)
+	db, err := charta.Open(path, opts...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -23,7 +23,7 @@ func openFileDB(t *testing.T, opts ...graphlite.Option) (*graphlite.DB, string) 
 	return db, path
 }
 
-func count(t testing.TB, db *graphlite.DB, q string) int64 {
+func count(t testing.TB, db *charta.DB, q string) int64 {
 	t.Helper()
 	res, err := db.RunQuery(context.Background(), q, nil)
 	if err != nil {
@@ -75,7 +75,7 @@ func TestReadsDoNotWaitForAnOpenWriteTransaction(t *testing.T) {
 
 func TestConcurrentReadsAndWrites(t *testing.T) {
 	ctx := context.Background()
-	db, _ := openFileDB(t, graphlite.WithBusyTimeout(5*time.Second))
+	db, _ := openFileDB(t, charta.WithBusyTimeout(5*time.Second))
 	const writes = 150
 
 	stop := make(chan struct{})
@@ -145,7 +145,7 @@ func TestReadOnlyDatabaseServesReadsFromThePool(t *testing.T) {
 	if err := db.Close(ctx); err != nil {
 		t.Fatal(err)
 	}
-	ro, err := graphlite.Open(path, graphlite.WithReadOnly())
+	ro, err := charta.Open(path, charta.WithReadOnly())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -160,7 +160,7 @@ func TestReadOnlyDatabaseServesReadsFromThePool(t *testing.T) {
 
 func TestMaxReadConnsOption(t *testing.T) {
 	ctx := context.Background()
-	db, _ := openFileDB(t, graphlite.WithMaxReadConns(2))
+	db, _ := openFileDB(t, charta.WithMaxReadConns(2))
 	if _, err := db.RunQuery(ctx, "UNWIND range(1, 100) AS i CREATE (:N {i: i})", nil); err != nil {
 		t.Fatal(err)
 	}
@@ -184,7 +184,7 @@ func TestCloseDoesNotLeakGoroutines(t *testing.T) {
 	before := runtime.NumGoroutine()
 	for i := 0; i < 50; i++ {
 		path := filepath.Join(t.TempDir(), "g.db")
-		db, err := graphlite.Open(path)
+		db, err := charta.Open(path)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -205,7 +205,7 @@ func TestCloseDoesNotLeakGoroutines(t *testing.T) {
 
 func TestMemoryDatabaseIsUnchanged(t *testing.T) {
 	ctx := context.Background()
-	db, err := graphlite.Open(":memory:")
+	db, err := charta.Open(":memory:")
 	if err != nil {
 		t.Fatal(err)
 	}

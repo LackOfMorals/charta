@@ -1,4 +1,4 @@
-package graphlite
+package charta
 
 import (
 	"context"
@@ -7,9 +7,9 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/LackOfMorals/graphlite/v2/cypher/analyze"
-	"github.com/LackOfMorals/graphlite/v2/cypher/interp"
-	"github.com/LackOfMorals/graphlite/v2/cypher/syntax"
+	"github.com/LackOfMorals/charta/cypher/analyze"
+	"github.com/LackOfMorals/charta/cypher/interp"
+	"github.com/LackOfMorals/charta/cypher/syntax"
 )
 
 // parseSyntax parses and analyses a query, wrapping errors with %w so
@@ -20,10 +20,10 @@ func parseSyntax(cypherStr string, eng *interp.Engine) (*syntax.Statement, error
 	}
 	st, err := syntax.Parse(cypherStr)
 	if err != nil {
-		return nil, fmt.Errorf("graphlite: parse: cypher syntax error: %w", err)
+		return nil, fmt.Errorf("charta: parse: cypher syntax error: %w", err)
 	}
 	if err := analyze.CheckWith(st, &eng.Procs); err != nil {
-		return nil, fmt.Errorf("graphlite: parse: cypher: %w", err)
+		return nil, fmt.Errorf("charta: parse: cypher: %w", err)
 	}
 	eng.CacheStatement(cypherStr, st)
 	return st, nil
@@ -34,7 +34,7 @@ func parseSyntax(cypherStr string, eng *interp.Engine) (*syntax.Statement, error
 type readOnlyDB struct{ interp.DB }
 
 func (readOnlyDB) ExecContext(context.Context, string, ...any) (sql.Result, error) {
-	return nil, errors.New("graphlite: write attempted on a read-only connection")
+	return nil, errors.New("charta: write attempted on a read-only connection")
 }
 
 // runInterp executes a query with the interpreter. When beginTxFn is non-nil
@@ -53,7 +53,7 @@ func runInterp(ctx context.Context, ex execer, cypherStr string, params map[stri
 		}
 	}
 	if err := analyze.CheckParams(st, params, &eng.Procs); err != nil {
-		return nil, fmt.Errorf("graphlite: parse: cypher: %w", err)
+		return nil, fmt.Errorf("charta: parse: cypher: %w", err)
 	}
 	if readOnly && hasWrites(st) {
 		return nil, ErrReadOnly
@@ -62,7 +62,7 @@ func runInterp(ctx context.Context, ex execer, cypherStr string, params map[stri
 	if beginRead != nil && !hasWrites(st) {
 		tx, err := beginRead(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("graphlite: begin read transaction: %w", err)
+			return nil, fmt.Errorf("charta: begin read transaction: %w", err)
 		}
 		res, err = interp.RunReadOnly(ctx, readOnlyDB{tx}, st, params, eng)
 		_ = tx.Rollback() // nothing to commit; this just ends the snapshot
@@ -74,7 +74,7 @@ func runInterp(ctx context.Context, ex execer, cypherStr string, params map[stri
 	if beginTxFn != nil {
 		tx, err := beginTxFn(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("graphlite: begin transaction: %w", err)
+			return nil, fmt.Errorf("charta: begin transaction: %w", err)
 		}
 		// A statement with no updating clause and no enclosing transaction has no
 		// uncommitted writes of its own, so it may search the shared vector matrices.
@@ -85,7 +85,7 @@ func runInterp(ctx context.Context, ex execer, cypherStr string, params map[stri
 			return nil, execError(err)
 		}
 		if err := tx.Commit(); err != nil {
-			return nil, fmt.Errorf("graphlite: commit: %w", err)
+			return nil, fmt.Errorf("charta: commit: %w", err)
 		}
 		eng.ApplyVectorDeltas(res.VectorDeltas) // only now that the commit succeeded
 	} else {
@@ -228,7 +228,7 @@ func propsOf(m map[string]any) map[string]any {
 func execError(err error) error {
 	var ie *interp.Error
 	if errors.As(err, &ie) && ie.Code == "Unsupported" {
-		return &ErrUnsupportedCypher{Clause: ie.Msg, Detail: "not supported by the graphlite interpreter yet"}
+		return &ErrUnsupportedCypher{Clause: ie.Msg, Detail: "not supported by the charta interpreter yet"}
 	}
 	if errors.As(err, &ie) && ie.Schema != nil && ie.Code == "ConstraintValidationFailed" {
 		return &ErrConstraintViolation{
@@ -236,5 +236,5 @@ func execError(err error) error {
 			Properties: append([]string(nil), ie.Schema.Properties...), Message: ie.Msg, cause: ie,
 		}
 	}
-	return fmt.Errorf("graphlite: execute: %w", err)
+	return fmt.Errorf("charta: execute: %w", err)
 }

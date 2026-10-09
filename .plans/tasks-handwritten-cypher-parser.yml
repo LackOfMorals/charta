@@ -246,7 +246,7 @@ tasks:
       per prd-property-indexes-constraints.md and prd-vector-search.md).
       Server-only commands (USE, user/role/database management, GRANT/DENY)
       parse to a ServerOnlyCommand node so the planner can return a clear
-      'not supported in graphlite' error.
+      'not supported in charta' error.
     status: completed
     dependencies: [task-012]
     acceptance_criteria:
@@ -260,7 +260,7 @@ tasks:
       Cypher Manual: FILTER [WHERE] expr, LET v = e [, v = e], FINISH (must be
       last), OFFSET (alias of SKIP), WHEN … THEN { } [ELSE { }] bodies inside
       CALL / COLLECT (done in task-029), `CYPHER 25 [key=value]` prefix;
-      `CYPHER 5` / other versions are rejected with "graphlite implements
+      `CYPHER 5` / other versions are rejected with "charta implements
       Cypher 25". The removed list functions extract(x IN …) / filter(x IN …)
       are rejected with a pointer to list comprehensions.
       DEFERRED (not found in the manual, so not guessed): NEXT, INSERT and a
@@ -378,7 +378,7 @@ tasks:
     status: completed
     dependencies: [task-017]
     acceptance_criteria:
-      - "A typed *analyze.Error (class + TCK code + position) reaches the caller through graphlite's error wrapping: done (analyze.Describe, used by the harness)"
+      - "A typed *analyze.Error (class + TCK code + position) reaches the caller through charta's error wrapping: done (analyze.Describe, used by the harness)"
       - "The harness requires class and code to match for 'at compile time' expectations: done"
       - "Every TCK scenario expecting a compile-time error passes with the right code: 586/586 cases (cypher/analyze TestTCK_CompileTimeErrors), 0 of 4,176 valid queries wrongly rejected (TestTCK_ValidScenariosPass)"
       - "TCK pass rate over executed scenarios: 816/2,631 (31.0%) -> 911/2,631 (34.6%)"
@@ -476,7 +476,7 @@ tasks:
   - id: task-025
     title: "Named paths and shortestPath/allShortestPaths"
     description: |
-      Path values (graphlite.Path), named path variables, nodes()/
+      Path values (charta.Path), named path variables, nodes()/
       relationships()/length(path), shortestPath/allShortestPaths. Coordinate
       with prd-shortest-path-traversal.md (reuse its tasks rather than
       duplicating).

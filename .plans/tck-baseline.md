@@ -269,30 +269,30 @@ Pass rate over executed scenarios: **950/2631 (36.1%)**
 
 | count | reason |
 |---:|---|
-| 1060 | query failed: graphlite: translate: sql: SELECT projection: sql: unsupported expression "…": complex expressions are not yet supported in … |
+| 1060 | query failed: charta: translate: sql: SELECT projection: sql: unsupported expression "…": complex expressions are not yet supported in … |
 | 141 | expected N row(s), got N |
-| 84 | having executed "…": graphlite: translate: sql: CREATE node props: property "…": sql: unsupported expression "…": complex expressions … |
-| 46 | query failed: graphlite: query: SQL logic error: near "…": syntax error (N) |
-| 42 | query failed: graphlite: parse: cypher: multiple WITH stages are not yet supported |
+| 84 | having executed "…": charta: translate: sql: CREATE node props: property "…": sql: unsupported expression "…": complex expressions … |
+| 46 | query failed: charta: query: SQL logic error: near "…": syntax error (N) |
+| 42 | query failed: charta: parse: cypher: multiple WITH stages are not yet supported |
 | 39 | column "…": unexpected value "…" in actual results |
-| 29 | query failed: graphlite: query: SQL logic error: ambiguous column name: nN.id (N) |
-| 27 | query failed: graphlite: translate: sql: SELECT projection: sql: variable "…" not in scope |
-| 26 | query failed: graphlite: plan: cypher: MERGE with relationship patterns is not yet supported |
-| 22 | query failed: graphlite: translate: sql: SELECT projection: sql: arith lhs: sql: unsupported expression "…": complex expressions are not y… |
-| 21 | query failed: graphlite: query: SQL logic error: ambiguous column name: nN.props (N) |
-| 21 | query failed: graphlite: translate: sql: WHERE predicate: sql: unsupported expression "…": complex expressions are not yet supported in th… |
-| 17 | query failed: graphlite: parse: cypher: only "…" and "…" SET items are supported |
-| 10 | query failed: graphlite: query: SQL logic error: HAVING clause on a non-aggregate query (N) |
-| 8 | having executed "…": graphlite: insert node: SQL logic error: no such column: nN.props (N) |
-| 8 | query failed: graphlite: parse: cypher: WHERE clause: cypher: an EXISTS/COUNT/COLLECT subquery is not supported |
-| 7 | query failed: graphlite: plan: cypher: DELETE of an expression other than a variable is not supported |
-| 6 | query failed: graphlite: query: SQL logic error: no such column: rN.id (N) |
-| 6 | query failed: graphlite: translate: sql: CREATE node props: property "…": sql: unsupported expression "…": complex expressions are not y… |
-| 5 | query failed: graphlite: translate: sql: match-for-write FROM clause: sql: HAVING predicate: sql: unsupported expression "…": complex expr… |
+| 29 | query failed: charta: query: SQL logic error: ambiguous column name: nN.id (N) |
+| 27 | query failed: charta: translate: sql: SELECT projection: sql: variable "…" not in scope |
+| 26 | query failed: charta: plan: cypher: MERGE with relationship patterns is not yet supported |
+| 22 | query failed: charta: translate: sql: SELECT projection: sql: arith lhs: sql: unsupported expression "…": complex expressions are not y… |
+| 21 | query failed: charta: query: SQL logic error: ambiguous column name: nN.props (N) |
+| 21 | query failed: charta: translate: sql: WHERE predicate: sql: unsupported expression "…": complex expressions are not yet supported in th… |
+| 17 | query failed: charta: parse: cypher: only "…" and "…" SET items are supported |
+| 10 | query failed: charta: query: SQL logic error: HAVING clause on a non-aggregate query (N) |
+| 8 | having executed "…": charta: insert node: SQL logic error: no such column: nN.props (N) |
+| 8 | query failed: charta: parse: cypher: WHERE clause: cypher: an EXISTS/COUNT/COLLECT subquery is not supported |
+| 7 | query failed: charta: plan: cypher: DELETE of an expression other than a variable is not supported |
+| 6 | query failed: charta: query: SQL logic error: no such column: rN.id (N) |
+| 6 | query failed: charta: translate: sql: CREATE node props: property "…": sql: unsupported expression "…": complex expressions are not y… |
+| 5 | query failed: charta: translate: sql: match-for-write FROM clause: sql: HAVING predicate: sql: unsupported expression "…": complex expr… |
 | 4 | expected empty result (table has no data rows), got N row(s) |
-| 4 | query failed: graphlite: translate: sql: GROUP BY expression: sql: unsupported expression "…": complex expressions are not yet supported i… |
-| 4 | query failed: graphlite: translate: sql: SELECT projection: sql: count() argument: sql: unsupported expression "…": complex expressions ar… |
-| 4 | query failed: graphlite: write-then-select query: SQL logic error: no such column: nN.props (N) |
+| 4 | query failed: charta: translate: sql: GROUP BY expression: sql: unsupported expression "…": complex expressions are not yet supported i… |
+| 4 | query failed: charta: translate: sql: SELECT projection: sql: count() argument: sql: unsupported expression "…": complex expressions ar… |
+| 4 | query failed: charta: write-then-select query: SQL logic error: no such column: nN.props (N) |
 | 3 | expected SyntaxError error (NegativeIntegerArgument) but query succeeded |
 
 ## Skip and exclusion reasons

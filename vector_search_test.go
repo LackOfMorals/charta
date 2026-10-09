@@ -1,4 +1,4 @@
-package graphlite_test
+package charta_test
 
 import (
 	"context"
@@ -9,13 +9,13 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/LackOfMorals/graphlite/v2"
+	"github.com/LackOfMorals/charta"
 )
 
 const vecIndexDDL = "CREATE VECTOR INDEX docs FOR (d:Doc) ON (d.e) OPTIONS {indexConfig: {`vector.dimensions`: 3, `vector.similarity_function`: 'euclidean'}}"
 
 func search(t testing.TB, ex interface {
-	Run(context.Context, string, map[string]any) (*graphlite.Result, error)
+	Run(context.Context, string, map[string]any) (*charta.Result, error)
 }, q []float64, k int) []int64 {
 	t.Helper()
 	ctx := context.Background()
@@ -35,9 +35,9 @@ func search(t testing.TB, ex interface {
 	return ids
 }
 
-type dbRunner struct{ db *graphlite.DB }
+type dbRunner struct{ db *charta.DB }
 
-func (r dbRunner) Run(ctx context.Context, q string, p map[string]any) (*graphlite.Result, error) {
+func (r dbRunner) Run(ctx context.Context, q string, p map[string]any) (*charta.Result, error) {
 	return r.db.RunQuery(ctx, q, p)
 }
 
@@ -218,7 +218,7 @@ func TestVectorSearchTransactionsCommitAndRollBack(t *testing.T) {
 
 func TestVectorSearchWhileWriting(t *testing.T) {
 	ctx := context.Background()
-	db, _ := openFileDB(t, graphlite.WithBusyTimeout(5e9))
+	db, _ := openFileDB(t, charta.WithBusyTimeout(5e9))
 	if _, err := db.RunQuery(ctx, vecIndexDDL, nil); err != nil {
 		t.Fatal(err)
 	}
@@ -281,7 +281,7 @@ func TestVectorSearchWhileWriting(t *testing.T) {
 
 func TestVectorSearchWithATinyCacheStillAnswers(t *testing.T) {
 	ctx := context.Background()
-	db, _ := openFileDB(t, graphlite.WithMaxVectorCacheBytes(1))
+	db, _ := openFileDB(t, charta.WithMaxVectorCacheBytes(1))
 	for _, q := range []string{vecIndexDDL, "UNWIND range(1, 50) AS i CREATE (:Doc {id: i, e: [toFloat(i), 0.0, 0.0]})"} {
 		if _, err := db.RunQuery(ctx, q, nil); err != nil {
 			t.Fatal(err)
@@ -324,7 +324,7 @@ func TestVectorSearchOnARelationshipIndexIsUnsupported(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, err := db.RunQuery(ctx, "CALL db.index.vector.queryNodes('rv', 1, [1.0, 2.0]) YIELD node RETURN node", nil)
-	var target *graphlite.ErrUnsupportedCypher
+	var target *charta.ErrUnsupportedCypher
 	if !errors.As(err, &target) {
 		t.Errorf("got %v, want ErrUnsupportedCypher", err)
 	}

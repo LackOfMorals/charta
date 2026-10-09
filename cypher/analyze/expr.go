@@ -3,7 +3,7 @@ package analyze
 import (
 	"strings"
 
-	"github.com/LackOfMorals/graphlite/v2/cypher/syntax"
+	"github.com/LackOfMorals/charta/cypher/syntax"
 )
 
 // env is the context an expression is checked in.

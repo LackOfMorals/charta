@@ -1,7 +1,7 @@
 package interp
 
 import (
-	"github.com/LackOfMorals/graphlite/v2/cypher/syntax"
+	"github.com/LackOfMorals/charta/cypher/syntax"
 )
 
 // matchParts calls emit once for every way of matching all parts against the

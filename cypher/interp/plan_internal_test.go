@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/LackOfMorals/graphlite/v2/store"
+	"github.com/LackOfMorals/charta/store"
 )
 
 // recordingDB remembers the last query so a test can ask SQLite how it would run it.

@@ -1,10 +1,10 @@
 //go:build ignore
 
-// Getting-started example for graphlite.
+// Getting-started example for charta.
 //
 // Run with:
 //
-//	go run github.com/LackOfMorals/graphlite/examples/getting_started.go
+//	go run github.com/LackOfMorals/charta/examples/getting_started.go
 //
 // or from the repo root:
 //
@@ -16,7 +16,7 @@ import (
 	"fmt"
 	"strings"
 
-	graphlite "github.com/LackOfMorals/graphlite/v2"
+	charta "github.com/LackOfMorals/charta"
 )
 
 func main() {
@@ -28,14 +28,14 @@ func main() {
 	fmt.Println("\n=== 2. JSON bulk import ===")
 	importExample(ctx)
 
-	fmt.Println("\n=== 3. graphlite Driver API (all three transaction tiers) ===")
+	fmt.Println("\n=== 3. charta Driver API (all three transaction tiers) ===")
 	driverAPIExample(ctx)
 }
 
-// nativeAPIExample shows the lightweight native graphlite API.
-// Use this when you don't need the graphlite.Driver interface.
+// nativeAPIExample shows the lightweight native charta API.
+// Use this when you don't need the charta.Driver interface.
 func nativeAPIExample(ctx context.Context) {
-	db, err := graphlite.Open(":memory:")
+	db, err := charta.Open(":memory:")
 	must(err)
 	defer db.Close(ctx)
 
@@ -72,7 +72,7 @@ func nativeAPIExample(ctx context.Context) {
 		map[string]any{"name": "Alice"},
 	)
 	must(err)
-	eager, err := graphlite.NewEagerResult(ctx, qr)
+	eager, err := charta.NewEagerResult(ctx, qr)
 	must(err)
 	age, _ := eager.Records[0].Get("age")
 	fmt.Printf("  Alice's age: %v\n", age)
@@ -80,7 +80,7 @@ func nativeAPIExample(ctx context.Context) {
 
 // importExample seeds a database from a JSON payload in one atomic transaction.
 func importExample(ctx context.Context) {
-	db, err := graphlite.Open(":memory:")
+	db, err := charta.Open(":memory:")
 	must(err)
 	defer db.Close(ctx)
 
@@ -97,7 +97,7 @@ func importExample(ctx context.Context) {
 		]
 	}`
 
-	err = db.Import(ctx, strings.NewReader(payload), graphlite.FormatJSON)
+	err = db.Import(ctx, strings.NewReader(payload), charta.FormatJSON)
 	must(err)
 
 	qr, err := db.RunQuery(ctx,
@@ -114,29 +114,29 @@ func importExample(ctx context.Context) {
 	must(qr.Err())
 }
 
-// driverAPIExample demonstrates all three graphlite transaction tiers.
+// driverAPIExample demonstrates all three charta transaction tiers.
 //
 // In production code that targets real Neo4j, wrap the neo4j driver in a thin
-// adapter that implements graphlite.Driver, then swap the NewDriver call.
+// adapter that implements charta.Driver, then swap the NewDriver call.
 func driverAPIExample(ctx context.Context) {
-	driver, err := graphlite.NewDriver(":memory:", graphlite.NoAuth())
+	driver, err := charta.NewDriver(":memory:", charta.NoAuth())
 	must(err)
 	defer driver.Close(ctx)
 
-	// ── Tier 1: graphlite.ExecuteQuery ────────────────────────────────────────
+	// ── Tier 1: charta.ExecuteQuery ────────────────────────────────────────
 	// The simplest API: auto-managed session + transaction + eager result.
-	_, err = graphlite.ExecuteQuery[*graphlite.EagerResult](ctx, driver,
+	_, err = charta.ExecuteQuery[*charta.EagerResult](ctx, driver,
 		`CREATE (:Developer {name: "Carol", lang: "Go"})`,
 		nil,
-		graphlite.EagerResultTransformer,
+		charta.EagerResultTransformer,
 	)
 	must(err)
-	fmt.Println("  Tier 1: node created via graphlite.ExecuteQuery")
+	fmt.Println("  Tier 1: node created via charta.ExecuteQuery")
 
-	result, err := graphlite.ExecuteQuery[*graphlite.EagerResult](ctx, driver,
+	result, err := charta.ExecuteQuery[*charta.EagerResult](ctx, driver,
 		`MATCH (d:Developer) RETURN d.name AS name, d.lang AS lang`,
 		nil,
-		graphlite.EagerResultTransformer,
+		charta.EagerResultTransformer,
 	)
 	must(err)
 	for _, rec := range result.Records {
@@ -151,7 +151,7 @@ func driverAPIExample(ctx context.Context) {
 	sess := driver.NewSession(ctx)
 	defer sess.Close(ctx)
 
-	_, err = sess.ExecuteWrite(ctx, func(tx graphlite.ManagedTransaction) (any, error) {
+	_, err = sess.ExecuteWrite(ctx, func(tx charta.ManagedTransaction) (any, error) {
 		_, err := tx.Run(ctx,
 			`CREATE (:Developer {name: "Dave", lang: "Rust"})`,
 			nil,
@@ -161,7 +161,7 @@ func driverAPIExample(ctx context.Context) {
 	must(err)
 	fmt.Println("  Tier 2: node created via session.ExecuteWrite")
 
-	names, err := sess.ExecuteRead(ctx, func(tx graphlite.ManagedTransaction) (any, error) {
+	names, err := sess.ExecuteRead(ctx, func(tx charta.ManagedTransaction) (any, error) {
 		result, err := tx.Run(ctx,
 			`MATCH (d:Developer) RETURN d.name AS name ORDER BY d.name`,
 			nil,
@@ -204,10 +204,10 @@ func driverAPIExample(ctx context.Context) {
 	must(tx.Commit(ctx))
 	fmt.Println("  Tier 3: transaction committed — Frank persisted")
 
-	final, err := graphlite.ExecuteQuery[*graphlite.EagerResult](ctx, driver,
+	final, err := charta.ExecuteQuery[*charta.EagerResult](ctx, driver,
 		`MATCH (d:Developer) RETURN d.name AS name ORDER BY d.name`,
 		nil,
-		graphlite.EagerResultTransformer,
+		charta.EagerResultTransformer,
 	)
 	must(err)
 	var allNames []string

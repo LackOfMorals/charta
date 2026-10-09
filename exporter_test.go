@@ -1,4 +1,4 @@
-package graphlite_test
+package charta_test
 
 import (
 	"bytes"
@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/LackOfMorals/graphlite/v2"
+	"github.com/LackOfMorals/charta"
 )
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -20,7 +20,7 @@ func TestImport_CSVNodes_Basic(t *testing.T) {
 	ctx := context.Background()
 
 	csv := ":ID,:LABEL,name:string,age:int\n1,Person,Alice,30\n2,Person,Bob,25\n"
-	if err := db.Import(ctx, strings.NewReader(csv), graphlite.FormatCSVNodes); err != nil {
+	if err := db.Import(ctx, strings.NewReader(csv), charta.FormatCSVNodes); err != nil {
 		t.Fatalf("Import CSV nodes: %v", err)
 	}
 
@@ -34,7 +34,7 @@ func TestImport_CSVNodes_MissingIDColumn(t *testing.T) {
 	ctx := context.Background()
 
 	csv := ":LABEL,name:string\nPerson,Alice\n"
-	err := db.Import(ctx, strings.NewReader(csv), graphlite.FormatCSVNodes)
+	err := db.Import(ctx, strings.NewReader(csv), charta.FormatCSVNodes)
 	if err == nil {
 		t.Fatal("expected error for missing :ID column, got nil")
 	}
@@ -48,7 +48,7 @@ func TestImport_CSVNodes_MissingLABELColumn(t *testing.T) {
 	ctx := context.Background()
 
 	csv := ":ID,name:string\n1,Alice\n"
-	err := db.Import(ctx, strings.NewReader(csv), graphlite.FormatCSVNodes)
+	err := db.Import(ctx, strings.NewReader(csv), charta.FormatCSVNodes)
 	if err == nil {
 		t.Fatal("expected error for missing :LABEL column, got nil")
 	}
@@ -62,7 +62,7 @@ func TestImport_CSVNodes_TypedProperties(t *testing.T) {
 	ctx := context.Background()
 
 	csv := ":ID,:LABEL,score:float,active:bool\n1,Item,9.5,true\n"
-	if err := db.Import(ctx, strings.NewReader(csv), graphlite.FormatCSVNodes); err != nil {
+	if err := db.Import(ctx, strings.NewReader(csv), charta.FormatCSVNodes); err != nil {
 		t.Fatalf("Import CSV typed props: %v", err)
 	}
 	if got := countNodes(t, db); got != 1 {
@@ -76,7 +76,7 @@ func TestImport_CSVNodes_Rollback(t *testing.T) {
 
 	// Row 3 has a bad int value — should rollback node from row 1 and 2.
 	csv := ":ID,:LABEL,age:int\n1,Person,30\n2,Person,25\n3,Person,notanint\n"
-	err := db.Import(ctx, strings.NewReader(csv), graphlite.FormatCSVNodes)
+	err := db.Import(ctx, strings.NewReader(csv), charta.FormatCSVNodes)
 	if err == nil {
 		t.Fatal("expected error for bad int, got nil")
 	}
@@ -95,14 +95,14 @@ func TestImport_CSVEdges_Basic(t *testing.T) {
 
 	// First import nodes so we have IDs 1 and 2 in the DB.
 	nodeCsv := ":ID,:LABEL,name:string\n1,Person,Alice\n2,Person,Bob\n"
-	if err := db.Import(ctx, strings.NewReader(nodeCsv), graphlite.FormatCSVNodes); err != nil {
+	if err := db.Import(ctx, strings.NewReader(nodeCsv), charta.FormatCSVNodes); err != nil {
 		t.Fatalf("Import CSV nodes: %v", err)
 	}
 
 	// Now import edges referencing those IDs (1 and 2 are the auto-assigned IDs).
 	// After importing with FormatCSVNodes the DB assigns IDs 1 and 2.
 	edgeCsv := fmt.Sprintf(":START_ID,:END_ID,:TYPE\n%d,%d,KNOWS\n", 1, 2)
-	if err := db.Import(ctx, strings.NewReader(edgeCsv), graphlite.FormatCSVEdges); err != nil {
+	if err := db.Import(ctx, strings.NewReader(edgeCsv), charta.FormatCSVEdges); err != nil {
 		t.Fatalf("Import CSV edges: %v", err)
 	}
 
@@ -116,7 +116,7 @@ func TestImport_CSVEdges_MissingStartID(t *testing.T) {
 	ctx := context.Background()
 
 	csv := ":END_ID,:TYPE\n1,KNOWS\n"
-	err := db.Import(ctx, strings.NewReader(csv), graphlite.FormatCSVEdges)
+	err := db.Import(ctx, strings.NewReader(csv), charta.FormatCSVEdges)
 	if err == nil {
 		t.Fatal("expected error for missing :START_ID column, got nil")
 	}
@@ -127,7 +127,7 @@ func TestImport_CSVEdges_MissingEndID(t *testing.T) {
 	ctx := context.Background()
 
 	csv := ":START_ID,:TYPE\n1,KNOWS\n"
-	err := db.Import(ctx, strings.NewReader(csv), graphlite.FormatCSVEdges)
+	err := db.Import(ctx, strings.NewReader(csv), charta.FormatCSVEdges)
 	if err == nil {
 		t.Fatal("expected error for missing :END_ID column, got nil")
 	}
@@ -138,7 +138,7 @@ func TestImport_CSVEdges_MissingType(t *testing.T) {
 	ctx := context.Background()
 
 	csv := ":START_ID,:END_ID\n1,2\n"
-	err := db.Import(ctx, strings.NewReader(csv), graphlite.FormatCSVEdges)
+	err := db.Import(ctx, strings.NewReader(csv), charta.FormatCSVEdges)
 	if err == nil {
 		t.Fatal("expected error for missing :TYPE column, got nil")
 	}
@@ -151,7 +151,7 @@ func TestImport_CSVEdges_InvalidNodeRef(t *testing.T) {
 	// No nodes in DB — edge ref should fail with a clear error that
 	// does not expose the raw SQLite FOREIGN KEY constraint message.
 	csv := ":START_ID,:END_ID,:TYPE\n99,100,KNOWS\n"
-	err := db.Import(ctx, strings.NewReader(csv), graphlite.FormatCSVEdges)
+	err := db.Import(ctx, strings.NewReader(csv), charta.FormatCSVEdges)
 	if err == nil {
 		t.Fatal("expected error for nonexistent node ref, got nil")
 	}
@@ -180,19 +180,19 @@ func TestExport_JSON_RoundTrip(t *testing.T) {
 	],"edges":[
 		{"type":"KNOWS","startId":"n1","endId":"n2","props":{"since":2020}}
 	]}`
-	if err := db.Import(ctx, strings.NewReader(seed), graphlite.FormatJSON); err != nil {
+	if err := db.Import(ctx, strings.NewReader(seed), charta.FormatJSON); err != nil {
 		t.Fatalf("seed import: %v", err)
 	}
 
 	// Export to JSON.
 	var buf bytes.Buffer
-	if err := db.Export(ctx, &buf, graphlite.ExportFormatJSON); err != nil {
+	if err := db.Export(ctx, &buf, charta.ExportFormatJSON); err != nil {
 		t.Fatalf("Export JSON: %v", err)
 	}
 
 	// Re-import into a fresh DB and verify counts.
 	db2 := openMem(t)
-	if err := db2.Import(ctx, &buf, graphlite.FormatJSON); err != nil {
+	if err := db2.Import(ctx, &buf, charta.FormatJSON); err != nil {
 		t.Fatalf("re-import from exported JSON: %v", err)
 	}
 	if got := countNodes(t, db2); got != 2 {
@@ -208,7 +208,7 @@ func TestExport_JSON_EmptyGraph(t *testing.T) {
 	ctx := context.Background()
 
 	var buf bytes.Buffer
-	if err := db.Export(ctx, &buf, graphlite.ExportFormatJSON); err != nil {
+	if err := db.Export(ctx, &buf, charta.ExportFormatJSON); err != nil {
 		t.Fatalf("Export JSON empty: %v", err)
 	}
 
@@ -233,12 +233,12 @@ func TestExport_JSON_FieldStructure(t *testing.T) {
 	ctx := context.Background()
 
 	seed := `{"nodes":[{"id":"n1","labels":["Person"],"props":{"name":"Alice"}}],"edges":[]}`
-	if err := db.Import(ctx, strings.NewReader(seed), graphlite.FormatJSON); err != nil {
+	if err := db.Import(ctx, strings.NewReader(seed), charta.FormatJSON); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
 
 	var buf bytes.Buffer
-	if err := db.Export(ctx, &buf, graphlite.ExportFormatJSON); err != nil {
+	if err := db.Export(ctx, &buf, charta.ExportFormatJSON); err != nil {
 		t.Fatalf("Export JSON: %v", err)
 	}
 
@@ -284,12 +284,12 @@ func TestExport_CSV_Basic(t *testing.T) {
 	],"edges":[
 		{"type":"KNOWS","startId":"n1","endId":"n2","props":{}}
 	]}`
-	if err := db.Import(ctx, strings.NewReader(seed), graphlite.FormatJSON); err != nil {
+	if err := db.Import(ctx, strings.NewReader(seed), charta.FormatJSON); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
 
 	var buf bytes.Buffer
-	if err := db.Export(ctx, &buf, graphlite.ExportFormatCSV); err != nil {
+	if err := db.Export(ctx, &buf, charta.ExportFormatCSV); err != nil {
 		t.Fatalf("Export CSV: %v", err)
 	}
 
@@ -331,12 +331,12 @@ func TestExport_CSV_NodesOnly(t *testing.T) {
 		{"id":"n1","labels":["Person"],"props":{"name":"Alice"}},
 		{"id":"n2","labels":["Person"],"props":{"name":"Bob"}}
 	],"edges":[]}`
-	if err := db.Import(ctx, strings.NewReader(seed), graphlite.FormatJSON); err != nil {
+	if err := db.Import(ctx, strings.NewReader(seed), charta.FormatJSON); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
 
 	var buf bytes.Buffer
-	if err := db.Export(ctx, &buf, graphlite.ExportFormatCSV); err != nil {
+	if err := db.Export(ctx, &buf, charta.ExportFormatCSV); err != nil {
 		t.Fatalf("Export CSV nodes-only: %v", err)
 	}
 
@@ -383,19 +383,19 @@ func TestExport_RoundTrip_500Nodes(t *testing.T) {
 	}
 	sb.WriteString(`]}`)
 
-	if err := db.Import(ctx, strings.NewReader(sb.String()), graphlite.FormatJSON); err != nil {
+	if err := db.Import(ctx, strings.NewReader(sb.String()), charta.FormatJSON); err != nil {
 		t.Fatalf("seed import: %v", err)
 	}
 
 	// Export as JSON.
 	var exportBuf bytes.Buffer
-	if err := db.Export(ctx, &exportBuf, graphlite.ExportFormatJSON); err != nil {
+	if err := db.Export(ctx, &exportBuf, charta.ExportFormatJSON); err != nil {
 		t.Fatalf("Export JSON: %v", err)
 	}
 
 	// Re-import into a fresh DB and verify counts.
 	db2 := openMem(t)
-	if err := db2.Import(ctx, &exportBuf, graphlite.FormatJSON); err != nil {
+	if err := db2.Import(ctx, &exportBuf, charta.FormatJSON); err != nil {
 		t.Fatalf("re-import from exported JSON: %v", err)
 	}
 
@@ -412,7 +412,7 @@ func TestExport_UnsupportedFormat(t *testing.T) {
 	db := openMem(t)
 	ctx := context.Background()
 	var buf bytes.Buffer
-	err := db.Export(ctx, &buf, graphlite.ExportFormat(99))
+	err := db.Export(ctx, &buf, charta.ExportFormat(99))
 	if err == nil {
 		t.Fatal("expected error for unsupported export format, got nil")
 	}

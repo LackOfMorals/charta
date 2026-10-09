@@ -1,4 +1,4 @@
-package graphlite
+package charta
 
 import (
 	"context"
@@ -12,7 +12,7 @@ import (
 // ─────────────────────────────────────────────────────────────────────────────
 
 // PropertyValue is a type constraint that encompasses all scalar types that may
-// appear as property values in a graphlite graph.
+// appear as property values in a charta graph.
 type PropertyValue interface {
 	~bool |
 		~int | ~int8 | ~int16 | ~int32 | ~int64 |
@@ -59,11 +59,11 @@ func GetProperty[T PropertyValue](entity propsGetter, key string) (T, error) {
 	props := entity.getProps()
 	raw, ok := props[key]
 	if !ok {
-		return zero, fmt.Errorf("graphlite: property %q not found", key)
+		return zero, fmt.Errorf("charta: property %q not found", key)
 	}
 	v, err := convertTo[T](raw)
 	if err != nil {
-		return zero, fmt.Errorf("graphlite: property %q: %w", key, err)
+		return zero, fmt.Errorf("charta: property %q: %w", key, err)
 	}
 	return v, nil
 }
@@ -80,14 +80,14 @@ func GetRecordValue[T RecordValue](rec *Record, key string) (T, bool, error) {
 	var zero T
 	raw, ok := rec.Get(key)
 	if !ok {
-		return zero, false, fmt.Errorf("graphlite: record key %q not found", key)
+		return zero, false, fmt.Errorf("charta: record key %q not found", key)
 	}
 	if raw == nil {
 		return zero, true, nil
 	}
 	v, err := convertRecordValueTo[T](raw)
 	if err != nil {
-		return zero, false, fmt.Errorf("graphlite: record key %q: %w", key, err)
+		return zero, false, fmt.Errorf("charta: record key %q: %w", key, err)
 	}
 	return v, false, nil
 }

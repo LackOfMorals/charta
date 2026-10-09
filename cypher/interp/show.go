@@ -4,8 +4,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/LackOfMorals/graphlite/v2/cypher/proc"
-	"github.com/LackOfMorals/graphlite/v2/cypher/syntax"
+	"github.com/LackOfMorals/charta/cypher/proc"
+	"github.com/LackOfMorals/charta/cypher/syntax"
 )
 
 var (

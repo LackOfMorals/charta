@@ -1,4 +1,4 @@
-package graphlite_test
+package charta_test
 
 import (
 	"context"
@@ -7,13 +7,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/LackOfMorals/graphlite/v2"
+	"github.com/LackOfMorals/charta"
 )
 
-// openMem opens a fresh in-memory graphlite DB for testing.
-func openMem(t *testing.T) *graphlite.DB {
+// openMem opens a fresh in-memory charta DB for testing.
+func openMem(t *testing.T) *charta.DB {
 	t.Helper()
-	db, err := graphlite.Open(":memory:")
+	db, err := charta.Open(":memory:")
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
@@ -23,7 +23,7 @@ func openMem(t *testing.T) *graphlite.DB {
 
 // countNodes runs MATCH (n) RETURN count(*) — currently we just do MATCH (n) RETURN n
 // and count records, since COUNT(*) aggregation is a v0.2 feature.
-func countNodes(t *testing.T, db *graphlite.DB) int {
+func countNodes(t *testing.T, db *charta.DB) int {
 	t.Helper()
 	ctx := context.Background()
 	qr, err := db.RunQuery(ctx, "MATCH (n) RETURN n", nil)
@@ -38,7 +38,7 @@ func countNodes(t *testing.T, db *graphlite.DB) int {
 }
 
 // countEdges counts all edges via RunQuery.
-func countEdges(t *testing.T, db *graphlite.DB) int {
+func countEdges(t *testing.T, db *charta.DB) int {
 	t.Helper()
 	ctx := context.Background()
 	qr, err := db.RunQuery(ctx, "MATCH ()-[r]->() RETURN r", nil)
@@ -68,7 +68,7 @@ func TestImport_ValidJSON(t *testing.T) {
 		]
 	}`
 
-	if err := db.Import(ctx, strings.NewReader(payload), graphlite.FormatJSON); err != nil {
+	if err := db.Import(ctx, strings.NewReader(payload), charta.FormatJSON); err != nil {
 		t.Fatalf("Import: %v", err)
 	}
 
@@ -85,7 +85,7 @@ func TestImport_EmptyGraph(t *testing.T) {
 	db := openMem(t)
 	ctx := context.Background()
 
-	if err := db.Import(ctx, strings.NewReader(`{"nodes":[],"edges":[]}`), graphlite.FormatJSON); err != nil {
+	if err := db.Import(ctx, strings.NewReader(`{"nodes":[],"edges":[]}`), charta.FormatJSON); err != nil {
 		t.Fatalf("Import empty: %v", err)
 	}
 	if got := countNodes(t, db); got != 0 {
@@ -107,7 +107,7 @@ func TestImport_NoProps(t *testing.T) {
 			{"type": "LINK", "startId": "a", "endId": "b"}
 		]
 	}`
-	if err := db.Import(ctx, strings.NewReader(payload), graphlite.FormatJSON); err != nil {
+	if err := db.Import(ctx, strings.NewReader(payload), charta.FormatJSON); err != nil {
 		t.Fatalf("Import no props: %v", err)
 	}
 	if got := countNodes(t, db); got != 2 {
@@ -124,7 +124,7 @@ func TestImport_MultipleLabels(t *testing.T) {
 	ctx := context.Background()
 
 	payload := `{"nodes":[{"id":"n1","labels":["Person","Employee"],"props":{"name":"Charlie"}}],"edges":[]}`
-	if err := db.Import(ctx, strings.NewReader(payload), graphlite.FormatJSON); err != nil {
+	if err := db.Import(ctx, strings.NewReader(payload), charta.FormatJSON); err != nil {
 		t.Fatalf("Import multi-label: %v", err)
 	}
 
@@ -154,7 +154,7 @@ func TestImport_InvalidJSON(t *testing.T) {
 	db := openMem(t)
 	ctx := context.Background()
 
-	err := db.Import(ctx, strings.NewReader(`{not valid json`), graphlite.FormatJSON)
+	err := db.Import(ctx, strings.NewReader(`{not valid json`), charta.FormatJSON)
 	if err == nil {
 		t.Fatal("expected error for invalid JSON, got nil")
 	}
@@ -175,7 +175,7 @@ func TestImport_UnknownEdgeStartId(t *testing.T) {
 		"nodes": [{"id": "n1", "labels": ["X"], "props": {}}],
 		"edges": [{"type": "T", "startId": "DOES_NOT_EXIST", "endId": "n1", "props": {}}]
 	}`
-	err := db.Import(ctx, strings.NewReader(payload), graphlite.FormatJSON)
+	err := db.Import(ctx, strings.NewReader(payload), charta.FormatJSON)
 	if err == nil {
 		t.Fatal("expected error for unknown startId, got nil")
 	}
@@ -196,7 +196,7 @@ func TestImport_UnknownEdgeEndId(t *testing.T) {
 		"nodes": [{"id": "n1", "labels": ["X"], "props": {}}],
 		"edges": [{"type": "T", "startId": "n1", "endId": "MISSING", "props": {}}]
 	}`
-	err := db.Import(ctx, strings.NewReader(payload), graphlite.FormatJSON)
+	err := db.Import(ctx, strings.NewReader(payload), charta.FormatJSON)
 	if err == nil {
 		t.Fatal("expected error for unknown endId, got nil")
 	}
@@ -219,7 +219,7 @@ func TestImport_DuplicateNodeId(t *testing.T) {
 		],
 		"edges": []
 	}`
-	err := db.Import(ctx, strings.NewReader(payload), graphlite.FormatJSON)
+	err := db.Import(ctx, strings.NewReader(payload), charta.FormatJSON)
 	if err == nil {
 		t.Fatal("expected error for duplicate node id, got nil")
 	}
@@ -241,7 +241,7 @@ func TestImport_MissingEdgeType(t *testing.T) {
 		],
 		"edges": [{"startId": "a", "endId": "b"}]
 	}`
-	err := db.Import(ctx, strings.NewReader(payload), graphlite.FormatJSON)
+	err := db.Import(ctx, strings.NewReader(payload), charta.FormatJSON)
 	if err == nil {
 		t.Fatal("expected error for missing edge type, got nil")
 	}
@@ -261,11 +261,11 @@ func TestImport_DepthExceeded(t *testing.T) {
 	inner := strings.Repeat(`{"x":`, 18) + `1` + strings.Repeat(`}`, 18)
 	payload := fmt.Sprintf(`{"nodes":[{"id":"n1","labels":["X"],"props":%s}],"edges":[]}`, inner)
 
-	err := db.Import(ctx, strings.NewReader(payload), graphlite.FormatJSON)
+	err := db.Import(ctx, strings.NewReader(payload), charta.FormatJSON)
 	if err == nil {
 		t.Fatal("expected ErrImportDepthExceeded, got nil")
 	}
-	var depthErr *graphlite.ErrImportDepthExceeded
+	var depthErr *charta.ErrImportDepthExceeded
 	if !isErrType(err, &depthErr) {
 		t.Errorf("expected *ErrImportDepthExceeded, got %T: %v", err, err)
 	}
@@ -359,11 +359,11 @@ func TestImport_TooLarge(t *testing.T) {
 		_ = pw.Close()
 	}()
 
-	err := db.Import(ctx, pr, graphlite.FormatJSON)
+	err := db.Import(ctx, pr, charta.FormatJSON)
 	if err == nil {
 		t.Fatal("expected error for oversized import, got nil")
 	}
-	var sizeErr *graphlite.ErrImportTooLarge
+	var sizeErr *charta.ErrImportTooLarge
 	if !isErrType(err, &sizeErr) {
 		// It's acceptable to get ErrImportTooLarge OR a JSON parse error that
 		// wraps it. If neither, check for the TooLarge string.
@@ -378,7 +378,7 @@ func TestImport_UnsupportedFormat(t *testing.T) {
 	db := openMem(t)
 	ctx := context.Background()
 
-	err := db.Import(ctx, strings.NewReader(`{}`), graphlite.Format(99))
+	err := db.Import(ctx, strings.NewReader(`{}`), charta.Format(99))
 	if err == nil {
 		t.Fatal("expected error for unsupported format, got nil")
 	}
@@ -413,7 +413,7 @@ func TestImport_LargeGraph(t *testing.T) {
 	}
 	sb.WriteString(`]}`)
 
-	if err := db.Import(ctx, strings.NewReader(sb.String()), graphlite.FormatJSON); err != nil {
+	if err := db.Import(ctx, strings.NewReader(sb.String()), charta.FormatJSON); err != nil {
 		t.Fatalf("Import large graph: %v", err)
 	}
 
@@ -432,7 +432,7 @@ func TestImport_NodeWithoutId(t *testing.T) {
 	ctx := context.Background()
 
 	payload := `{"nodes":[{"labels":["X"],"props":{"val":1}}],"edges":[]}`
-	if err := db.Import(ctx, strings.NewReader(payload), graphlite.FormatJSON); err != nil {
+	if err := db.Import(ctx, strings.NewReader(payload), charta.FormatJSON); err != nil {
 		t.Fatalf("Import node without id: %v", err)
 	}
 	if got := countNodes(t, db); got != 1 {

@@ -3,8 +3,8 @@ package analyze_test
 import (
 	"testing"
 
-	"github.com/LackOfMorals/graphlite/v2/cypher/analyze"
-	"github.com/LackOfMorals/graphlite/v2/cypher/syntax"
+	"github.com/LackOfMorals/charta/cypher/analyze"
+	"github.com/LackOfMorals/charta/cypher/syntax"
 )
 
 func run(t *testing.T, q string) (class, code string) {

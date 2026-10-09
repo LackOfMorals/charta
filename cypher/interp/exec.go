@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/LackOfMorals/graphlite/v2/cypher/syntax"
+	"github.com/LackOfMorals/charta/cypher/syntax"
 )
 
 // Result is the outcome of executing a statement.

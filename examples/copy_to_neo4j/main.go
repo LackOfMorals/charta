@@ -1,21 +1,21 @@
-// copy_to_neo4j demonstrates pushing a sub-graph from a local graphlite
+// copy_to_neo4j demonstrates pushing a sub-graph from a local charta
 // database into a remote Neo4j instance.
 //
-// Pattern: open the local graphlite file, query the sub-graph of interest
+// Pattern: open the local charta file, query the sub-graph of interest
 // using MATCH, then write each node and relationship into Neo4j using
 // session.ExecuteWrite. This is useful for promoting a locally-built or
 // test-generated graph to a shared Neo4j cluster.
 //
 // Environment variables:
 //
-//	GRAPHLITE_PATH — source graphlite file path (default: graph.db)
+//	CHARTA_PATH — source charta file path (default: graph.db)
 //	NEO4J_URI      — bolt or neo4j URI (default: neo4j://localhost:7687)
 //	NEO4J_USER     — username (default: neo4j)
 //	NEO4J_PASS     — password (default: empty)
 //
 // Run with:
 //
-//	GRAPHLITE_PATH=graph.db NEO4J_URI=neo4j://localhost:7687 NEO4J_USER=neo4j NEO4J_PASS=secret go run .
+//	CHARTA_PATH=graph.db NEO4J_URI=neo4j://localhost:7687 NEO4J_USER=neo4j NEO4J_PASS=secret go run .
 package main
 
 import (
@@ -25,18 +25,18 @@ import (
 	"os"
 	"strings"
 
-	graphlite "github.com/LackOfMorals/graphlite/v2"
+	charta "github.com/LackOfMorals/charta"
 	"github.com/neo4j/neo4j-go-driver/v6/neo4j"
 )
 
 func main() {
 	ctx := context.Background()
 
-	// ── graphlite source ──────────────────────────────────────────────────────
-	dbPath := envOrDefault("GRAPHLITE_PATH", "graph.db")
-	db, err := graphlite.Open(dbPath)
+	// ── charta source ──────────────────────────────────────────────────────
+	dbPath := envOrDefault("CHARTA_PATH", "graph.db")
+	db, err := charta.Open(dbPath)
 	if err != nil {
-		log.Fatalf("graphlite.Open %q: %v", dbPath, err)
+		log.Fatalf("charta.Open %q: %v", dbPath, err)
 	}
 	defer db.Close(ctx)
 
@@ -51,10 +51,10 @@ func main() {
 	}
 	defer driver.Close(ctx)
 
-	// ── Read nodes from graphlite ─────────────────────────────────────────────
+	// ── Read nodes from charta ─────────────────────────────────────────────
 	nodeResult, err := db.RunQuery(ctx, `MATCH (n) RETURN n`, nil)
 	if err != nil {
-		log.Fatalf("graphlite MATCH nodes: %v", err)
+		log.Fatalf("charta MATCH nodes: %v", err)
 	}
 	nodeRecords, err := nodeResult.Collect(ctx)
 	if err != nil {
@@ -71,7 +71,7 @@ func main() {
 		if !ok {
 			continue
 		}
-		node, ok := raw.(*graphlite.Node)
+		node, ok := raw.(*charta.Node)
 		if !ok {
 			continue
 		}
@@ -86,9 +86,9 @@ func main() {
 			labelStr = ":" + strings.Join(parts, ":")
 		}
 
-		// Use MERGE on the graphlite ElementId to make the operation idempotent.
+		// Use MERGE on the charta ElementId to make the operation idempotent.
 		cypher := fmt.Sprintf(
-			"MERGE (n%s {_graphlite_id: $id}) SET n += $props",
+			"MERGE (n%s {_charta_id: $id}) SET n += $props",
 			labelStr,
 		)
 		props := make(map[string]any, len(node.Props))
@@ -108,12 +108,12 @@ func main() {
 		}
 		nodeCount++
 	}
-	fmt.Printf("Pushed %d node(s) from graphlite → Neo4j\n", nodeCount)
+	fmt.Printf("Pushed %d node(s) from charta → Neo4j\n", nodeCount)
 
-	// ── Read relationships from graphlite ─────────────────────────────────────
+	// ── Read relationships from charta ─────────────────────────────────────
 	relResult, err := db.RunQuery(ctx, `MATCH (a)-[r]->(b) RETURN a, r, b`, nil)
 	if err != nil {
-		log.Fatalf("graphlite MATCH rels: %v", err)
+		log.Fatalf("charta MATCH rels: %v", err)
 	}
 	relRecords, err := relResult.Collect(ctx)
 	if err != nil {
@@ -127,14 +127,14 @@ func main() {
 		if !ok {
 			continue
 		}
-		rel, ok := rawRel.(*graphlite.Relationship)
+		rel, ok := rawRel.(*charta.Relationship)
 		if !ok {
 			continue
 		}
 		rawA, _ := rec.Get("a")
 		rawB, _ := rec.Get("b")
-		nodeA, _ := rawA.(*graphlite.Node)
-		nodeB, _ := rawB.(*graphlite.Node)
+		nodeA, _ := rawA.(*charta.Node)
+		nodeB, _ := rawB.(*charta.Node)
 		if nodeA == nil || nodeB == nil {
 			continue
 		}
@@ -149,7 +149,7 @@ func main() {
 			"props": props,
 		}
 		cypher := fmt.Sprintf(
-			"MATCH (a {_graphlite_id: $aid}), (b {_graphlite_id: $bid}) MERGE (a)-[r:`%s`]->(b) SET r += $props",
+			"MATCH (a {_charta_id: $aid}), (b {_charta_id: $bid}) MERGE (a)-[r:`%s`]->(b) SET r += $props",
 			rel.Type,
 		)
 		_, err := session.ExecuteWrite(ctx, func(tx neo4j.ManagedTransaction) (any, error) {
@@ -160,7 +160,7 @@ func main() {
 		}
 		relCount++
 	}
-	fmt.Printf("Pushed %d relationship(s) from graphlite → Neo4j\n", relCount)
+	fmt.Printf("Pushed %d relationship(s) from charta → Neo4j\n", relCount)
 }
 
 func envOrDefault(key, def string) string {

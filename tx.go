@@ -1,15 +1,15 @@
-package graphlite
+package charta
 
 import (
 	"context"
 	"fmt"
 
-	"github.com/LackOfMorals/graphlite/v2/cypher/interp"
+	"github.com/LackOfMorals/charta/cypher/interp"
 
-	"github.com/LackOfMorals/graphlite/v2/store"
+	"github.com/LackOfMorals/charta/store"
 )
 
-// Tx is an explicit graphlite transaction. All queries run via Run share the
+// Tx is an explicit charta transaction. All queries run via Run share the
 // same underlying database transaction. Call Commit or Rollback to finish.
 //
 // Run returns an error if called after Commit or Rollback. However, calling
@@ -36,7 +36,7 @@ type Tx struct {
 // params may be nil if the query has no parameters.
 func (t *Tx) Run(ctx context.Context, cypherStr string, params map[string]any) (*Result, error) {
 	if t.done {
-		return nil, fmt.Errorf("graphlite: transaction already closed")
+		return nil, fmt.Errorf("charta: transaction already closed")
 	}
 	return runInterp(ctx, t.rawTx, cypherStr, params, nil, nil, false, t.eng, &t.deltas)
 }
@@ -44,10 +44,10 @@ func (t *Tx) Run(ctx context.Context, cypherStr string, params map[string]any) (
 // Commit commits the transaction.
 func (t *Tx) Commit() error {
 	if t.done {
-		return fmt.Errorf("graphlite: transaction already closed")
+		return fmt.Errorf("charta: transaction already closed")
 	}
 	if err := t.rawTx.Commit(); err != nil {
-		return fmt.Errorf("graphlite: commit: %w", err)
+		return fmt.Errorf("charta: commit: %w", err)
 	}
 	t.done = true
 	t.eng.ApplyVectorDeltas(t.deltas)
@@ -74,7 +74,7 @@ func (t *Tx) Rollback() error {
 	t.deltas = nil
 	t.eng.ResetIndexState() // the rollback may have undone an automatic index
 	if err := t.rawTx.Rollback(); err != nil {
-		return fmt.Errorf("graphlite: rollback: %w", err)
+		return fmt.Errorf("charta: rollback: %w", err)
 	}
 	return nil
 }

@@ -1,4 +1,4 @@
-package graphlite_test
+package charta_test
 
 import (
 	"context"
@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/LackOfMorals/graphlite/v2"
+	"github.com/LackOfMorals/charta"
 )
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -15,7 +15,7 @@ import (
 // ─────────────────────────────────────────────────────────────────────────────
 
 func TestNode_Fields(t *testing.T) {
-	n := graphlite.Node{
+	n := charta.Node{
 		ElementId: "1",
 		Labels:    []string{"Person", "Employee"},
 		Props:     map[string]any{"name": "Alice", "age": int64(30)},
@@ -37,7 +37,7 @@ func TestNode_Fields(t *testing.T) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 func TestRelationship_Fields(t *testing.T) {
-	r := graphlite.Relationship{
+	r := charta.Relationship{
 		ElementId:      "10",
 		Type:           "KNOWS",
 		StartElementId: "1",
@@ -68,7 +68,7 @@ func TestRelationship_Fields(t *testing.T) {
 
 // fetchRecord runs a MATCH query and returns the first record, failing the
 // test if the query or iteration fails.
-func fetchRecord(t *testing.T, db *graphlite.DB, query string, params map[string]any) *graphlite.Record {
+func fetchRecord(t *testing.T, db *charta.DB, query string, params map[string]any) *charta.Record {
 	t.Helper()
 	ctx := context.Background()
 	qr, err := db.RunQuery(ctx, query, params)
@@ -214,13 +214,13 @@ func TestRecord_Values(t *testing.T) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 func TestErrUnsupportedCypher_ErrorsAs(t *testing.T) {
-	err := &graphlite.ErrUnsupportedCypher{
+	err := &charta.ErrUnsupportedCypher{
 		Clause:   "UNION",
 		Position: 15,
 		Detail:   "UNION is not supported in v0.1",
 	}
 
-	var target *graphlite.ErrUnsupportedCypher
+	var target *charta.ErrUnsupportedCypher
 	if !errors.As(err, &target) {
 		t.Fatal("errors.As failed for ErrUnsupportedCypher")
 	}
@@ -233,7 +233,7 @@ func TestErrUnsupportedCypher_ErrorsAs(t *testing.T) {
 }
 
 func TestErrUnsupportedCypher_ErrorString_WithPosition(t *testing.T) {
-	err := &graphlite.ErrUnsupportedCypher{Clause: "CALL", Position: 5, Detail: "procedures not supported"}
+	err := &charta.ErrUnsupportedCypher{Clause: "CALL", Position: 5, Detail: "procedures not supported"}
 	s := err.Error()
 	if s == "" {
 		t.Error("Error() returned empty string")
@@ -244,7 +244,7 @@ func TestErrUnsupportedCypher_ErrorString_WithPosition(t *testing.T) {
 }
 
 func TestErrUnsupportedCypher_ErrorString_NoPosition(t *testing.T) {
-	err := &graphlite.ErrUnsupportedCypher{Clause: "UNION"}
+	err := &charta.ErrUnsupportedCypher{Clause: "UNION"}
 	s := err.Error()
 	if !strings.Contains(s, "UNION") {
 		t.Errorf("Error() does not mention clause name: %q", s)
@@ -252,10 +252,10 @@ func TestErrUnsupportedCypher_ErrorString_NoPosition(t *testing.T) {
 }
 
 func TestErrUnsupportedCypher_WrappedErrorsAs(t *testing.T) {
-	inner := &graphlite.ErrUnsupportedCypher{Clause: "MERGE", Position: 0}
+	inner := &charta.ErrUnsupportedCypher{Clause: "MERGE", Position: 0}
 	wrapped := fmt.Errorf("planner: %w", inner)
 
-	var target *graphlite.ErrUnsupportedCypher
+	var target *charta.ErrUnsupportedCypher
 	if !errors.As(wrapped, &target) {
 		t.Fatal("errors.As failed for wrapped ErrUnsupportedCypher")
 	}
@@ -269,8 +269,8 @@ func TestErrUnsupportedCypher_WrappedErrorsAs(t *testing.T) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 func TestErrMissingParameter_ErrorsAs(t *testing.T) {
-	err := &graphlite.ErrMissingParameter{Name: "minAge"}
-	var target *graphlite.ErrMissingParameter
+	err := &charta.ErrMissingParameter{Name: "minAge"}
+	var target *charta.ErrMissingParameter
 	if !errors.As(err, &target) {
 		t.Fatal("errors.As failed for ErrMissingParameter")
 	}

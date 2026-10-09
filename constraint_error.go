@@ -1,4 +1,4 @@
-package graphlite
+package charta
 
 import (
 	"fmt"
@@ -9,7 +9,7 @@ import (
 // (uniqueness, node key, property existence, property type) or the dimension of
 // a vector index. The statement is rolled back. Use errors.As to inspect it:
 //
-//	var cv *graphlite.ErrConstraintViolation
+//	var cv *charta.ErrConstraintViolation
 //	if errors.As(err, &cv) && cv.Kind == "UNIQUENESS" {
 //	    // e.g. report that the email is taken
 //	}
@@ -33,7 +33,7 @@ type ErrConstraintViolation struct {
 
 // Error implements the error interface.
 func (e *ErrConstraintViolation) Error() string {
-	return fmt.Sprintf("graphlite: constraint `%s` (%s on %s %s(%s)) violated: %s",
+	return fmt.Sprintf("charta: constraint `%s` (%s on %s %s(%s)) violated: %s",
 		e.Name, e.Kind, strings.ToLower(e.EntityType), e.Label, strings.Join(e.Properties, ", "), e.Message)
 }
 

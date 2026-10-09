@@ -1,4 +1,4 @@
-package graphlite
+package charta
 
 import (
 	"context"
@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/LackOfMorals/graphlite/v2/cypher/interp"
-	"github.com/LackOfMorals/graphlite/v2/store"
+	"github.com/LackOfMorals/charta/cypher/interp"
+	"github.com/LackOfMorals/charta/store"
 )
 
 // Read-only statements run on read-only connections, which cannot create the
