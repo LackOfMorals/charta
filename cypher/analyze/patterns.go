@@ -113,8 +113,8 @@ func (c *checker) declareRel(r *syntax.RelPattern, sc *scope, st *patState) {
 // singleType reports whether a relationship type expression names exactly one
 // type.
 func singleType(le syntax.LabelExpr) bool {
-	n, ok := le.(*syntax.LabelName)
-	return ok && n.Dynamic == nil
+	_, ok := le.(*syntax.LabelName) // a literal or dynamic $(expr) type
+	return ok
 }
 
 // evalPatterns checks the expressions inside patterns (property maps, inline

@@ -630,13 +630,27 @@ func writeReport(w *os.File, outcomes []tckOutcome) {
 // TestTCK — the main test entry point (compiled only with -tags=tck)
 // ─────────────────────────────────────────────────────────────────────────────
 
+// TestTCK runs the full openCypher TCK; every scenario not listed in
+// testdata/excluded.txt must pass.
 func TestTCK(t *testing.T) {
-	ctrs := &tckCounters{}
-	excluded := loadExclusions(filepath.Join("testdata", "excluded.txt"))
+	runFeatureSuite(t, "TCK", "testdata/tck", filepath.Join("testdata", "excluded.txt"))
+}
 
-	// Collect all .feature file paths from testdata/tck/
+// TestNeo4jExtensions runs graphlite's own scenarios for Neo4j's extensions to
+// openCypher (label expressions, subqueries, quantified path patterns, …),
+// written in the TCK's Gherkin dialect. Scenarios for constructs that are not
+// executed yet are listed in testdata/neo4j-deferred.txt with a reason.
+func TestNeo4jExtensions(t *testing.T) {
+	runFeatureSuite(t, "Neo4j extensions", "testdata/neo4j", filepath.Join("testdata", "neo4j-deferred.txt"))
+}
+
+func runFeatureSuite(t *testing.T, label, dir, exclusionFile string) {
+	ctrs := &tckCounters{}
+	excluded := loadExclusions(exclusionFile)
+
+	// Collect all .feature file paths from dir.
 	var featurePaths []string
-	err := filepath.Walk("testdata/tck", func(path string, info os.FileInfo, err error) error {
+	err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
@@ -646,7 +660,7 @@ func TestTCK(t *testing.T) {
 		return nil
 	})
 	if err != nil || len(featurePaths) == 0 {
-		t.Fatalf("no .feature files found in testdata/tck/ (err=%v)", err)
+		t.Fatalf("no .feature files found in %s (err=%v)", dir, err)
 	}
 	t.Logf("Found %d feature file(s): %v", len(featurePaths), featurePaths)
 
@@ -658,7 +672,7 @@ func TestTCK(t *testing.T) {
 	}
 
 	suite := godog.TestSuite{
-		Name: "graphlite-tck",
+		Name: "graphlite-" + label,
 		TestSuiteInitializer: func(tsc *godog.TestSuiteContext) {
 			tsc.AfterSuite(func() {})
 		},
@@ -668,7 +682,7 @@ func TestTCK(t *testing.T) {
 			// Before: check if this scenario uses unsupported features.
 			sc.Before(func(ctx context.Context, scenario *godog.Scenario) (context.Context, error) {
 				state.reset()
-				state.feature = strings.TrimPrefix(filepath.ToSlash(scenario.Uri), "testdata/tck/")
+				state.feature = strings.TrimPrefix(filepath.ToSlash(scenario.Uri), dir+"/")
 				state.name = scenario.Name
 				if reason, ok := excluded[state.feature+"::"+state.name]; ok {
 					state.skipped = true
@@ -806,17 +820,17 @@ func TestTCK(t *testing.T) {
 
 	// Prominent pass-rate banner.
 	fmt.Printf("\n================================================================================\n")
-	fmt.Printf("TCK pass rate: %d/%d (%.1f%%)  [skipped: %d, failed: %d]\n",
-		passed, executed, passRate, skipped, failed)
+	fmt.Printf("%s pass rate: %d/%d (%.1f%%)  [skipped: %d, failed: %d]\n",
+		label, passed, executed, passRate, skipped, failed)
 	fmt.Printf("================================================================================\n\n")
 
-	t.Logf("TCK pass rate: %d/%d (%.1f%%)  [skipped: %d, failed: %d]",
-		passed, executed, passRate, skipped, failed)
+	t.Logf("%s pass rate: %d/%d (%.1f%%)  [skipped: %d, failed: %d]",
+		label, passed, executed, passRate, skipped, failed)
 
 	_ = exitCode // don't fail on non-zero Godog exit; we enforce threshold below
 
 	if executed > 0 && passRate < 100.0 {
-		t.Errorf("TCK pass rate %.1f%% is below the required 100%% (every scenario not in excluded.txt must pass) (%d/%d scenarios passed)",
-			passRate, passed, executed)
+		t.Errorf("%s pass rate %.1f%% is below the required 100%% (every scenario not in %s must pass) (%d/%d scenarios passed)",
+			label, passRate, exclusionFile, passed, executed)
 	}
 }
