@@ -33,8 +33,8 @@ import (
 	"runtime"
 	"runtime/pprof"
 	"sort"
-	"strings"
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -455,6 +455,7 @@ var queryFilter string
 func runQueries(ctx context.Context, db *charta.DB) {
 	fmt.Printf("%-52s %10s  %s\n", "query", "time", "first row")
 	for _, q := range []struct{ name, cypher string }{
+		{"count all requests", `MATCH (r:Request) RETURN count(*) AS n`},
 		{"count requests by status", `MATCH (r:Request) RETURN r.status AS status, count(*) AS n ORDER BY n DESC LIMIT 5`},
 		{"busiest clients", `MATCH (c:Client)-[:MADE]->(r:Request) RETURN c.ip AS ip, count(r) AS requests ORDER BY requests DESC LIMIT 5`},
 		{"requests per user agent", `MATCH (r:Request)-[:USING]->(u:UserAgent) RETURN u.name AS agent, count(r) AS n ORDER BY n DESC LIMIT 5`},
