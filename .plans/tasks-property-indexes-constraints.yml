@@ -48,7 +48,8 @@ tasks:
       *graphlite.ErrConstraintViolation{Constraint, Kind, Label, Properties, Detail} in engine.go (like
       ErrUnsupportedCypher is mapped), so callers can use errors.As. Include the constraint name in the
       interp error so it can be reported.
-    status: pending
+    status: completed
+    notes: "Done: graphlite.ErrConstraintViolation (constraint_error.go) mapped in execError; interp.Error carries a SchemaRef; vector index dimension errors use it too."
     dependencies:
       - task-002
     acceptance_criteria:
@@ -64,7 +65,8 @@ tasks:
       ListSchema(ctx) []SchemaInfo. Implement by running the corresponding Cypher through runInterp with
       validated, quoted identifiers (reject labels/properties that are not plain identifiers or backtick-quote
       them correctly); no new storage code. SchemaInfo mirrors SHOW INDEXES/CONSTRAINTS columns.
-    status: pending
+    status: completed
+    notes: "Done: DB.CreatePropertyIndex, CreateUniqueConstraint, DropIndex, DropConstraint, ListSchema (schema_api.go); names are backtick-quoted, empty/NUL rejected."
     dependencies:
       - task-003
     acceptance_criteria:

@@ -230,5 +230,11 @@ func execError(err error) error {
 	if errors.As(err, &ie) && ie.Code == "Unsupported" {
 		return &ErrUnsupportedCypher{Clause: ie.Msg, Detail: "not supported by the graphlite interpreter yet"}
 	}
+	if errors.As(err, &ie) && ie.Schema != nil && ie.Code == "ConstraintValidationFailed" {
+		return &ErrConstraintViolation{
+			Name: ie.Schema.Name, Kind: ie.Schema.Kind, EntityType: ie.Schema.Entity, Label: ie.Schema.Target,
+			Properties: append([]string(nil), ie.Schema.Properties...), Message: ie.Msg, cause: ie,
+		}
+	}
 	return fmt.Errorf("graphlite: execute: %w", err)
 }
