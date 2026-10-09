@@ -27,6 +27,7 @@ var builtins = map[string]funcInfo{
 	"head": ret(tAny), "last": ret(tAny), "id": ret(tInt), "length": ret(tInt), "size": ret(tInt),
 	"nullif": ret(tAny), "properties": ret(tMap), "timestamp": ret(tInt), "type": ret(tString),
 	"valuetype": ret(tString), "exists": ret(tBool), "isempty": ret(tBool), "isnan": ret(tBool),
+	"linenumber": ret(tInt), "file": ret(tString),
 	"randomuuid": {ret: tString, nondeterminic: true}, "rand": {ret: tFloat, nondeterminic: true},
 
 	// conversion

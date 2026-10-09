@@ -19,6 +19,8 @@ type Engine struct {
 	// pattern stops at this many hops and an explicit upper bound above it is
 	// an error. Zero means no cap.
 	MaxPathHops int
+	// ImportDir is the directory LOAD CSV reads from; empty disables LOAD CSV.
+	ImportDir string
 
 	mu      sync.Mutex
 	loaded  bool

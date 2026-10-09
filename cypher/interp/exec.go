@@ -230,6 +230,8 @@ func (ex *exec) clause(cl syntax.Clause, st *qstate, cols []string) ([]string, e
 			st.rows[i] = r
 		}
 		return cols, nil
+	case *syntax.LoadCSV:
+		return cols, ex.execLoadCSV(cl, st)
 	case *syntax.Finish:
 		st.rows = nil
 		return nil, nil

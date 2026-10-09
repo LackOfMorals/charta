@@ -43,7 +43,12 @@ graphlite passes **every scenario of the openCypher Technology Compatibility Kit
 | `CALL { … }` subqueries, `FILTER`, `LET`, `FINISH` | ✅ |
 | Named query parameters (`$param`) | ✅ |
 | Bulk import — JSON, CSV (Neo4j format); bulk export — JSON | ✅ |
-| Quantified path patterns, spatial `point()` and vector values, schema commands (indexes/constraints), `LOAD CSV`, `EXPLAIN`/`PROFILE` | ❌ (parsed; execution returns `ErrUnsupportedCypher`) |
+| Neo4j extensions — label/type expressions, dynamic labels and properties, map projections, `EXISTS`/`COUNT`/`COLLECT` and `CALL {}` subqueries, `FILTER`/`LET`/`FINISH`, `OFFSET`, `IS :: TYPE` predicates, `EXPLAIN`/`PROFILE` | ✅ |
+| Quantified path patterns (`((a)-[:R]->(b)){1,3}`, `-[:R]->+`) and path selectors (`ANY`, `ALL`, `SHORTEST k`, `SHORTEST k GROUPS`) | ✅ |
+| `POINT` (cartesian, WGS-84; `point.distance`, `point.withinBBox`) and `VECTOR` (`vector()`, `vector_distance`, `vector_norm`, `vector.similarity.*`) values | ✅ |
+| Schema — `CREATE`/`DROP INDEX` and `CONSTRAINT` (unique, node/relationship key, existence, type), `SHOW INDEXES`/`CONSTRAINTS`/`PROCEDURES` | ✅ |
+| `LOAD CSV` (opt-in: `WithImportDirectory`) | ✅ |
+| Nested quantified path patterns, `SHOW FUNCTIONS`, `USE` and user/role/database management commands | ❌ (parsed; execution returns `ErrUnsupportedCypher`) |
 
 Unsupported features return `ErrUnsupportedCypher` — they never silently produce wrong results.
 

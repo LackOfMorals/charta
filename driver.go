@@ -95,6 +95,7 @@ func Open(path string, opts ...Option) (*DB, error) {
 	}
 	d := &DB{st: st, readOnly: cfg.readOnly}
 	d.eng.MaxPathHops = cfg.maxPathHops
+	d.eng.ImportDir = cfg.importDir
 	return d, nil
 }
 

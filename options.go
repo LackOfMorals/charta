@@ -14,6 +14,7 @@ type dbConfig struct {
 	busyTimeout time.Duration
 	readOnly    bool
 	maxPathHops int
+	importDir   string
 }
 
 // WithBusyTimeout sets the SQLite busy_timeout pragma. When a write operation
@@ -69,4 +70,12 @@ func NewTestDB(t testing.TB, opts ...Option) *DB {
 	}
 	t.Cleanup(func() { _ = db.Close(context.Background()) })
 	return db
+}
+
+// WithImportDirectory enables LOAD CSV and restricts it to files below dir:
+// LOAD CSV FROM 'file:///people.csv' reads dir/people.csv, and nothing outside
+// dir can be read. Without this option LOAD CSV is disabled, so a query cannot
+// read arbitrary files.
+func WithImportDirectory(dir string) Option {
+	return func(c *dbConfig) { c.importDir = dir }
 }

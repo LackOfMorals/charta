@@ -93,4 +93,9 @@ ITERATIONS 8-10 (hybrid engine decision -> interpreter only)
     spatial/vector values, schema commands, EXPLAIN/PROFILE, type predicates, LOAD CSV
     and quantified path patterns.
   * Task-013 closed: 5-minute FuzzParse run clean (172M executions).
+  * Tasks 034-038 done: Neo4j-extension suite (222 scenarios, 100%), quantified path
+    patterns + selectors, POINT, VECTOR, schema commands/constraints, LOAD CSV
+    (opt-in), IS :: TYPE, EXPLAIN. The TCK harness now checks side effects strictly
+    (found and fixed label/property counter bugs). Deferred: nested QPPs, SHOW
+    FUNCTIONS, server-only commands.
 ================================================================================

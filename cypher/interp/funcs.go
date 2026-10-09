@@ -33,6 +33,12 @@ func (ex *exec) call(e *syntax.FuncCall, r row) (any, error) {
 		return nil, errorf("SyntaxError", "InvalidAggregation", "invalid use of aggregate function %s", e.Name)
 	}
 	name := strings.ToLower(e.Name)
+	if len(e.Namespace) == 0 && (name == "linenumber" || name == "file") && len(e.Args) == 0 {
+		if v, ok := r[map[string]string{"linenumber": csvLineKey, "file": csvFileKey}[name]]; ok {
+			return v, nil
+		}
+		return nil, nil
+	}
 	if len(e.Namespace) > 0 {
 		args, err := ex.evalArgs(e, r)
 		if err != nil {

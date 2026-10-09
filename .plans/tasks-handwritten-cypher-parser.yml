@@ -280,7 +280,8 @@ tasks:
       construct (expected results, not just parse success). Wire into the
       tck harness behind its own skip/executed counters so progress is
       reported separately from openCypher TCK.
-    status: pending
+    status: completed
+    notes: "Done: compat/testdata/neo4j (222 scenarios) run by TestNeo4jExtensions; 100% pass."
     dependencies: [task-030, task-031, task-032]
     acceptance_criteria:
       - "Suite runs under -tags=tck; initial pass rate recorded; failures are tracked per construct"
@@ -516,7 +517,8 @@ tasks:
       Plan/translate LabelExpr (AND/OR/NOT/wildcard via node_labels EXISTS
       logic), RelTypeExpr, map projections, dynamic labels/properties. Use
       the node_labels junction table (see AGENTS.md); parameterised SQL only.
-    status: pending
+    status: completed
+    notes: "Done: label/type expressions, dynamic labels/properties/types and map projections execute (interpreter)."
     dependencies: [task-027, task-034]
     acceptance_criteria:
       - "Neo4j-extension scenarios for these constructs pass"
@@ -528,7 +530,8 @@ tasks:
       with importing WITH as a lateral/correlated subquery (Go-side per-row
       evaluation fallback permitted). IN TRANSACTIONS executes as a single
       transaction or errors clearly.
-    status: pending
+    status: completed
+    notes: "Done: EXISTS/COUNT/COLLECT and CALL {} (incl. scoped, OPTIONAL, IN TRANSACTIONS as one transaction) execute."
     dependencies: [task-035]
     acceptance_criteria:
       - "Scenarios pass for each subquery form, incl. nested and correlated cases"
@@ -540,7 +543,8 @@ tasks:
       prd-shortest-path-traversal.md; implement QPPs by expansion to bounded
       recursive CTEs (honouring maxPathHops) with group-variable (list)
       semantics.
-    status: pending
+    status: completed
+    notes: "Done: quantified path patterns and all path selectors (group.go)."
     dependencies: [task-025, task-036]
     acceptance_criteria:
       - "Manual-derived scenarios for selectors and QPPs pass; unbounded quantifiers respect maxPathHops"
@@ -553,8 +557,8 @@ tasks:
       PRDs, EXPLAIN/PROFILE behaviour, type predicates. Anything deferred is
       listed with a clear ErrUnsupportedCypher message and a tracking note
       in the PRD.
-    status: in_progress
-    notes: "Temporal values/functions done in cypher/temporal (full TCK green: 3,895/3,895). Still open: point/spatial values, vector values, schema commands executing, EXPLAIN/PROFILE, type predicates, LOAD CSV, quantified path patterns; each returns ErrUnsupportedCypher until implemented."
+    status: completed
+    notes: "Done: temporal, POINT, VECTOR, schema commands and constraints, LOAD CSV (opt-in), type predicates, EXPLAIN/PROFILE. Deferred (return ErrUnsupportedCypher): nested quantified path patterns, SHOW FUNCTIONS, server-only commands (USE, users/roles/databases)."
     dependencies: [task-037]
     acceptance_criteria:
       - "Neo4j-extension suite is green except for items explicitly listed as deferred in the PRD"

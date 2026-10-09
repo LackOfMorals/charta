@@ -3,6 +3,9 @@ package graphlite_test
 import (
 	"context"
 	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -102,5 +105,99 @@ func TestTemporalComparisonAndOrdering(t *testing.T) {
 	}
 	if eq, _ := rec.Get("eq"); eq != false {
 		t.Errorf("a date never equals a datetime, got %v", eq)
+	}
+}
+
+func TestLoadCSV(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	write := func(name, content string) {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("people.csv", "name,age,city\nAlice,30,London\nBob,,Paris\n")
+	write("semi.csv", "a;b\n1;2\n")
+	if err := os.WriteFile(filepath.Join(filepath.Dir(dir), "secret.csv"), []byte("x\n1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Disabled without an import directory.
+	plain := openMemDB(t)
+	if _, err := plain.RunQuery(ctx, "LOAD CSV FROM 'file:///people.csv' AS row RETURN row", nil); err == nil {
+		t.Fatal("LOAD CSV must be disabled by default")
+	}
+
+	db, err := graphlite.Open(":memory:", graphlite.WithImportDirectory(dir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close(ctx)
+	collect := func(q string) []string {
+		t.Helper()
+		res, err := db.RunQuery(ctx, q, nil)
+		if err != nil {
+			t.Fatalf("%s: %v", q, err)
+		}
+		recs, err := res.Collect(ctx)
+		if err != nil {
+			t.Fatalf("%s: %v", q, err)
+		}
+		var out []string
+		for _, r := range recs {
+			out = append(out, fmt.Sprint(r.Values()...))
+		}
+		return out
+	}
+	got := collect("LOAD CSV WITH HEADERS FROM 'file:///people.csv' AS row RETURN row.name, row.age, row.city")
+	if strings.Join(got, "|") != "Alice30London|Bob<nil>Paris" {
+		t.Errorf("with headers: %v", got)
+	}
+	got = collect("LOAD CSV FROM 'file:///people.csv' AS row RETURN size(row), row[0], linenumber()")
+	if strings.Join(got, "|") != "3name1|3Alice2|3Bob3" {
+		t.Errorf("without headers: %v", got)
+	}
+	got = collect("LOAD CSV WITH HEADERS FROM 'semi.csv' AS row FIELDTERMINATOR ';' RETURN toInteger(row.a) + toInteger(row.b)")
+	if strings.Join(got, "|") != "3" {
+		t.Errorf("field terminator: %v", got)
+	}
+	// Create nodes from a file.
+	if _, err := db.RunQuery(ctx, "LOAD CSV WITH HEADERS FROM 'file:///people.csv' AS row CREATE (:P {name: row.name})", nil); err != nil {
+		t.Fatal(err)
+	}
+	if got := collect("MATCH (p:P) RETURN count(p)"); got[0] != "2" {
+		t.Errorf("created %v", got)
+	}
+	// Nothing outside the import directory is readable.
+	for _, u := range []string{"file:///../secret.csv", "../secret.csv", "file:///../../etc/passwd"} {
+		res, err := db.RunQuery(ctx, "LOAD CSV FROM '"+u+"' AS row RETURN row", nil)
+		if err == nil {
+			if recs, _ := res.Collect(ctx); len(recs) > 0 {
+				t.Errorf("%s escaped the import directory", u)
+			}
+		}
+	}
+	if _, err := db.RunQuery(ctx, "LOAD CSV FROM 'https://example.com/x.csv' AS row RETURN row", nil); err == nil {
+		t.Error("remote URLs must be rejected")
+	}
+}
+
+func TestLoadCSVRejectsSymlinkEscape(t *testing.T) {
+	ctx := context.Background()
+	outside := t.TempDir()
+	if err := os.WriteFile(filepath.Join(outside, "s.csv"), []byte("x\n1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	if err := os.Symlink(outside, filepath.Join(dir, "link")); err != nil {
+		t.Skip("symlinks unavailable")
+	}
+	db, err := graphlite.Open(":memory:", graphlite.WithImportDirectory(dir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close(ctx)
+	if _, err := db.RunQuery(ctx, "LOAD CSV FROM 'file:///link/s.csv' AS row RETURN row", nil); err == nil {
+		t.Error("a symlink out of the import directory must not be followed")
 	}
 }
