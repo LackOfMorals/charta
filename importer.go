@@ -4,14 +4,16 @@ import (
 	"bytes"
 	"context"
 	"encoding/csv"
-	json "github.com/goccy/go-json"
 	"errors"
 	"fmt"
+	json "github.com/goccy/go-json"
 	"io"
 	"sort"
 	"strconv"
 	"strings"
 
+	"github.com/LackOfMorals/graphlite/v2/cypher/interp"
+	"github.com/LackOfMorals/graphlite/v2/cypher/syntax"
 	"github.com/LackOfMorals/graphlite/v2/store"
 )
 
@@ -92,6 +94,9 @@ type importJSONEdge struct {
 type importJSONDocument struct {
 	Nodes []importJSONNode `json:"nodes"`
 	Edges []importJSONEdge `json:"edges"`
+	// Schema is optional Cypher (CREATE INDEX / CREATE CONSTRAINT ... IF NOT
+	// EXISTS) that Export writes and Import replays after the data.
+	Schema []string `json:"schema,omitempty"`
 }
 
 // Import reads nodes and edges from r and inserts them atomically into the
@@ -177,6 +182,7 @@ func (d *DB) importJSON(ctx context.Context, r io.Reader) (retErr error) {
 
 	// idMap maps the file-local node "id" string to its database integer ID.
 	idMap := make(map[string]int64, len(doc.Nodes))
+	var nodeIDs, relIDs []int64
 
 	// Insert nodes.
 	for i, n := range doc.Nodes {
@@ -188,6 +194,7 @@ func (d *DB) importJSON(ctx context.Context, r io.Reader) (retErr error) {
 		if err != nil {
 			return fmt.Errorf("graphlite: import: insert node %d (%q): %w", i, n.ID, err)
 		}
+		nodeIDs = append(nodeIDs, dbID)
 		if n.ID != "" {
 			if _, dup := idMap[n.ID]; dup {
 				return fmt.Errorf("graphlite: import: duplicate node id %q", n.ID)
@@ -213,13 +220,53 @@ func (d *DB) importJSON(ctx context.Context, r io.Reader) (retErr error) {
 		if err != nil {
 			return fmt.Errorf("graphlite: import: edge %d props: %w", i, err)
 		}
-		if _, err := tx.InsertEdge(ctx, e.Type, startDBID, endDBID, propsJSON); err != nil {
+		edgeID, err := tx.InsertEdge(ctx, e.Type, startDBID, endDBID, propsJSON)
+		if err != nil {
 			return fmt.Errorf("graphlite: import: insert edge %d: %w", i, err)
 		}
+		relIDs = append(relIDs, edgeID)
 	}
 
+	if err := d.checkImport(ctx, tx, nodeIDs, relIDs); err != nil {
+		return err
+	}
+	if err := d.applyImportSchema(ctx, tx, doc.Schema); err != nil {
+		return err
+	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("graphlite: import: commit: %w", err)
+	}
+	d.eng.InvalidateVectors()
+	return nil
+}
+
+// checkImport validates freshly imported rows against the schema (constraints
+// and vector index dimensions), which the importer's direct inserts bypass. A
+// violation fails the whole import with *ErrConstraintViolation.
+func (d *DB) checkImport(ctx context.Context, tx store.Tx, nodeIDs, relIDs []int64) error {
+	if err := d.eng.ValidateImported(ctx, tx.Exec(), nodeIDs, relIDs); err != nil {
+		return fmt.Errorf("graphlite: import: %w", execError(err))
+	}
+	return nil
+}
+
+// applyImportSchema replays the schema statements of an exported document in
+// the import transaction, after the data, so a constraint is checked against the
+// imported rows and nothing is applied if it fails.
+func (d *DB) applyImportSchema(ctx context.Context, tx store.Tx, statements []string) error {
+	for _, q := range statements {
+		st, err := parseSyntax(q, &d.eng)
+		if err != nil {
+			return fmt.Errorf("graphlite: import: schema statement %q: %w", q, err)
+		}
+		switch st.Body.(type) {
+		case *syntax.CreateIndex, *syntax.CreateConstraint:
+		default:
+			return fmt.Errorf("graphlite: import: schema statement %q is not a CREATE INDEX or CREATE CONSTRAINT", q)
+		}
+		if _, err := interp.RunWith(ctx, tx.Exec(), st, nil, &d.eng); err != nil {
+			return fmt.Errorf("graphlite: import: schema statement %q: %w", q, execError(err))
+		}
 	}
 	return nil
 }
@@ -360,6 +407,7 @@ func (d *DB) importCSVNodes(ctx context.Context, r io.Reader) (retErr error) {
 		}
 	}()
 
+	var nodeIDs []int64
 	for rowIdx, row := range rows {
 		if len(row) != len(defs) {
 			return fmt.Errorf("graphlite: csv node import: row %d: expected %d columns, got %d", rowIdx+2, len(defs), len(row))
@@ -398,14 +446,20 @@ func (d *DB) importCSVNodes(ctx context.Context, r io.Reader) (retErr error) {
 			return fmt.Errorf("graphlite: csv node import: row %d props: %w", rowIdx+2, err)
 		}
 
-		if _, err := tx.InsertNode(ctx, store.DecodeLabels(labelStr), propsJSON); err != nil {
+		id, err := tx.InsertNode(ctx, store.DecodeLabels(labelStr), propsJSON)
+		if err != nil {
 			return fmt.Errorf("graphlite: csv node import: row %d insert: %w", rowIdx+2, err)
 		}
+		nodeIDs = append(nodeIDs, id)
 	}
 
+	if err := d.checkImport(ctx, tx, nodeIDs, nil); err != nil {
+		return err
+	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("graphlite: csv node import: commit: %w", err)
 	}
+	d.eng.InvalidateVectors()
 	return nil
 }
 
@@ -471,6 +525,7 @@ func (d *DB) importCSVEdges(ctx context.Context, r io.Reader) (retErr error) {
 		}
 	}()
 
+	var relIDs []int64
 	for rowIdx, row := range rows {
 		if len(row) != len(defs) {
 			return fmt.Errorf("graphlite: csv edge import: row %d: expected %d columns, got %d", rowIdx+2, len(defs), len(row))
@@ -520,7 +575,11 @@ func (d *DB) importCSVEdges(ctx context.Context, r io.Reader) (retErr error) {
 			return fmt.Errorf("graphlite: csv edge import: row %d props: %w", rowIdx+2, err)
 		}
 
-		if _, err := tx.InsertEdge(ctx, edgeType, startID, endID, propsJSON); err != nil {
+		edgeID, err := tx.InsertEdge(ctx, edgeType, startID, endID, propsJSON)
+		if err == nil {
+			relIDs = append(relIDs, edgeID)
+		}
+		if err != nil {
 			// PRAGMA foreign_keys = ON causes SQLite to reject edges whose
 			// start_id or end_id do not exist in the nodes table. Translate
 			// the opaque constraint error into a clear, actionable message.
@@ -531,9 +590,13 @@ func (d *DB) importCSVEdges(ctx context.Context, r io.Reader) (retErr error) {
 		}
 	}
 
+	if err := d.checkImport(ctx, tx, nil, relIDs); err != nil {
+		return err
+	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("graphlite: csv edge import: commit: %w", err)
 	}
+	d.eng.InvalidateVectors()
 	return nil
 }
 
@@ -559,8 +622,9 @@ type exportJSONEdge struct {
 
 // exportJSONDocument is the top-level JSON export schema.
 type exportJSONDocument struct {
-	Nodes []exportJSONNode `json:"nodes"`
-	Edges []exportJSONEdge `json:"edges"`
+	Nodes  []exportJSONNode `json:"nodes"`
+	Edges  []exportJSONEdge `json:"edges"`
+	Schema []string         `json:"schema,omitempty"`
 }
 
 // exportJSON writes the full graph as a JSON document to w.
@@ -605,6 +669,12 @@ func (d *DB) exportJSON(ctx context.Context, w io.Writer) error {
 			Props:   props,
 		})
 	}
+
+	schema, err := d.eng.SchemaStatements(ctx, d.st.Exec())
+	if err != nil {
+		return fmt.Errorf("graphlite: export json: schema: %w", err)
+	}
+	doc.Schema = schema
 
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
@@ -773,7 +843,6 @@ func unmarshalProps(propsJSON string) (map[string]any, error) {
 	return m, nil
 }
 
-
 // anyToString converts a property value to its string representation for CSV output.
 func anyToString(v any) string {
 	switch val := v.(type) {
@@ -829,9 +898,9 @@ func sortedKeys(m map[string]struct{}) []string {
 // the bytes of that element, not the full document.
 //
 // This eliminates the original three-pass approach:
-//   1. Decode entire document into json.RawMessage  ← removed
-//   2. checkJSONDepth over all raw bytes           ← replaced with per-element check
-//   3. json.Unmarshal full document                ← replaced with per-element Unmarshal
+//  1. Decode entire document into json.RawMessage  ← removed
+//  2. checkJSONDepth over all raw bytes           ← replaced with per-element check
+//  3. json.Unmarshal full document                ← replaced with per-element Unmarshal
 func decodeImportJSON(r io.Reader) (*importJSONDocument, error) {
 	dec := json.NewDecoder(r)
 
@@ -960,6 +1029,20 @@ func decodeImportJSON(r io.Reader) (*importJSONDocument, error) {
 				return nil, wrapErr(err)
 			}
 
+		case "schema":
+			var raw json.RawMessage
+			if err := dec.Decode(&raw); err != nil {
+				return nil, wrapErr(err)
+			}
+			if err := checkJSONDepth(raw, importMaxDepth, outerDepth); err != nil {
+				return nil, err
+			}
+			if string(raw) != "null" {
+				if err := json.Unmarshal(raw, &doc.Schema); err != nil {
+					return nil, fmt.Errorf("graphlite: import: \"schema\" must be an array of Cypher statements: %w", err)
+				}
+			}
+
 		default:
 			// Skip unknown top-level keys by decoding into json.RawMessage and
 			// depth-checking, in case an attacker embeds a deeply-nested value.
@@ -1009,4 +1092,3 @@ func checkJSONDepth(data []byte, maxDepth int, startDepth int) error {
 	}
 	return nil
 }
-
