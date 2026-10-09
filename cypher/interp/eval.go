@@ -2,10 +2,12 @@ package interp
 
 import (
 	"github.com/LackOfMorals/graphlite/v2/cypher/proc"
+	"github.com/LackOfMorals/graphlite/v2/cypher/temporal"
 	"math"
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/LackOfMorals/graphlite/v2/cypher/syntax"
 )
@@ -42,6 +44,9 @@ type exec struct {
 	subst map[string]any
 	// regexCache avoids recompiling regular expressions.
 	procs *proc.Set
+	// clock is the instant temporal functions report for "now", fixed for the
+	// whole statement.
+	clock time.Time
 	// pushed are WHERE equalities of the MATCH being executed, used to narrow
 	// node scans.
 	pushed     []pushedEq
@@ -161,6 +166,11 @@ func (ex *exec) property(subject any, key string) (any, error) {
 		return x.Props[key], nil
 	case map[string]any:
 		return x[key], nil
+	case temporal.Value:
+		if v, ok := temporal.Property(x, key); ok {
+			return v, nil
+		}
+		return nil, argErr("%s has no component `%s`", temporalTypeName(x), key)
 	}
 	return nil, typeErr("cannot access property `%s` of %s", key, typeName(subject))
 }
@@ -471,6 +481,9 @@ func add(l, r any) (any, error) {
 	if l == nil || r == nil {
 		return nil, nil
 	}
+	if v, ok, err := temporalArith("+", l, r); ok {
+		return v, err
+	}
 	switch x := l.(type) {
 	case int64:
 		switch y := r.(type) {
@@ -535,6 +548,9 @@ func add(l, r any) (any, error) {
 func arith(op syntax.BinaryOp, l, r any) (any, error) {
 	if l == nil || r == nil {
 		return nil, nil
+	}
+	if v, ok, err := temporalArith(string(op), l, r); ok {
+		return v, err
 	}
 	if !isNumber(l) || !isNumber(r) {
 		return nil, typeErr("operator %s expects numbers, got %s and %s", op, typeName(l), typeName(r))

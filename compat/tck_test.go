@@ -815,8 +815,8 @@ func TestTCK(t *testing.T) {
 
 	_ = exitCode // don't fail on non-zero Godog exit; we enforce threshold below
 
-	if executed > 0 && passRate < 70.0 {
-		t.Errorf("TCK pass rate %.1f%% is below the required 70%% threshold (%d/%d scenarios passed)",
+	if executed > 0 && passRate < 100.0 {
+		t.Errorf("TCK pass rate %.1f%% is below the required 100%% (every scenario not in excluded.txt must pass) (%d/%d scenarios passed)",
 			passRate, passed, executed)
 	}
 }

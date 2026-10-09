@@ -177,7 +177,7 @@ tasks:
       compat/testdata/tck, cypher/*_test.go, sql/translator_test.go and
       testdata/rapid. Benchmark the reference query against the ANTLR
       baseline (9.5ms / 135k allocs).
-    status: pending   # intent met in pieces, see progress file decision 3; confirm and close
+    status: completed   # closed: bench 3.1us/47 allocs, 1,917-query TCK corpus, fuzz clean
     dependencies: [task-012, task-033]
     acceptance_criteria:
       - "go test -fuzz=FuzzParse -fuzztime=5m finds no failures"
@@ -502,7 +502,7 @@ tasks:
     description: |
       Remove the remaining unsupportedPatterns and any scenario-level skips.
       Fix remaining failures. Update AGENTS.md and the README feature matrix.
-    status: pending
+    status: done
     dependencies: [task-023, task-024, task-025, task-026, task-020]
     acceptance_criteria:
       - "unsupportedPatterns is empty and shouldSkipScenario skips only scenarios on the documented Cypher-25-removed-syntax exclusion list (compat/testdata/excluded.txt, each with a reason)"
@@ -553,7 +553,8 @@ tasks:
       PRDs, EXPLAIN/PROFILE behaviour, type predicates. Anything deferred is
       listed with a clear ErrUnsupportedCypher message and a tracking note
       in the PRD.
-    status: pending
+    status: in_progress
+    notes: "Temporal values/functions done in cypher/temporal (full TCK green: 3,895/3,895). Still open: point/spatial values, vector values, schema commands executing, EXPLAIN/PROFILE, type predicates, LOAD CSV, quantified path patterns; each returns ErrUnsupportedCypher until implemented."
     dependencies: [task-037]
     acceptance_criteria:
       - "Neo4j-extension suite is green except for items explicitly listed as deferred in the PRD"

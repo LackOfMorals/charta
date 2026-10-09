@@ -27,33 +27,23 @@ graphlite is intentionally embedded-only. It does not implement the Bolt wire pr
 
 ## Cypher Compatibility
 
-graphlite achieves **100% pass rate on the openCypher Technology Compatibility Kit** (235/235 executed scenarios). The table below lists supported features.
+graphlite passes **every scenario of the openCypher Technology Compatibility Kit** that applies to Cypher 25 (3,895 scenarios; the few that rely on syntax Cypher 25 removed are listed with reasons in `compat/testdata/excluded.txt`). Queries are parsed by a hand-written Cypher 25 parser, checked by a semantic analysis pass that reports the standard error classes and codes, and run by a Go interpreter over SQLite.
 
 | Feature | Supported |
 |---|:---:|
-| `MATCH` — node by label, property, or bare | ✅ |
-| `MATCH` — single-hop directed and undirected relationships | ✅ |
-| `MATCH` — multi-hop (fixed depth) | ✅ |
-| `MATCH` — variable-length paths `[*]`, `[*2..5]`, `[*..3]` | ✅ |
-| `OPTIONAL MATCH` | ✅ |
-| `WHERE` — comparisons, `AND`, `OR`, `NOT`, `IS NULL`, `IS NOT NULL` | ✅ |
-| `WHERE` — `exists()`, string predicates (`CONTAINS`, `STARTS WITH`, `ENDS WITH`) | ✅ |
-| `WHERE` — `hasLabel(n, 'Label')` | ✅ |
-| `RETURN` with aliases, `ORDER BY`, `LIMIT`, `SKIP` | ✅ |
-| `RETURN DISTINCT` | ✅ |
-| `WITH` pipeline | ✅ |
-| Aggregation — `count()`, `sum()`, `avg()`, `min()`, `max()` | ✅ |
-| `collect()` | ✅ |
-| `CASE` expressions (simple and generic) | ✅ |
+| `MATCH` / `OPTIONAL MATCH` — labels, properties, directed and undirected relationships, variable-length paths, named paths | ✅ |
+| `shortestPath()` / `allShortestPaths()`, pattern predicates, `EXISTS`/`COUNT`/`COLLECT` subqueries | ✅ |
+| `WHERE`, `RETURN`, `WITH`, `ORDER BY`, `SKIP`/`LIMIT`, `DISTINCT`, `UNWIND`, `UNION [ALL]`, `RETURN *` | ✅ |
+| Aggregation — `count`, `sum`, `avg`, `min`, `max`, `collect`, `percentile*`, `stDev*` | ✅ |
+| `CASE`, list/pattern comprehensions, quantifiers (`all`/`any`/`none`/`single`), `reduce` | ✅ |
+| Scalar, string, math, list, conversion and entity functions | ✅ |
+| Temporal types — `date`, `time`, `localtime`, `datetime`, `localdatetime`, `duration` (constructors, accessors, truncation, arithmetic, `duration.between`) | ✅ |
+| `CREATE`, `MERGE` (`ON CREATE`/`ON MATCH`), `SET`, `REMOVE`, `DELETE`/`DETACH DELETE`, `FOREACH` | ✅ |
+| `CALL` procedures — built-in `db.labels()`, `db.relationshipTypes()`, `db.propertyKeys()` and your own via `DB.RegisterProcedure` | ✅ |
+| `CALL { … }` subqueries, `FILTER`, `LET`, `FINISH` | ✅ |
 | Named query parameters (`$param`) | ✅ |
-| `CREATE` node and relationship | ✅ |
-| `SET` property, `SET n += {map}` | ✅ |
-| `REMOVE` property, `REMOVE` label | ✅ |
-| `DELETE` / `DETACH DELETE` | ✅ |
-| `MERGE` with `ON CREATE SET` / `ON MATCH SET` | ✅ |
-| Bulk import — JSON, CSV (Neo4j format) | ✅ |
-| Bulk export — JSON | ✅ |
-| `shortestPath()` | ❌ |
+| Bulk import — JSON, CSV (Neo4j format); bulk export — JSON | ✅ |
+| Quantified path patterns, spatial `point()` and vector values, schema commands (indexes/constraints), `LOAD CSV`, `EXPLAIN`/`PROFILE` | ❌ (parsed; execution returns `ErrUnsupportedCypher`) |
 
 Unsupported features return `ErrUnsupportedCypher` — they never silently produce wrong results.
 

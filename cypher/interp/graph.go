@@ -9,6 +9,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/LackOfMorals/graphlite/v2/cypher/temporal"
 )
 
 // DB is the SQL surface the interpreter needs. *sql.DB, *sql.Tx and the
@@ -83,7 +85,7 @@ func newGraph(ctx context.Context, db DB) *graph {
 // number or string, or a list of one such type.
 func checkPropValue(key string, v any) error {
 	switch x := v.(type) {
-	case nil, bool, int64, string:
+	case nil, bool, int64, string, temporal.Value:
 		return nil
 	case float64:
 		if math.IsInf(x, 0) || math.IsNaN(x) {
@@ -94,7 +96,7 @@ func checkPropValue(key string, v any) error {
 		var first any
 		for i, e := range x {
 			switch e.(type) {
-			case bool, int64, float64, string:
+			case bool, int64, float64, string, temporal.Value:
 			default:
 				return errorf("TypeError", "InvalidPropertyType", "property `%s`: collections containing %s cannot be stored as properties", key, typeName(e))
 			}
@@ -165,6 +167,13 @@ func encodeValue(sb *strings.Builder, v any) error {
 			}
 		}
 		sb.WriteByte(']')
+	case temporal.Value:
+		// A nested object is never a user property value (maps cannot be
+		// stored), so {"$t":kind,"v":text} unambiguously marks a temporal.
+		b, _ := json.Marshal(x.String())
+		sb.WriteString(`{"$t":` + strconv.Itoa(int(x.Kind())) + `,"v":`)
+		sb.Write(b)
+		sb.WriteByte('}')
 	default:
 		return errorf("TypeError", "InvalidPropertyType", "%s values cannot be stored as properties", typeName(v))
 	}
@@ -176,10 +185,37 @@ func decodeProps(s string) (map[string]any, error) {
 	if s == "" || s == "{}" {
 		return props, nil
 	}
-	if m, ok := fastDecodeObject(s); ok {
-		return m, nil
+	m, ok := fastDecodeObject(s)
+	if !ok {
+		var err error
+		if m, err = decodePropsSlow(s); err != nil {
+			return nil, err
+		}
 	}
-	return decodePropsSlow(s)
+	for k, v := range m {
+		m[k] = reviveTemporal(v)
+	}
+	return m, nil
+}
+
+// reviveTemporal turns the stored form of a temporal value back into one,
+// including inside lists.
+func reviveTemporal(v any) any {
+	switch x := v.(type) {
+	case map[string]any:
+		kind, hasKind := x["$t"].(int64)
+		text, hasText := x["v"].(string)
+		if hasKind && hasText {
+			if tv, err := temporal.Parse(temporal.Kind(kind), text); err == nil {
+				return tv
+			}
+		}
+	case []any:
+		for i, e := range x {
+			x[i] = reviveTemporal(e)
+		}
+	}
+	return v
 }
 
 // decodePropsSlow is the encoding/json fallback for anything the fast decoder

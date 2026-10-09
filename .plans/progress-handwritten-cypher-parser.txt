@@ -88,4 +88,9 @@ ITERATIONS 8-10 (hybrid engine decision -> interpreter only)
     plan cache and the rows-backed Result were deleted.
   * Tasks 019-026 are done by the interpreter; task-027 (full TCK green) is waiting
     on temporal types (task-038).
+  * Temporal types/functions implemented (cypher/temporal): TCK now 3,895/3,895 of the
+    non-excluded scenarios; the harness requires 100%. Task-027 done. Task-038 keeps
+    spatial/vector values, schema commands, EXPLAIN/PROFILE, type predicates, LOAD CSV
+    and quantified path patterns.
+  * Task-013 closed: 5-minute FuzzParse run clean (172M executions).
 ================================================================================

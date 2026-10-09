@@ -2,6 +2,7 @@ package interp
 
 import (
 	"context"
+	"time"
 
 	"github.com/LackOfMorals/graphlite/v2/cypher/syntax"
 )
@@ -24,7 +25,7 @@ func Run(ctx context.Context, db DB, st *syntax.Statement, params map[string]any
 func RunWith(ctx context.Context, db DB, st *syntax.Statement, params map[string]any, eng *Engine) (*Result, error) {
 	g := newGraph(ctx, db)
 	g.eng = eng
-	ex := &exec{g: g, params: params}
+	ex := &exec{g: g, params: params, clock: time.Now()}
 	if eng != nil {
 		ex.procs = &eng.Procs
 	}

@@ -1,6 +1,10 @@
 package graphlite
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/LackOfMorals/graphlite/v2/cypher/temporal"
+)
 
 // Node represents a graph node with a unique element ID, a set of labels, and
 // a map of properties.
@@ -173,3 +177,15 @@ var ErrNoRecords = fmt.Errorf("graphlite: result contains no records")
 // ErrMultipleRecords is returned by Result.Single when the result set contains
 // more than one record. It is a sentinel value and can be checked with errors.Is.
 var ErrMultipleRecords = fmt.Errorf("graphlite: result contains multiple records")
+
+// Temporal value types returned for Cypher DATE, LOCAL TIME, TIME, LOCAL
+// DATETIME, DATETIME and DURATION results. Each renders as its canonical
+// Cypher string with String().
+type (
+	Date          = temporal.Date
+	LocalTime     = temporal.LocalTime
+	Time          = temporal.Time
+	LocalDateTime = temporal.LocalDateTime
+	DateTime      = temporal.DateTime
+	Duration      = temporal.Duration
+)

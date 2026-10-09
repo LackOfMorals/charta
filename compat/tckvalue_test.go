@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	graphlite "github.com/LackOfMorals/graphlite/v2"
+	"github.com/LackOfMorals/graphlite/v2/cypher/temporal"
 )
 
 // TCK result tables write values in a Cypher-like notation: 1, 1.5, 'text',
@@ -335,6 +336,8 @@ func fromActual(v any, lenient bool) any {
 	switch x := v.(type) {
 	case nil, bool, string, int64:
 		return x
+	case temporal.Value:
+		return x.String() // the TCK writes temporal values as their string form
 	case int:
 		return int64(x)
 	case float64:

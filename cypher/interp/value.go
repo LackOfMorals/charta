@@ -16,6 +16,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/LackOfMorals/graphlite/v2/cypher/temporal"
 )
 
 // Value types used at run time:
@@ -58,7 +60,7 @@ func (n *Node) hasLabel(l string) bool {
 
 // typeName names the Cypher type of v for error messages.
 func typeName(v any) string {
-	switch v.(type) {
+	switch x := v.(type) {
 	case nil:
 		return "Null"
 	case bool:
@@ -79,6 +81,8 @@ func typeName(v any) string {
 		return "Relationship"
 	case *Path:
 		return "Path"
+	case temporal.Value:
+		return temporalTypeName(x)
 	}
 	return fmt.Sprintf("%T", v)
 }
@@ -87,7 +91,7 @@ func typeName(v any) string {
 // canonical run-time representation.
 func normalize(v any) any {
 	switch x := v.(type) {
-	case nil, bool, int64, float64, string, *Node, *Rel, *Path:
+	case nil, bool, int64, float64, string, *Node, *Rel, *Path, temporal.Value:
 		return v
 	case int:
 		return int64(x)
@@ -266,6 +270,9 @@ func equals(a, b any) tri {
 	case *Rel:
 		y, ok := b.(*Rel)
 		return triOf(ok && x.ID == y.ID)
+	case temporal.Value:
+		y, ok := b.(temporal.Value)
+		return triOf(ok && temporal.Equal(x, y))
 	case *Path:
 		y, ok := b.(*Path)
 		if !ok || len(x.Nodes) != len(y.Nodes) || len(x.Rels) != len(y.Rels) {
@@ -343,6 +350,12 @@ func compare(a, b any) (int, bool) {
 			}
 		}
 		return cmpInt(int64(len(x)), int64(len(y))), true
+	case temporal.Value:
+		y, ok := b.(temporal.Value)
+		if !ok {
+			return 0, false
+		}
+		return temporal.Compare(x, y)
 	}
 	return 0, false
 }
@@ -387,21 +400,36 @@ func orderRank(v any) int {
 		return 3
 	case *Path:
 		return 4
+	case temporal.Value:
+		// ZONED DATETIME < LOCAL DATETIME < DATE < ZONED TIME < LOCAL TIME < DURATION
+		switch x.Kind() {
+		case temporal.KindDateTime:
+			return 5
+		case temporal.KindLocalDateTime:
+			return 6
+		case temporal.KindDate:
+			return 7
+		case temporal.KindTime:
+			return 8
+		case temporal.KindLocalTime:
+			return 9
+		}
+		return 10
 	case string:
-		return 5
+		return 11
 	case bool:
-		return 6
+		return 12
 	case int64:
-		return 7
+		return 13
 	case float64:
 		if math.IsNaN(x) {
-			return 8
+			return 14
 		}
-		return 7
+		return 13
 	case nil:
-		return 9
+		return 15
 	}
-	return 10
+	return 16
 }
 
 // orderCompare is a total order over all values (null sorts last ascending).
@@ -448,6 +476,11 @@ func orderCompare(a, b any) int {
 			}
 		}
 		return cmpInt(int64(len(x.Nodes)), int64(len(y.Nodes)))
+	case temporal.Value:
+		if c, ok := temporal.Compare(x, b.(temporal.Value)); ok {
+			return c
+		}
+		return strings.Compare(x.String(), b.(temporal.Value).String())
 	case string:
 		return strings.Compare(x, b.(string))
 	case bool:
@@ -545,6 +578,8 @@ func writeKey(sb *strings.Builder, v any) {
 		sb.WriteString("N" + strconv.FormatInt(x.ID, 10) + ";")
 	case *Rel:
 		sb.WriteString("R" + strconv.FormatInt(x.ID, 10) + ";")
+	case temporal.Value:
+		sb.WriteString("T" + strconv.Itoa(int(x.Kind())) + x.String() + ";")
 	case *Path:
 		sb.WriteString("P[")
 		for i, n := range x.Nodes {

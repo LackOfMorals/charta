@@ -8,6 +8,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/LackOfMorals/graphlite/v2/cypher/syntax"
+	"github.com/LackOfMorals/graphlite/v2/cypher/temporal"
 )
 
 // aggregates are the aggregating function names (lower case).
@@ -31,6 +32,15 @@ func (ex *exec) call(e *syntax.FuncCall, r row) (any, error) {
 	}
 	name := strings.ToLower(e.Name)
 	if len(e.Namespace) > 0 {
+		args, err := ex.evalArgs(e, r)
+		if err != nil {
+			return nil, err
+		}
+		if len(e.Namespace) == 1 {
+			if v, ok, err := ex.namespacedTemporal(e.Namespace[0], e.Name, args); ok {
+				return v, err
+			}
+		}
 		return nil, unsupported("function %s.%s", strings.Join(e.Namespace, "."), e.Name)
 	}
 	// exists() accepts a property or a pattern; evaluate its argument specially.
@@ -47,6 +57,17 @@ func (ex *exec) call(e *syntax.FuncCall, r row) (any, error) {
 		}
 		return v != nil, nil
 	}
+	args, err := ex.evalArgs(e, r)
+	if err != nil {
+		return nil, err
+	}
+	if v, ok, err := ex.temporalFunction(name, args); ok {
+		return v, err
+	}
+	return ex.builtin(name, args)
+}
+
+func (ex *exec) evalArgs(e *syntax.FuncCall, r row) ([]any, error) {
 	args := make([]any, len(e.Args))
 	for i, a := range e.Args {
 		v, err := ex.eval(a, r)
@@ -55,7 +76,7 @@ func (ex *exec) call(e *syntax.FuncCall, r row) (any, error) {
 		}
 		args[i] = v
 	}
-	return ex.builtin(name, args)
+	return args, nil
 }
 
 func argc(name string, args []any, min, max int) error {
@@ -712,6 +733,8 @@ func toStringFn(v any, orNull bool) (any, error) {
 		return formatFloat(x), nil
 	case bool:
 		return strconv.FormatBool(x), nil
+	case temporal.Value:
+		return x.String(), nil
 	}
 	if orNull {
 		return nil, nil

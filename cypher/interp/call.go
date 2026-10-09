@@ -92,6 +92,11 @@ func (ex *exec) execCall(cl *syntax.Call, st *qstate) error {
 		if err != nil {
 			return err
 		}
+		if len(p.Outputs) == 0 {
+			// A procedure without outputs runs for its effect; rows pass through.
+			result = append(result, r)
+			continue
+		}
 		matched := false
 		for _, rec := range recs {
 			nr := r
