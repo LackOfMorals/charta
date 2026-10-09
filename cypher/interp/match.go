@@ -507,8 +507,205 @@ func (ex *exec) matchShortest(part *syntax.PatternPart, r row, used map[int64]bo
 }
 
 // shortestPaths finds the shortest path(s) from s to e whose length lies in
-// [min, max] (max < 0 is unbounded).
+// [min, max] (max < 0 is unbounded). all asks for every shortest path rather
+// than one.
 func (ex *exec) shortestPaths(rp *syntax.RelPattern, s, e *Node, min, max int64, all bool, r row, used map[int64]bool) ([]*Path, error) {
+	if ex.g.eng != nil && ex.g.eng.MaxPathHops > 0 {
+		hops := int64(ex.g.eng.MaxPathHops)
+		if max > hops {
+			return nil, argErr("shortest path upper bound %d exceeds the configured maximum of %d hops", max, hops)
+		}
+		if max < 0 {
+			max = hops
+		}
+	}
+	if s.ID == e.ID || min > 1 {
+		return ex.shortestPathsSlow(rp, s, e, min, max, all, r, used)
+	}
+	if !all && !shortestBidirectionalDisabled {
+		return ex.shortestPathBidirectional(rp, s, e, max, r, used)
+	}
+	return ex.shortestPathsBFS(rp, s, e, max, all, r, used)
+}
+
+// maxShortestPaths bounds how many equal-length shortest paths allShortestPaths
+// will materialise between one pair of nodes: their number can be exponential.
+const maxShortestPaths = 100000
+
+// predecessor is how a node was reached: over rel from node from.
+type predecessor struct {
+	rel  *Rel
+	from *Node
+}
+
+// shortestPathsBFS is a breadth-first search over nodes. Each node is expanded
+// once, at the depth it is first reached, and remembers the (rel, node) pairs
+// that reach it at that depth, so a path is rebuilt only for the target instead
+// of being copied at every step. A shortest path never repeats a node, so the
+// relationship-uniqueness rule cannot matter here, except for relationships the
+// MATCH has already used (used), which are skipped.
+func (ex *exec) shortestPathsBFS(rp *syntax.RelPattern, s, e *Node, max int64, all bool, r row, used map[int64]bool) ([]*Path, error) {
+	dist := map[int64]int64{s.ID: 0}
+	preds := map[int64][]predecessor{}
+	frontier := []*Node{s}
+	for depth := int64(0); len(frontier) > 0 && (max < 0 || depth < max); depth++ {
+		var next []*Node
+		for _, node := range frontier {
+			err := ex.expand(rp, node, r, used, func(rel *Rel, other *Node) error {
+				d, seen := dist[other.ID]
+				switch {
+				case !seen:
+					dist[other.ID] = depth + 1
+					preds[other.ID] = []predecessor{{rel, node}}
+					next = append(next, other)
+				case all && d == depth+1:
+					preds[other.ID] = append(preds[other.ID], predecessor{rel, node})
+				}
+				return nil
+			})
+			if err != nil {
+				return nil, err
+			}
+		}
+		if _, found := dist[e.ID]; found {
+			break // every predecessor at this depth has been recorded
+		}
+		frontier = next
+	}
+	if _, found := dist[e.ID]; !found {
+		return nil, nil
+	}
+	return ex.pathsFromPreds(s, e, preds, all)
+}
+
+// pathsFromPreds rebuilds the shortest paths from s to e out of the
+// predecessor lists: the first one only, or all of them.
+func (ex *exec) pathsFromPreds(s, e *Node, preds map[int64][]predecessor, all bool) ([]*Path, error) {
+	var out []*Path
+	var rels []*Rel
+	var nodes []*Node
+	var walk func(n *Node) error
+	walk = func(n *Node) error {
+		if n.ID == s.ID {
+			p := &Path{Nodes: []*Node{s}}
+			for i := len(nodes) - 1; i >= 0; i-- {
+				p.Nodes = append(p.Nodes, nodes[i])
+			}
+			for i := len(rels) - 1; i >= 0; i-- {
+				p.Rels = append(p.Rels, rels[i])
+			}
+			out = append(out, p)
+			if len(out) > maxShortestPaths {
+				return unsupported("allShortestPaths found more than %d shortest paths between one pair of nodes", maxShortestPaths)
+			}
+			return nil
+		}
+		for _, pr := range preds[n.ID] {
+			rels = append(rels, pr.rel)
+			nodes = append(nodes, n)
+			err := walk(pr.from)
+			rels, nodes = rels[:len(rels)-1], nodes[:len(nodes)-1]
+			if err != nil || !all {
+				return err
+			}
+		}
+		return nil
+	}
+	if err := walk(e); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// shortestBidirectionalDisabled turns the bidirectional search off (tests
+// compare it with the one-directional search).
+var shortestBidirectionalDisabled bool
+
+// flipDir returns a copy of rp that traverses in the opposite direction, for
+// the backward half of a bidirectional search.
+func flipDir(rp *syntax.RelPattern) *syntax.RelPattern {
+	c := *rp
+	switch rp.Dir {
+	case syntax.DirRight:
+		c.Dir = syntax.DirLeft
+	case syntax.DirLeft:
+		c.Dir = syntax.DirRight
+	}
+	return &c
+}
+
+// shortestPathBidirectional finds one shortest path between two nodes by
+// searching from both ends, always expanding the smaller frontier, one whole
+// level at a time. On a graph that fans out this visits the nodes within about
+// half the distance of each end instead of everything within the full
+// distance of one.
+func (ex *exec) shortestPathBidirectional(rp *syntax.RelPattern, s, e *Node, max int64, r row, used map[int64]bool) ([]*Path, error) {
+	back := flipDir(rp)
+	distF, distB := map[int64]int64{s.ID: 0}, map[int64]int64{e.ID: 0}
+	predF, predB := map[int64]predecessor{}, map[int64]predecessor{}
+	frontF, frontB := []*Node{s}, []*Node{e}
+	var depthF, depthB int64
+
+	var meet *Node
+	best := int64(-1)
+	for len(frontF) > 0 && len(frontB) > 0 && meet == nil {
+		if max >= 0 && depthF+depthB >= max {
+			return nil, nil
+		}
+		forward := len(frontF) <= len(frontB)
+		pattern, dist, other, pred, front, depth := rp, distF, distB, predF, &frontF, &depthF
+		if !forward {
+			pattern, dist, other, pred, front, depth = back, distB, distF, predB, &frontB, &depthB
+		}
+		var next []*Node
+		for _, node := range *front {
+			err := ex.expand(pattern, node, r, used, func(rel *Rel, n *Node) error {
+				if _, seen := dist[n.ID]; seen {
+					return nil
+				}
+				dist[n.ID] = *depth + 1
+				pred[n.ID] = predecessor{rel, node}
+				next = append(next, n)
+				if od, ok := other[n.ID]; ok {
+					if total := *depth + 1 + od; best < 0 || total < best {
+						best, meet = total, n
+					}
+				}
+				return nil
+			})
+			if err != nil {
+				return nil, err
+			}
+		}
+		*front = next
+		*depth++
+	}
+	if meet == nil || (max >= 0 && best > max) {
+		return nil, nil
+	}
+	// s ... meet from the forward predecessors, meet ... e from the backward ones.
+	p := &Path{Nodes: []*Node{meet}}
+	for n := meet; n.ID != s.ID; {
+		pr := predF[n.ID]
+		p.Nodes = append([]*Node{pr.from}, p.Nodes...)
+		p.Rels = append([]*Rel{pr.rel}, p.Rels...)
+		n = pr.from
+	}
+	for n := meet; n.ID != e.ID; {
+		pr := predB[n.ID]
+		p.Nodes = append(p.Nodes, pr.from)
+		p.Rels = append(p.Rels, pr.rel)
+		n = pr.from
+	}
+	return []*Path{p}, nil
+}
+
+// shortestPathsSlow finds the shortest path(s) from s to e by extending whole
+// paths level by level, which keeps relationship uniqueness exact but holds one
+// state per path (exponential on graphs with many equal-length routes). It is
+// the fallback for the cases the node-based search cannot answer: a path that
+// must return to its start, and a minimum length above one.
+func (ex *exec) shortestPathsSlow(rp *syntax.RelPattern, s, e *Node, min, max int64, all bool, r row, used map[int64]bool) ([]*Path, error) {
 	type state struct {
 		node *Node
 		path *Path
