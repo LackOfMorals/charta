@@ -188,6 +188,8 @@ type Show struct {
 	What  string
 	Yield *Yield
 	Where Expr
+	// Return is a trailing RETURN clause, or nil.
+	Return *Return
 }
 
 // ServerCommand is a Neo4j server-only command (USE, user/role/database

@@ -60,12 +60,9 @@ type tckState struct {
 	db         *graphlite.DB
 	lastResult *eagerResult
 	lastError  error
-	// counters accumulated across setup and query steps
-	nodesCreated int
-	nodesDeleted int
-	relsCreated  int
-	relsDeleted  int
-	propsSet     int
+	// effects are the side effects of the last "executing query" step (setup
+	// and control queries are not counted).
+	effects sideEffects
 	feature      string         // feature file, relative to testdata/tck
 	name         string         // scenario name
 	skipped      bool           // set by Before hook; steps become no-ops
@@ -81,11 +78,7 @@ func (s *tckState) reset() {
 	}
 	s.lastResult = nil
 	s.lastError = nil
-	s.nodesCreated = 0
-	s.nodesDeleted = 0
-	s.relsCreated = 0
-	s.relsDeleted = 0
-	s.propsSet = 0
+	s.effects = sideEffects{}
 	s.skipped = false
 	s.params = nil
 }
@@ -218,16 +211,23 @@ func (s *tckState) whenExecutingQueryDocString(ctx context.Context, doc *godog.D
 	}
 	s.lastResult = eager
 	s.lastError = nil
+	s.effects = sideEffects{}
 	if eager.Summary != nil {
 		c := eager.Summary.Counters()
-		s.nodesCreated += c.NodesCreated()
-		s.nodesDeleted += c.NodesDeleted()
-		s.relsCreated += c.RelationshipsCreated()
-		s.relsDeleted += c.RelationshipsDeleted()
-		s.propsSet += c.PropertiesSet()
+		s.effects = sideEffects{
+			"+nodes": c.NodesCreated(), "-nodes": c.NodesDeleted(),
+			"+relationships": c.RelationshipsCreated(), "-relationships": c.RelationshipsDeleted(),
+			"+properties": c.PropertiesSet(), "-properties": c.PropertiesRemoved(),
+			"+labels": c.LabelsAdded(), "-labels": c.LabelsRemoved(),
+			"+indexes": c.IndexesAdded(), "-indexes": c.IndexesRemoved(),
+			"+constraints": c.ConstraintsAdded(), "-constraints": c.ConstraintsRemoved(),
+		}
 	}
 	return nil
 }
+
+// sideEffects maps a TCK side-effect name ("+nodes", "-labels", …) to its count.
+type sideEffects map[string]int
 
 // ─── Result assertion steps ───────────────────────────────────────────────────
 
@@ -251,8 +251,25 @@ func (s *tckState) noSideEffects() error {
 	if s.skipped {
 		return nil
 	}
-	// No-op: graphlite does not track setup-step side effects separately from
-	// query side effects; accepting this step without checking is intentional.
+	return s.checkEffects(sideEffects{})
+}
+
+// checkEffects requires the last query's side effects to be exactly want
+// (names not listed must be zero).
+func (s *tckState) checkEffects(want sideEffects) error {
+	if s.lastError != nil {
+		return nil // the result assertion reports the failure
+	}
+	var diffs []string
+	for _, key := range []string{"+nodes", "-nodes", "+relationships", "-relationships", "+properties", "-properties",
+		"+labels", "-labels", "+indexes", "-indexes", "+constraints", "-constraints"} {
+		if got := s.effects[key]; got != want[key] {
+			diffs = append(diffs, fmt.Sprintf("%s: expected %d, got %d", key, want[key], got))
+		}
+	}
+	if len(diffs) > 0 {
+		return fmt.Errorf("side effects differ: %s", strings.Join(diffs, "; "))
+	}
 	return nil
 }
 
@@ -343,42 +360,18 @@ func (s *tckState) theSideEffectsShouldBe(table *godog.Table) error {
 	if s.skipped {
 		return nil
 	}
+	want := sideEffects{}
 	for _, row := range table.Rows {
 		if len(row.Cells) < 2 {
 			continue
 		}
-		key := strings.TrimSpace(row.Cells[0].Value)
-		valStr := strings.TrimSpace(row.Cells[1].Value)
-		expected, err := strconv.Atoi(valStr)
+		n, err := strconv.Atoi(strings.TrimSpace(row.Cells[1].Value))
 		if err != nil {
-			continue // skip unparseable rows
+			return fmt.Errorf("bad side effect count %q", row.Cells[1].Value)
 		}
-		var actual int
-		switch key {
-		case "+nodes":
-			actual = s.nodesCreated
-		case "-nodes":
-			actual = s.nodesDeleted
-		case "+relationships":
-			actual = s.relsCreated
-		case "-relationships":
-			actual = s.relsDeleted
-		case "+properties":
-			actual = s.propsSet
-		case "-properties":
-			// graphlite does not track property removals in counters; skip
-			continue
-		case "+labels", "-labels":
-			// graphlite Counters interface does not expose label add/remove counts; skip
-			continue
-		default:
-			continue // unknown side-effect key; skip
-		}
-		if actual != expected {
-			return fmt.Errorf("side effect %q: expected %d, got %d", key, expected, actual)
-		}
+		want[strings.TrimSpace(row.Cells[0].Value)] = n
 	}
-	return nil
+	return s.checkEffects(want)
 }
 
 // errorShouldBeRaised handles "Then a SyntaxError should be raised at compile time: ..."

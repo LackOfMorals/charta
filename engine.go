@@ -125,6 +125,10 @@ func interpResult(res *interp.Result) *Result {
 		propertiesRemoved:    c.PropertiesRemoved,
 		labelsAdded:          c.LabelsAdded,
 		labelsRemoved:        c.LabelsRemoved,
+		indexesAdded:         c.IndexesAdded,
+		indexesRemoved:       c.IndexesRemoved,
+		constraintsAdded:     c.ConstraintsAdded,
+		constraintsRemoved:   c.ConstraintsRemoved,
 	})
 	return out
 }

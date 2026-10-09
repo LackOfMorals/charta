@@ -7,6 +7,7 @@ package proc
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 )
@@ -190,4 +191,19 @@ func (s *Set) Lookup(name string) (*Signature, bool) {
 		return nil, false
 	}
 	return &p.Signature, true
+}
+
+// Names lists the registered procedure names, sorted.
+func (s *Set) Names() []string {
+	if s == nil {
+		return nil
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]string, 0, len(s.m))
+	for _, p := range s.m {
+		out = append(out, p.Name)
+	}
+	sort.Strings(out)
+	return out
 }

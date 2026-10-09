@@ -173,7 +173,7 @@ func TestCounters(t *testing.T) {
 		t.Fatal(err)
 	}
 	c := res.Counters
-	if c.NodesCreated != 2 || c.RelationshipsCreated != 1 || c.PropertiesSet != 3 || c.LabelsAdded != 3 {
+	if c.NodesCreated != 2 || c.RelationshipsCreated != 1 || c.PropertiesSet != 3 || c.LabelsAdded != 2 {
 		t.Errorf("create counters %+v", c)
 	}
 

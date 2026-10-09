@@ -32,6 +32,10 @@ type Counters struct {
 	PropertiesRemoved    int
 	LabelsAdded          int
 	LabelsRemoved        int
+	IndexesAdded         int
+	IndexesRemoved       int
+	ConstraintsAdded     int
+	ConstraintsRemoved   int
 }
 
 // graph is the per-statement view of the database. Nodes and relationships are
@@ -68,6 +72,10 @@ type graph struct {
 	relSnap      map[*Rel]entSnap
 
 	counters Counters
+
+	// constraints are the schema constraints, loaded on first use.
+	constraints       []schemaDef
+	constraintsLoaded bool
 }
 
 func newGraph(ctx context.Context, db DB) *graph {
@@ -766,13 +774,19 @@ func diffProps(before, after map[string]any) (added, removed int) {
 }
 
 // netCounters fills in the property and label counters from the final state.
-func (g *graph) netCounters() {
+func (g *graph) netCounters() error {
+	// The label counters report labels that came into or went out of use in
+	// the database, not label assignments: the number of nodes holding a label
+	// is compared before and after the statement.
+	gained, lost := map[string]int{}, map[string]int{}
 	for n := range g.createdNodes {
 		if n.Deleted {
 			continue
 		}
 		g.counters.PropertiesSet += len(n.Props)
-		g.counters.LabelsAdded += len(n.Labels)
+		for _, l := range n.Labels {
+			gained[l]++
+		}
 	}
 	for r := range g.createdRels {
 		if !r.Deleted {
@@ -788,12 +802,12 @@ func (g *graph) netCounters() {
 		g.counters.PropertiesRemoved += r
 		for _, l := range n.Labels {
 			if !containsStr(s.labels, l) {
-				g.counters.LabelsAdded++
+				gained[l]++
 			}
 		}
 		for _, l := range s.labels {
 			if !n.hasLabel(l) {
-				g.counters.LabelsRemoved++
+				lost[l]++
 			}
 		}
 	}
@@ -805,6 +819,53 @@ func (g *graph) netCounters() {
 		g.counters.PropertiesSet += a
 		g.counters.PropertiesRemoved += rm
 	}
+	// Deleting an entity that existed before the statement removes its
+	// properties (and a node's labels); one created and deleted within the
+	// statement leaves no trace.
+	for _, n := range g.delNodes {
+		if g.createdNodes[n] {
+			continue
+		}
+		props, labels := n.Props, n.Labels
+		if s, ok := g.nodeSnap[n]; ok {
+			props, labels = s.props, s.labels
+		}
+		g.counters.PropertiesRemoved += len(props)
+		for _, l := range labels {
+			lost[l]++
+		}
+	}
+	for _, r := range g.delRels {
+		if g.createdRels[r] {
+			continue
+		}
+		props := r.Props
+		if s, ok := g.relSnap[r]; ok {
+			props = s.props
+		}
+		g.counters.PropertiesRemoved += len(props)
+	}
+	affected := map[string]bool{}
+	for l := range gained {
+		affected[l] = true
+	}
+	for l := range lost {
+		affected[l] = true
+	}
+	for l := range affected {
+		var after int
+		if err := g.queryRow(`SELECT count(*) FROM node_labels WHERE label = ?`, []any{l}, &after); err != nil {
+			return err
+		}
+		before := after - gained[l] + lost[l]
+		switch {
+		case before <= 0 && after > 0:
+			g.counters.LabelsAdded++
+		case before > 0 && after <= 0:
+			g.counters.LabelsRemoved++
+		}
+	}
+	return nil
 }
 
 func deletedAccess() error {
@@ -864,15 +925,24 @@ func (g *graph) finish() error {
 		if _, err := g.db.ExecContext(g.ctx, `DELETE FROM edges WHERE id = ?`, r.ID); err != nil {
 			return err
 		}
-		g.counters.RelationshipsDeleted++
-		g.counters.PropertiesRemoved += 0
+		if g.createdRels[r] {
+			g.counters.RelationshipsCreated-- // created and deleted within the statement
+		} else {
+			g.counters.RelationshipsDeleted++
+		}
 	}
 	for _, n := range g.delNodes {
 		if _, err := g.db.ExecContext(g.ctx, `DELETE FROM nodes WHERE id = ?`, n.ID); err != nil {
 			return err
 		}
-		g.counters.NodesDeleted++
+		if g.createdNodes[n] {
+			g.counters.NodesCreated--
+		} else {
+			g.counters.NodesDeleted++
+		}
 	}
-	g.netCounters()
-	return nil
+	if err := g.netCounters(); err != nil {
+		return err
+	}
+	return g.checkConstraints()
 }

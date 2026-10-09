@@ -149,6 +149,10 @@ type queryCounters struct {
 	propertiesRemoved    int
 	labelsAdded          int
 	labelsRemoved        int
+	indexesAdded         int
+	indexesRemoved       int
+	constraintsAdded     int
+	constraintsRemoved   int
 }
 
 // ResultSummary reports execution statistics and metadata for a completed query.
@@ -175,6 +179,12 @@ type Counters interface {
 	LabelsAdded() int
 	// LabelsRemoved returns the number of labels removed from nodes.
 	LabelsRemoved() int
+	// IndexesAdded and IndexesRemoved count schema indexes created and dropped.
+	IndexesAdded() int
+	IndexesRemoved() int
+	// ConstraintsAdded and ConstraintsRemoved count schema constraints created and dropped.
+	ConstraintsAdded() int
+	ConstraintsRemoved() int
 	// ContainsUpdates returns true when any mutation counter is greater than zero.
 	ContainsUpdates() bool
 }
@@ -202,9 +212,14 @@ func (c *counters) PropertiesSet() int        { return c.c.propertiesSet }
 func (c *counters) PropertiesRemoved() int    { return c.c.propertiesRemoved }
 func (c *counters) LabelsAdded() int          { return c.c.labelsAdded }
 func (c *counters) LabelsRemoved() int        { return c.c.labelsRemoved }
+func (c *counters) IndexesAdded() int         { return c.c.indexesAdded }
+func (c *counters) IndexesRemoved() int       { return c.c.indexesRemoved }
+func (c *counters) ConstraintsAdded() int     { return c.c.constraintsAdded }
+func (c *counters) ConstraintsRemoved() int   { return c.c.constraintsRemoved }
 func (c *counters) ContainsUpdates() bool {
 	return c.c.nodesCreated > 0 || c.c.nodesDeleted > 0 ||
 		c.c.relationshipsCreated > 0 || c.c.relationshipsDeleted > 0 ||
 		c.c.propertiesSet > 0 || c.c.propertiesRemoved > 0 ||
-		c.c.labelsAdded > 0 || c.c.labelsRemoved > 0
+		c.c.labelsAdded > 0 || c.c.labelsRemoved > 0 ||
+		c.c.indexesAdded > 0 || c.c.indexesRemoved > 0 || c.c.constraintsAdded > 0 || c.c.constraintsRemoved > 0
 }

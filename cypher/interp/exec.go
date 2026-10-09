@@ -87,6 +87,14 @@ func (ex *exec) runBody(b syntax.Body, in []row) ([]string, []row, error) {
 			}
 		}
 		return cols, out, nil
+	case *syntax.CreateIndex:
+		return nil, nil, ex.execCreateIndex(b)
+	case *syntax.CreateConstraint:
+		return nil, nil, ex.execCreateConstraint(b)
+	case *syntax.DropSchema:
+		return nil, nil, ex.execDropSchema(b)
+	case *syntax.Show:
+		return ex.execShow(b)
 	case *syntax.Conditional:
 		for _, w := range b.Branches {
 			for _, r := range in {

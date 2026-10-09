@@ -323,5 +323,8 @@ func (p *parser) parseShow() Body {
 	case p.acceptKw(KwWhere):
 		s.Where = p.parseExpr()
 	}
+	if p.atKw(KwReturn) {
+		s.Return = p.parseReturn().(*Return)
+	}
 	return s
 }
