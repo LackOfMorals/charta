@@ -6,30 +6,26 @@ import (
 	"strings"
 )
 
-// Expression grammar and precedence.
-//
-// The levels below follow the openCypher 9 grammar (the one the former
-// ANTLR-based parser used), lowest binding first:
+// Expression grammar and precedence, lowest binding first. The order is the one
+// the openCypher TCK pins down (Precedence1-4):
 //
 //	OR
 //	XOR
 //	AND
 //	NOT                       (prefix, repeatable)
 //	comparison                = <> < > <= >=  (chained: a < b < c)
+//	predicates                IN, STARTS WITH, ENDS WITH, CONTAINS, =~, IS [NOT] NULL, IS :: TYPE, :: TYPE
 //	additive                  + - ||
 //	multiplicative            * / %
-//	power                     ^               (left-associative, like the grammar's flat list)
+//	power                     ^               (left-associative)
 //	unary                     prefix + -
-//	string/list/null          IN, STARTS WITH, ENDS WITH, CONTAINS, =~, IS [NOT] NULL
 //	property/label/subscript  .key  [i]  [i..j]  :Label
 //	atom
 //
-// Consequences worth knowing: the string/list/null operators bind tighter than
-// arithmetic, so `a + b IN c` is `a + (b IN c)`; and unary minus binds tighter
-// than ^, so `-x^2` is `(-x)^2`. A '-' directly before a numeric literal is
-// folded into the literal, so `-2^2` is `(-2)^2` and -9223372036854775808 is
-// representable. These choices mirror the grammar and are cross-checked against
-// the TCK precedence scenarios in task-017; adjust here if Neo4j differs.
+// So `[1]+2 IN [3]+4` is `([1]+2) IN ([3]+4)`, `a = b IN c` is `a = (b IN c)`,
+// `NOT a IS NULL` is `NOT (a IS NULL)`, and unary minus binds tighter than ^
+// (`-3 ^ 2` is `(-3)^2`). A '-' directly before a numeric literal is folded into
+// the literal, so -9223372036854775808 is representable.
 //
 // Deliberate leniency over the grammar: subscripts, slices and property
 // lookups may be freely interleaved in any order (`list[0].name`, `n.a[1]`).
@@ -105,7 +101,7 @@ func compareOp(k Kind) (CompareOp, bool) {
 }
 
 func (p *parser) parseComparison() Expr {
-	first := p.parseAdditive()
+	first := p.parsePredicates()
 	op, ok := compareOp(p.cur().Kind)
 	if !ok {
 		return first
@@ -114,7 +110,7 @@ func (p *parser) parseComparison() Expr {
 	for ok {
 		p.next()
 		c.Ops = append(c.Ops, op)
-		c.Operands = append(c.Operands, p.parseAdditive())
+		c.Operands = append(c.Operands, p.parsePredicates())
 		op, ok = compareOp(p.cur().Kind)
 	}
 	return c
@@ -183,9 +179,9 @@ func (p *parser) parseUnary() Expr {
 		// Fold the sign into the literal.
 		minus := ops[n-1]
 		ops = ops[:n-1]
-		x = p.parsePredicateTail(p.numberLiteral(minus))
+		x = p.numberLiteral(minus)
 	} else {
-		x = p.parsePredicates()
+		x = p.parsePostfix()
 	}
 	for i := len(ops) - 1; i >= 0; i-- {
 		op := OpPlus
@@ -197,10 +193,10 @@ func (p *parser) parseUnary() Expr {
 	return x
 }
 
-// parsePredicates parses a postfix expression followed by any string/list/null
-// predicate operators.
+// parsePredicates parses an additive expression followed by any IN / string /
+// null / type predicate operators.
 func (p *parser) parsePredicates() Expr {
-	return p.parsePredicateTail(p.parsePostfix())
+	return p.parsePredicateTail(p.parseAdditive())
 }
 
 func (p *parser) parsePredicateTail(l Expr) Expr {
@@ -209,21 +205,21 @@ func (p *parser) parsePredicateTail(l Expr) Expr {
 		switch {
 		case t.Is(KwIn):
 			p.next()
-			l = &Binary{Loc{l.Pos()}, OpIn, l, p.parsePostfix()}
+			l = &Binary{Loc{l.Pos()}, OpIn, l, p.parseAdditive()}
 		case t.Is(KwStarts):
 			p.next()
 			p.expectKw(KwWith)
-			l = &Binary{Loc{l.Pos()}, OpStartsWith, l, p.parsePostfix()}
+			l = &Binary{Loc{l.Pos()}, OpStartsWith, l, p.parseAdditive()}
 		case t.Is(KwEnds):
 			p.next()
 			p.expectKw(KwWith)
-			l = &Binary{Loc{l.Pos()}, OpEndsWith, l, p.parsePostfix()}
+			l = &Binary{Loc{l.Pos()}, OpEndsWith, l, p.parseAdditive()}
 		case t.Is(KwContains):
 			p.next()
-			l = &Binary{Loc{l.Pos()}, OpContains, l, p.parsePostfix()}
+			l = &Binary{Loc{l.Pos()}, OpContains, l, p.parseAdditive()}
 		case t.Kind == EQTILDE:
 			p.next()
-			l = &Binary{Loc{l.Pos()}, OpRegexMatch, l, p.parsePostfix()}
+			l = &Binary{Loc{l.Pos()}, OpRegexMatch, l, p.parseAdditive()}
 		case t.Is(KwIs):
 			p.next()
 			negated := p.acceptKw(KwNot)

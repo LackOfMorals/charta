@@ -171,7 +171,17 @@ func TestParseExpr_Golden(t *testing.T) {
 		{"-(1)", "(neg 1)"},
 		{"-1.5", "-1.5"},
 		{"-9223372036854775808", "-9223372036854775808"},
-		{"a + b IN c", "(+ a (IN b c))"}, // string/list/null operators bind tighter than +
+		// predicates bind tighter than comparison but looser than arithmetic (TCK Precedence1-4)
+		{"a + b IN c", "(IN (+ a b) c)"},
+		{"[1]+2 IN [3]+4", "(IN (+ [1] 2) (+ [3] 4))"},
+		{"false = true IN [true, false]", "(chain false = (IN true [true false]))"},
+		{"false = true IS NULL", "(chain false = (isnull true))"},
+		{"a < b IN c", "(chain a < (IN b c))"},
+		{"NOT a IN b", "(NOT (IN a b))"},
+		{"NOT a IS NULL", "(NOT (isnull a))"},
+		{"a OR b IS NULL", "(OR a (isnull b))"},
+		{"a STARTS WITH 'x' = true", `(chain (STARTS WITH a "x") = true)`},
+		{"-3 ^ 2", "(^ -3 2)"},
 		{"a IN b IN c", "(IN (IN a b) c)"},
 
 		// predicates
