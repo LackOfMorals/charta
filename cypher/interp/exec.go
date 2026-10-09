@@ -2,7 +2,6 @@ package interp
 
 import (
 	"context"
-	"github.com/LackOfMorals/graphlite/v2/cypher/proc"
 
 	"github.com/LackOfMorals/graphlite/v2/cypher/syntax"
 )
@@ -21,10 +20,14 @@ func Run(ctx context.Context, db DB, st *syntax.Statement, params map[string]any
 	return RunWith(ctx, db, st, params, nil)
 }
 
-// RunWith is Run with a set of registered procedures available to CALL.
-func RunWith(ctx context.Context, db DB, st *syntax.Statement, params map[string]any, procs *proc.Set) (*Result, error) {
+// RunWith is Run using an Engine's registered procedures and index advisor.
+func RunWith(ctx context.Context, db DB, st *syntax.Statement, params map[string]any, eng *Engine) (*Result, error) {
 	g := newGraph(ctx, db)
-	ex := &exec{g: g, params: params, procs: procs}
+	g.eng = eng
+	ex := &exec{g: g, params: params}
+	if eng != nil {
+		ex.procs = &eng.Procs
+	}
 	cols, rows, err := ex.runBody(st.Body, []row{{}})
 	if err != nil {
 		return nil, err

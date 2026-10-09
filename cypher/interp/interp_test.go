@@ -27,10 +27,14 @@ func newDB(t *testing.T) *store.SQLiteStore {
 }
 
 // run parses, analyses and executes q in its own transaction.
-func run(db *store.SQLiteStore, procs *proc.Set, q string, params map[string]any) (*interp.Result, error) {
+func run(db *store.SQLiteStore, eng *interp.Engine, q string, params map[string]any) (*interp.Result, error) {
 	st, err := syntax.Parse(q)
 	if err != nil {
 		return nil, err
+	}
+	var procs *proc.Set
+	if eng != nil {
+		procs = &eng.Procs
 	}
 	if err := analyze.CheckWith(st, procs); err != nil {
 		return nil, err
@@ -40,7 +44,7 @@ func run(db *store.SQLiteStore, procs *proc.Set, q string, params map[string]any
 	if err != nil {
 		return nil, err
 	}
-	res, err := interp.RunWith(ctx, tx, st, params, procs)
+	res, err := interp.RunWith(ctx, tx, st, params, eng)
 	if err != nil {
 		_ = tx.Rollback()
 		return nil, err
@@ -266,8 +270,8 @@ func TestProcedures(t *testing.T) {
 		t.Errorf("db.relationshipTypes: %s", got)
 	}
 
-	var procs proc.Set
-	procs.Register(&proc.Procedure{
+	eng := &interp.Engine{}
+	eng.Procs.Register(&proc.Procedure{
 		Signature: proc.Signature{
 			Name:    "test.double",
 			Inputs:  []proc.Param{{Name: "n", Type: "INTEGER"}},
@@ -277,7 +281,7 @@ func TestProcedures(t *testing.T) {
 			return []map[string]any{{"out": args[0].(int64) * 2}}, nil
 		},
 	})
-	res, err = run(db, &procs, "UNWIND [1, 2] AS n CALL test.double(n) YIELD out RETURN out", nil)
+	res, err = run(db, eng, "UNWIND [1, 2] AS n CALL test.double(n) YIELD out RETURN out", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -285,7 +289,7 @@ func TestProcedures(t *testing.T) {
 		t.Errorf("test.double: %s", got)
 	}
 	// Standalone call with implicit parameter passing.
-	res, err = run(db, &procs, "CALL test.double", map[string]any{"n": int64(21)})
+	res, err = run(db, eng, "CALL test.double", map[string]any{"n": int64(21)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -305,9 +309,52 @@ func TestProcedures(t *testing.T) {
 		if perr != nil {
 			t.Fatalf("%s: %v", q, perr)
 		}
-		err := analyze.CheckWith(st, &procs)
+		err := analyze.CheckWith(st, &eng.Procs)
 		if _, got, ok := analyze.Describe(err); !ok || got != code {
 			t.Errorf("%s: got %v, want %s", q, err, code)
 		}
+	}
+}
+
+// A key that keeps narrowing scans on a big enough graph gets an index, and the
+// index is used (results are unchanged).
+func TestAutomaticPropertyIndex(t *testing.T) {
+	db := newDB(t)
+	eng := &interp.Engine{}
+	if _, err := run(db, eng, "UNWIND range(1, 600) AS i CREATE (:P {id: i, grp: i % 7})", nil); err != nil {
+		t.Fatal(err)
+	}
+	indexes := func() int {
+		var n int
+		rows, err := db.DB().Query(`SELECT count(*) FROM sqlite_master WHERE name LIKE 'idx_auto_np_%'`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer rows.Close()
+		rows.Next()
+		rows.Scan(&n)
+		return n
+	}
+	for i := 0; i < 4; i++ {
+		res, err := run(db, eng, "MATCH (n:P) WHERE n.id = 300 RETURN n.grp", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := rows(res); len(got) != 1 || got[0] != "6" {
+			t.Fatalf("run %d: %v", i, got)
+		}
+		if i < 2 && indexes() != 0 {
+			t.Fatalf("index created too early (run %d)", i)
+		}
+	}
+	if indexes() != 1 {
+		t.Errorf("expected one automatic index, got %d", indexes())
+	}
+	// Keys that are not plain identifiers are never pushed down or indexed.
+	if _, err := run(db, eng, "MATCH (n:P) WHERE n.`a b` = 1 RETURN n", nil); err != nil {
+		t.Fatal(err)
+	}
+	if indexes() != 1 {
+		t.Errorf("unexpected extra index")
 	}
 }

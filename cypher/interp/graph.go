@@ -42,6 +42,7 @@ type entSnap struct {
 }
 
 type graph struct {
+	eng *Engine // per-database state; may be nil
 	ctx context.Context
 	db  DB
 
@@ -175,6 +176,16 @@ func decodeProps(s string) (map[string]any, error) {
 	if s == "" || s == "{}" {
 		return props, nil
 	}
+	if m, ok := fastDecodeObject(s); ok {
+		return m, nil
+	}
+	return decodePropsSlow(s)
+}
+
+// decodePropsSlow is the encoding/json fallback for anything the fast decoder
+// declines.
+func decodePropsSlow(s string) (map[string]any, error) {
+	props := map[string]any{}
 	dec := json.NewDecoder(strings.NewReader(s))
 	dec.UseNumber()
 	var raw map[string]any
@@ -263,8 +274,11 @@ func (g *graph) scanNodes(label string, hints []propHint) ([]*Node, error) {
 		args = append(args, label)
 	}
 	for _, h := range hints {
-		sb.WriteString(` AND json_extract(n.props, ?) = ?`)
-		args = append(args, `$."`+h.key+`"`, h.val)
+		// The path is inlined (h.key is a plain identifier) so an expression
+		// index on json_extract(props, '$."key"') can serve the lookup.
+		sb.WriteString(` AND json_extract(n.props, '$."` + h.key + `"') = ?`)
+		args = append(args, h.val)
+		g.eng.noteScan(g.ctx, g.db, h.key)
 	}
 	sb.WriteString(` ORDER BY n.id`)
 	rows, err := g.db.QueryContext(g.ctx, sb.String(), args...)

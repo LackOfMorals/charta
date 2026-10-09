@@ -45,6 +45,7 @@ import (
 	"strings"
 
 	"github.com/LackOfMorals/graphlite/v2/cypher"
+	"github.com/LackOfMorals/graphlite/v2/cypher/interp"
 	"github.com/LackOfMorals/graphlite/v2/cypher/proc"
 	glsql "github.com/LackOfMorals/graphlite/v2/sql"
 	"github.com/LackOfMorals/graphlite/v2/store"
@@ -56,8 +57,8 @@ type DB struct {
 	st          store.Store
 	readOnly    bool
 	maxPathHops int
-	cache       *planCache // bounded LRU cache for parse→plan→translate results
-	procs       proc.Set   // user-registered procedures callable with CALL
+	cache       *planCache    // bounded LRU cache for parse→plan→translate results
+	eng         interp.Engine // interpreter state: registered procedures, index advisor
 }
 
 // Open opens (or creates) a graphlite database at path and returns a *DB.
@@ -142,7 +143,7 @@ func (d *DB) Close(_ context.Context) error {
 // query contains write statements.
 func (d *DB) RunQuery(ctx context.Context, cypherStr string, params map[string]any) (*Result, error) {
 	if useInterpreter() {
-		return runInterp(ctx, d.st.Exec(), cypherStr, params, d.st.BeginExecTx, d.readOnly, &d.procs)
+		return runInterp(ctx, d.st.Exec(), cypherStr, params, d.st.BeginExecTx, d.readOnly, &d.eng)
 	}
 	if d.readOnly {
 		sqlResult, err := buildSQLResult(cypherStr, params, d.maxPathHops, d.cache)
@@ -171,7 +172,7 @@ func (d *DB) BeginTx(ctx context.Context) (*Tx, error) {
 	if err != nil {
 		return nil, fmt.Errorf("graphlite: begin transaction: %w", err)
 	}
-	return &Tx{rawTx: txEx, maxPathHops: d.maxPathHops, cache: d.cache, procs: &d.procs}, nil
+	return &Tx{rawTx: txEx, maxPathHops: d.maxPathHops, cache: d.cache, eng: &d.eng}, nil
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -196,9 +197,9 @@ func runQuery(ctx context.Context, ex execer, cypherStr string, params map[strin
 
 // runQueryTx is the execution pipeline for transactional mode. beginTxFn is
 // nil because the caller already holds an open transaction.
-func runQueryTx(ctx context.Context, ex execer, cypherStr string, params map[string]any, maxPathHops int, cache *planCache, procs *proc.Set) (*Result, error) {
+func runQueryTx(ctx context.Context, ex execer, cypherStr string, params map[string]any, maxPathHops int, cache *planCache, eng *interp.Engine) (*Result, error) {
 	if useInterpreter() {
-		return runInterp(ctx, ex, cypherStr, params, nil, false, procs)
+		return runInterp(ctx, ex, cypherStr, params, nil, false, eng)
 	}
 	sqlResult, err := buildSQLResult(cypherStr, params, maxPathHops, cache)
 	if err != nil {
@@ -883,7 +884,7 @@ func execMergeBatch(ctx context.Context, ex execer, stmts []glsql.Statement, idM
 // RegisterProcedure makes a procedure callable with CALL. A later registration
 // under the same name replaces the earlier one. Procedures are honoured by the
 // Go-side executor (GRAPHLITE_ENGINE=exec); the SQL translator does not run them.
-func (d *DB) RegisterProcedure(p *proc.Procedure) { d.procs.Register(p) }
+func (d *DB) RegisterProcedure(p *proc.Procedure) { d.eng.Procs.Register(p); d.eng.ClearStatements() }
 
 // ClearProcedures removes every registered procedure.
-func (d *DB) ClearProcedures() { d.procs.Clear() }
+func (d *DB) ClearProcedures() { d.eng.Procs.Clear(); d.eng.ClearStatements() }

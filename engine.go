@@ -8,7 +8,6 @@ import (
 
 	"github.com/LackOfMorals/graphlite/v2/cypher/analyze"
 	"github.com/LackOfMorals/graphlite/v2/cypher/interp"
-	"github.com/LackOfMorals/graphlite/v2/cypher/proc"
 	"github.com/LackOfMorals/graphlite/v2/cypher/syntax"
 )
 
@@ -24,22 +23,26 @@ func useInterpreter() bool { return os.Getenv(engineEnv) != "sql" }
 
 // parseSyntax parses and analyses a query, wrapping errors the way the SQL path
 // does so analyze.Describe sees the typed compile-time error.
-func parseSyntax(cypherStr string, procs *proc.Set) (*syntax.Statement, error) {
+func parseSyntax(cypherStr string, eng *interp.Engine) (*syntax.Statement, error) {
+	if st, ok := eng.Statement(cypherStr); ok {
+		return st, nil
+	}
 	st, err := syntax.Parse(cypherStr)
 	if err != nil {
 		return nil, fmt.Errorf("graphlite: parse: cypher syntax error: %w", err)
 	}
-	if err := analyze.CheckWith(st, procs); err != nil {
+	if err := analyze.CheckWith(st, &eng.Procs); err != nil {
 		return nil, fmt.Errorf("graphlite: parse: cypher: %w", err)
 	}
+	eng.CacheStatement(cypherStr, st)
 	return st, nil
 }
 
 // runInterp executes a query with the interpreter. When beginTxFn is non-nil
 // the query runs in its own transaction, committed on success and rolled back on
 // error; otherwise ex is already transaction-scoped.
-func runInterp(ctx context.Context, ex execer, cypherStr string, params map[string]any, beginTxFn func(context.Context) (txExecer, error), readOnly bool, procs *proc.Set) (*Result, error) {
-	st, err := parseSyntax(cypherStr, procs)
+func runInterp(ctx context.Context, ex execer, cypherStr string, params map[string]any, beginTxFn func(context.Context) (txExecer, error), readOnly bool, eng *interp.Engine) (*Result, error) {
+	st, err := parseSyntax(cypherStr, eng)
 	if err != nil {
 		return nil, err
 	}
@@ -48,7 +51,7 @@ func runInterp(ctx context.Context, ex execer, cypherStr string, params map[stri
 			return nil, &ErrMissingParameter{Name: name}
 		}
 	}
-	if err := analyze.CheckParams(st, params, procs); err != nil {
+	if err := analyze.CheckParams(st, params, &eng.Procs); err != nil {
 		return nil, fmt.Errorf("graphlite: parse: cypher: %w", err)
 	}
 	if readOnly && hasWrites(st) {
@@ -60,16 +63,17 @@ func runInterp(ctx context.Context, ex execer, cypherStr string, params map[stri
 		if err != nil {
 			return nil, fmt.Errorf("graphlite: begin transaction: %w", err)
 		}
-		res, err = interp.RunWith(ctx, tx, st, params, procs)
+		res, err = interp.RunWith(ctx, tx, st, params, eng)
 		if err != nil {
 			_ = tx.Rollback()
+			eng.ResetIndexState()
 			return nil, fmt.Errorf("graphlite: execute: %w", err)
 		}
 		if err := tx.Commit(); err != nil {
 			return nil, fmt.Errorf("graphlite: commit: %w", err)
 		}
 	} else {
-		res, err = interp.RunWith(ctx, ex, st, params, procs)
+		res, err = interp.RunWith(ctx, ex, st, params, eng)
 		if err != nil {
 			return nil, fmt.Errorf("graphlite: execute: %w", err)
 		}

@@ -21,9 +21,12 @@ type pushedEq struct {
 	val           syntax.Expr
 }
 
-// pushableKey reports whether key can be written inside a quoted JSON path.
+// pushableKey reports whether key is a plain identifier, which makes it safe to
+// write inside a JSON path in SQL text.
 func pushableKey(key string) bool {
-	return key != "" && !strings.ContainsAny(key, `"\\`)
+	return key != "" && !strings.ContainsFunc(key, func(r rune) bool {
+		return !(r == '_' || r >= '0' && r <= '9' || r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z')
+	})
 }
 
 // whereEqualities extracts the `var.key = expr` conjuncts of a WHERE clause.
