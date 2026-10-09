@@ -5,13 +5,18 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/LackOfMorals/graphlite/v2/cypher/proc"
 	"github.com/LackOfMorals/graphlite/v2/cypher/syntax"
 )
 
 // Check analyses a parsed statement and returns the first compile-time error
 // as an *Error, or nil. It reports only what it can prove: anything whose type
 // or binding is not statically known is accepted.
-func Check(st *syntax.Statement) (err error) {
+func Check(st *syntax.Statement) error { return CheckWith(st, nil) }
+
+// CheckWith is Check with a registry of user-registered procedures, consulted
+// in addition to the built-in db.* procedures.
+func CheckWith(st *syntax.Statement, reg proc.Registry) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			e, ok := r.(*Error)
@@ -21,12 +26,16 @@ func Check(st *syntax.Statement) (err error) {
 			err = e
 		}
 	}()
-	c := &checker{}
+	c := &checker{reg: reg, standalone: isStandaloneCall(st)}
 	c.body(st.Body, newScope(nil))
 	return nil
 }
 
-type checker struct{}
+type checker struct {
+	reg proc.Registry
+	// standalone is true when the statement is a lone CALL.
+	standalone bool
+}
 
 // fail aborts the analysis with a SyntaxError.
 func (c *checker) fail(code string, pos syntax.Pos, format string, args ...any) {
@@ -146,22 +155,34 @@ func (c *checker) clause(cl syntax.Clause, sc *scope, cols []string) (*scope, []
 	case *syntax.Return:
 		return c.projectionClause(cl.Pos(), &cl.Projection, nil, true, sc)
 	case *syntax.Call:
-		if !knownProcedure(cl.Name) {
+		sig := c.lookupProcedure(strings.Join(cl.Name, "."))
+		if sig == nil && !knownProcedure(cl.Name) {
 			panic(&Error{Class: ClassProcedure, Code: CodeProcedureNotFound, Pos: cl.Pos(),
 				Msg: sprintf("there is no procedure with the name `%s` registered", strings.Join(cl.Name, "."))})
 		}
 		for _, a := range cl.Args {
 			c.expr(a, env{sc: sc})
 		}
+		if sig != nil {
+			c.checkProcedureArgs(cl, sig)
+		}
 		if cl.Yield != nil {
 			if cl.Yield.Star {
+				if !c.standalone {
+					c.fail(CodeUnexpectedSyntax, cl.Yield.Pos(), "YIELD * is only allowed in a standalone CALL")
+				}
 				sc.open = true
 			}
+			yielded := map[string]bool{}
 			for _, y := range cl.Yield.Items {
 				name := y.Alias
 				if name == "" {
 					name = y.Name
 				}
+				if _, bound := sc.lookup(name); bound || yielded[name] {
+					c.fail(CodeVariableAlreadyBound, y.Pos(), "variable `%s` already declared", name)
+				}
+				yielded[name] = true
 				sc.declare(name, tAny)
 			}
 			if cl.Yield.Where != nil {
@@ -253,4 +274,70 @@ func knownProcedure(name []string) bool {
 		return true
 	}
 	return false
+}
+
+// lookupProcedure finds a registered or built-in procedure signature.
+func (c *checker) lookupProcedure(name string) *proc.Signature {
+	if c.reg != nil {
+		if sig, ok := c.reg.Lookup(name); ok {
+			return sig
+		}
+	}
+	for _, sig := range proc.Builtin {
+		if proc.Key(sig.Name) == proc.Key(name) {
+			return sig
+		}
+	}
+	return nil
+}
+
+// checkProcedureArgs validates argument count, passing mode and literal types.
+func (c *checker) checkProcedureArgs(cl *syntax.Call, sig *proc.Signature) {
+	if cl.ArgsOmitted {
+		if len(sig.Inputs) > 0 && !c.standalone {
+			c.fail(CodeInvalidArgumentPassingMode, cl.Pos(), "procedure `%s` takes arguments, which cannot be passed implicitly in a query", sig.Name)
+		}
+		return // implicit arguments come from parameters; checked at run time
+	}
+	if len(cl.Args) != len(sig.Inputs) {
+		c.fail(CodeInvalidNumberOfArguments, cl.Pos(), "procedure `%s` expects %d arguments but got %d",
+			sig.Name, len(sig.Inputs), len(cl.Args))
+	}
+	for i, a := range cl.Args {
+		if kind := literalKind(a); kind != "" && !sig.Inputs[i].Accepts(kind) {
+			c.fail(CodeInvalidArgumentType, a.Pos(), "argument `%s` of procedure `%s` expects %s",
+				sig.Inputs[i].Name, sig.Name, sig.Inputs[i].Type)
+		}
+	}
+}
+
+// literalKind returns the proc type name of a literal expression, or "".
+func literalKind(e syntax.Expr) string {
+	switch e.(type) {
+	case *syntax.IntLit:
+		return "INTEGER"
+	case *syntax.FloatLit:
+		return "FLOAT"
+	case *syntax.StringLit:
+		return "STRING"
+	case *syntax.BoolLit:
+		return "BOOLEAN"
+	case *syntax.NullLit:
+		return "NULL"
+	case *syntax.ListLit:
+		return "LIST"
+	case *syntax.MapLit:
+		return "MAP"
+	}
+	return ""
+}
+
+// isStandaloneCall reports whether the statement consists of one CALL clause.
+func isStandaloneCall(st *syntax.Statement) bool {
+	q, ok := st.Body.(*syntax.SingleQuery)
+	if !ok || len(q.Clauses) != 1 {
+		return false
+	}
+	_, ok = q.Clauses[0].(*syntax.Call)
+	return ok
 }

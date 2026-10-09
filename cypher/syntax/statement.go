@@ -32,6 +32,13 @@ func (p *parser) parseStatement() *Statement {
 	if !p.at(EOF) {
 		p.unexpected("end of input")
 	}
+	seen := map[string]bool{}
+	for _, t := range p.toks {
+		if t.Kind == PARAM && !seen[t.Value] {
+			seen[t.Value] = true
+			st.Params = append(st.Params, t.Value)
+		}
+	}
 	return st
 }
 

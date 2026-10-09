@@ -34,6 +34,14 @@ type Relationship struct {
 	Props map[string]any
 }
 
+// Path is an alternating sequence of nodes and relationships, as returned by a
+// named path or shortestPath(): len(Nodes) == len(Relationships)+1, and
+// Relationships[i] connects Nodes[i] and Nodes[i+1].
+type Path struct {
+	Nodes         []Node
+	Relationships []Relationship
+}
+
 // Record is an ordered collection of key-value pairs returned by a query. Keys
 // are the projection aliases from the RETURN clause; values may be scalars,
 // Node, Relationship, or nil.

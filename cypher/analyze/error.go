@@ -18,6 +18,7 @@ const (
 	ClassSyntax    = "SyntaxError"
 	ClassType      = "TypeError"
 	ClassProcedure = "ProcedureError"
+	ClassParameter = "ParameterMissing"
 )
 
 // Error detail codes (openCypher TCK names) reported by Check.
@@ -34,6 +35,9 @@ const (
 	CodeNonConstantExpression           = "NonConstantExpression"
 	CodeNegativeIntegerArgument         = "NegativeIntegerArgument"
 	CodeInvalidArgumentType             = "InvalidArgumentType"
+	CodeMissingParameter                = "MissingParameter"
+	CodeInvalidNumberOfArguments        = "InvalidNumberOfArguments"
+	CodeInvalidArgumentPassingMode      = "InvalidArgumentPassingMode"
 	CodeUnknownFunction                 = "UnknownFunction"
 	CodeInvalidParameterUse             = "InvalidParameterUse"
 	CodeNoSingleRelationshipType        = "NoSingleRelationshipType"

@@ -169,6 +169,9 @@ var unsupportedPatterns = []struct {
 // containsUnsupported returns a reason string if cypher uses unsupported features,
 // or empty string if it appears supported.
 func containsUnsupported(cypher string) string {
+	if os.Getenv("TCK_NOSKIP") != "" {
+		return "" // run every scenario, e.g. to measure the interpreter
+	}
 	for _, up := range unsupportedPatterns {
 		if strings.Contains(cypher, up.pattern) {
 			return up.reason
@@ -183,7 +186,7 @@ func containsUnsupported(cypher string) string {
 // which carry DocString in step.Argument.DocString (not step.DocString directly).
 func shouldSkipScenario(scenario *godog.Scenario) string {
 	for _, step := range scenario.Steps {
-		if strings.Contains(step.Text, "there exists a procedure") {
+		if strings.Contains(step.Text, "there exists a procedure") && os.Getenv("TCK_NOSKIP") == "" {
 			return "test procedures (CALL) not supported"
 		}
 		// Check DocString content (multiline Cypher blocks)
@@ -371,6 +374,16 @@ func (s *tckState) noSideEffects() error {
 // The table has a header row of column names and data rows of values.
 // We compare record count and — for simple scalar values — cell values.
 func (s *tckState) theResultShouldBeInAnyOrder(table *godog.Table) error {
+	return s.compareResult(table, false, false)
+}
+
+// theResultShouldBeInOrder handles "Then the result should be, in order:".
+func (s *tckState) theResultShouldBeInOrder(table *godog.Table) error {
+	return s.compareResult(table, true, false)
+}
+
+// compareResult compares the last result with an expected table structurally.
+func (s *tckState) compareResult(table *godog.Table, ordered, ignoreListOrder bool) error {
 	if s.skipped {
 		return nil
 	}
@@ -383,53 +396,59 @@ func (s *tckState) theResultShouldBeInAnyOrder(table *godog.Table) error {
 	if len(table.Rows) == 0 {
 		return nil
 	}
-
-	// The first row is the header.
-	headers := table.Rows[0].Cells
-	dataRows := table.Rows[1:]
-
-	// If dataRows is empty, the expected result is empty.
-	if len(dataRows) == 0 {
-		if len(s.lastResult.Records) != 0 {
-			return fmt.Errorf("expected empty result (table has no data rows), got %d row(s)", len(s.lastResult.Records))
-		}
-		return nil
+	headers := make([]string, len(table.Rows[0].Cells))
+	for i, c := range table.Rows[0].Cells {
+		headers[i] = c.Value
 	}
-
-	// Check row count.
+	dataRows := table.Rows[1:]
 	if len(s.lastResult.Records) != len(dataRows) {
 		return fmt.Errorf("expected %d row(s), got %d", len(dataRows), len(s.lastResult.Records))
 	}
+	lenient := os.Getenv("GRAPHLITE_ENGINE") == "sql" // the SQL path loses int/float and list typing
 
-	// For single-column scalar results, do a value comparison (unordered).
-	if len(headers) == 1 {
-		colName := headers[0].Value
-		// Collect expected values.
-		expected := make([]any, 0, len(dataRows))
-		for _, row := range dataRows {
-			if len(row.Cells) > 0 {
-				expected = append(expected, parseTCKValue(row.Cells[0].Value))
+	expected := make([]string, len(dataRows))
+	for i, row := range dataRows {
+		vals := make([]any, len(headers))
+		for j := range headers {
+			v, err := parseTV(row.Cells[j].Value)
+			if err != nil {
+				return fmt.Errorf("cannot parse expected value %q: %w", row.Cells[j].Value, err)
+			}
+			vals[j] = v
+		}
+		expected[i] = tvKey(vals, ignoreListOrder)
+	}
+	actual := make([]string, len(s.lastResult.Records))
+	for i, rec := range s.lastResult.Records {
+		vals := make([]any, len(headers))
+		for j, h := range headers {
+			v, ok := rec.Get(h)
+			if !ok {
+				return fmt.Errorf("result has no column %q", h)
+			}
+			vals[j] = fromActual(v, lenient)
+		}
+		actual[i] = tvKey(vals, ignoreListOrder)
+	}
+	if ordered {
+		for i := range expected {
+			if expected[i] != actual[i] {
+				return fmt.Errorf("row %d: expected %s, got %s", i, expected[i], actual[i])
 			}
 		}
-		// Collect actual values.
-		actual := make([]any, 0, len(s.lastResult.Records))
-		for _, rec := range s.lastResult.Records {
-			v, _ := rec.Get(colName)
-			actual = append(actual, normaliseValue(v))
-		}
-		return compareUnordered(expected, actual, colName)
+		return nil
 	}
-
-	// For multi-column results: check row count only (column values may be
-	// complex node/rel representations that we cannot easily compare).
-	// A more precise comparison would require a full TCK value parser.
+	freq := map[string]int{}
+	for _, k := range expected {
+		freq[k]++
+	}
+	for _, k := range actual {
+		if freq[k] <= 0 {
+			return fmt.Errorf("unexpected row %s (expected one of %v)", k, expected)
+		}
+		freq[k]--
+	}
 	return nil
-}
-
-// theResultShouldBeInOrder handles "Then the result should be, in order:" —
-// same as in any order but we just check count for now.
-func (s *tckState) theResultShouldBeInOrder(table *godog.Table) error {
-	return s.theResultShouldBeInAnyOrder(table)
 }
 
 // theSideEffectsShouldBe handles "And the side effects should be:" (table).
@@ -533,68 +552,6 @@ func parseTCKValue(s string) any {
 		return fv
 	}
 	return s
-}
-
-// normaliseValue normalises actual query result values for comparison against
-// parsed TCK values. graphlite returns numbers as float64 (JSON-decoded).
-func normaliseValue(v any) any {
-	switch val := v.(type) {
-	case float64:
-		// If it's an integer-valued float64, return int64 for easier comparison.
-		if val == float64(int64(val)) {
-			return int64(val)
-		}
-		return val
-	case bool:
-		return val
-	case nil:
-		return nil
-	default:
-		return val
-	}
-}
-
-// compareUnordered checks that two slices have the same elements (in any order).
-// Only works for comparable types (string, int64, float64, nil). Complex values
-// (node/rel patterns) are skipped.
-func compareUnordered(expected, actual []any, col string) error {
-	if len(expected) != len(actual) {
-		return fmt.Errorf("column %q: expected %d value(s), got %d", col, len(expected), len(actual))
-	}
-	// For complex patterns (starting with ( or [) just check count — we cannot compare.
-	if len(expected) > 0 {
-		first := fmt.Sprintf("%v", expected[0])
-		if strings.HasPrefix(first, "(") || strings.HasPrefix(first, "[") {
-			return nil // count already matches; skip value check
-		}
-	}
-
-	// Build frequency map for expected.
-	freq := make(map[string]int)
-	for _, v := range expected {
-		freq[fmt.Sprintf("%v", v)]++
-	}
-	for _, v := range actual {
-		key := fmt.Sprintf("%v", v)
-		if freq[key] <= 0 {
-			// SQLite returns int64 for boolean expressions (0/1); try bool equivalents.
-			switch key {
-			case "0":
-				if freq["false"] > 0 {
-					freq["false"]--
-					continue
-				}
-			case "1":
-				if freq["true"] > 0 {
-					freq["true"]--
-					continue
-				}
-			}
-			return fmt.Errorf("column %q: unexpected value %q in actual results", col, key)
-		}
-		freq[key]--
-	}
-	return nil
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -860,8 +817,7 @@ func TestTCK(t *testing.T) {
 			sc.Given(`^any graph$`, state.givenAnyGraph)
 			sc.Given(`^an empty graph$`, state.givenAnEmptyGraph)
 			sc.Given(`^the (binary-tree-\d+) graph$`, state.givenNamedGraph)
-			// Test procedures are not supported; scenarios that declare one are skipped.
-			sc.Step(`^there exists a procedure (.+):$`, func(context.Context, string, *godog.Table) error { return nil })
+			sc.Step(`^there exists a procedure (.+)$`, state.givenProcedure)
 
 			// ── And having executed (DocString multiline Cypher) ─────────────
 			sc.Step(`^having executed:$`, state.havingExecutedDocString)
@@ -907,8 +863,11 @@ func TestTCK(t *testing.T) {
 						continue
 					}
 					name := strings.TrimSpace(row.Cells[0].Value)
-					val := parseTCKValue(strings.TrimSpace(row.Cells[1].Value))
-					state.params[name] = val
+					v, err := parseTV(row.Cells[1].Value)
+					if err != nil {
+						return fmt.Errorf("cannot parse parameter %s = %q: %w", name, row.Cells[1].Value, err)
+					}
+					state.params[name] = v
 				}
 				return nil
 			})
@@ -919,11 +878,11 @@ func TestTCK(t *testing.T) {
 			//   "the result should be (ignoring element order for lists):"
 			// Both are treated as "in any order".
 			sc.Then(`^the result should be, ignoring element order for lists:$`,
-				state.theResultShouldBeInAnyOrder)
+				func(t *godog.Table) error { return state.compareResult(t, false, true) })
 			sc.Then(`^the result should be \(ignoring element order for lists\):$`,
-				state.theResultShouldBeInAnyOrder)
+				func(t *godog.Table) error { return state.compareResult(t, false, true) })
 			sc.Then(`^the result should be, in order \(ignoring element order for lists\):$`,
-				state.theResultShouldBeInOrder)
+				func(t *godog.Table) error { return state.compareResult(t, true, true) })
 		},
 		Options: &opts,
 	}

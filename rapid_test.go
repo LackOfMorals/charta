@@ -247,6 +247,9 @@ func buildCreateCypher(spec nodeSpec) (string, map[string]any) {
 func normaliseProps(input map[string]any) map[string]any {
 	out := make(map[string]any, len(input))
 	for k, v := range input {
+		if v == nil {
+			continue // Cypher stores no property for a null value
+		}
 		out[k] = v
 	}
 	return out

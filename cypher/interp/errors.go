@@ -1,0 +1,33 @@
+package interp
+
+import "fmt"
+
+// Error is a run-time error with its openCypher TCK class and detail code.
+type Error struct {
+	Class string // SyntaxError, TypeError, ArgumentError, ConstraintVerificationFailed, EntityNotFound, ...
+	Code  string
+	Msg   string
+}
+
+func (e *Error) Error() string {
+	return fmt.Sprintf("%s (%s): %s", e.Class, e.Code, e.Msg)
+}
+
+func errorf(class, code, format string, args ...any) *Error {
+	return &Error{Class: class, Code: code, Msg: fmt.Sprintf(format, args...)}
+}
+
+// typeErr is a TypeError / InvalidArgumentType.
+func typeErr(format string, args ...any) *Error {
+	return errorf("TypeError", "InvalidArgumentType", format, args...)
+}
+
+// argErr is an ArgumentError / InvalidArgumentValue.
+func argErr(format string, args ...any) *Error {
+	return errorf("ArgumentError", "InvalidArgumentValue", format, args...)
+}
+
+// unsupported marks a construct the interpreter does not implement.
+func unsupported(format string, args ...any) *Error {
+	return errorf("SyntaxError", "Unsupported", format, args...)
+}

@@ -251,6 +251,9 @@ type queryCounters struct {
 	relationshipsCreated int
 	relationshipsDeleted int
 	propertiesSet        int
+	propertiesRemoved    int
+	labelsAdded          int
+	labelsRemoved        int
 }
 
 // ResultSummary reports execution statistics and metadata for a completed query.
@@ -271,6 +274,12 @@ type Counters interface {
 	RelationshipsDeleted() int
 	// PropertiesSet returns the number of property values written.
 	PropertiesSet() int
+	// PropertiesRemoved returns the number of property values removed.
+	PropertiesRemoved() int
+	// LabelsAdded returns the number of labels added to nodes.
+	LabelsAdded() int
+	// LabelsRemoved returns the number of labels removed from nodes.
+	LabelsRemoved() int
 	// ContainsUpdates returns true when any mutation counter is greater than zero.
 	ContainsUpdates() bool
 }
@@ -295,10 +304,14 @@ func (c *counters) NodesDeleted() int         { return c.c.nodesDeleted }
 func (c *counters) RelationshipsCreated() int { return c.c.relationshipsCreated }
 func (c *counters) RelationshipsDeleted() int { return c.c.relationshipsDeleted }
 func (c *counters) PropertiesSet() int        { return c.c.propertiesSet }
+func (c *counters) PropertiesRemoved() int    { return c.c.propertiesRemoved }
+func (c *counters) LabelsAdded() int          { return c.c.labelsAdded }
+func (c *counters) LabelsRemoved() int        { return c.c.labelsRemoved }
 func (c *counters) ContainsUpdates() bool {
 	return c.c.nodesCreated > 0 || c.c.nodesDeleted > 0 ||
 		c.c.relationshipsCreated > 0 || c.c.relationshipsDeleted > 0 ||
-		c.c.propertiesSet > 0
+		c.c.propertiesSet > 0 || c.c.propertiesRemoved > 0 ||
+		c.c.labelsAdded > 0 || c.c.labelsRemoved > 0
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

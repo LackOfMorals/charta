@@ -1425,8 +1425,9 @@ func TestIntegration_OptionalMatch_MixedRows(t *testing.T) {
 	}
 }
 
-// TestIntegration_OptionalMatch_WhereIsNotNull verifies that WHERE m IS NOT NULL
-// after OPTIONAL MATCH correctly filters out rows where the pattern did not match.
+// TestIntegration_OptionalMatch_WhereIsNotNull verifies that a WHERE attached to
+// OPTIONAL MATCH is part of the match: it never removes rows from the input, it
+// only decides whether the optional pattern matches (otherwise m is null).
 func TestIntegration_OptionalMatch_WhereIsNotNull(t *testing.T) {
 	db := openDB(t)
 	q := `MATCH (n:Person) OPTIONAL MATCH (n)-[:KNOWS]->(m:Person) WHERE m IS NOT NULL RETURN n.name AS name`
@@ -1437,13 +1438,13 @@ func TestIntegration_OptionalMatch_WhereIsNotNull(t *testing.T) {
 	)
 
 	result := query(t, db, q, nil)
-	// Only Alice matches the optional pattern; Bob and Carol are filtered out.
-	assertCount(t, q, result, 1)
-	assertString(t, q, "name", get(t, q, result, 0, "name"), "Alice")
+	// Every Person is kept; Bob and Carol simply have no optional match.
+	assertCount(t, q, result, 3)
 }
 
-// TestIntegration_OptionalMatch_WhereIsNull verifies that WHERE m IS NULL
-// after OPTIONAL MATCH keeps only rows where the optional pattern did not match.
+// TestIntegration_OptionalMatch_WhereIsNull verifies that WHERE m IS NULL inside
+// OPTIONAL MATCH can never match (m is bound by the pattern), so every row is
+// kept with m null.
 func TestIntegration_OptionalMatch_WhereIsNull(t *testing.T) {
 	db := openDB(t)
 	q := `MATCH (n:Person) OPTIONAL MATCH (n)-[:KNOWS]->(m:Person) WHERE m IS NULL RETURN n.name AS name`
@@ -1454,9 +1455,7 @@ func TestIntegration_OptionalMatch_WhereIsNull(t *testing.T) {
 	)
 
 	result := query(t, db, q, nil)
-	// Bob (no outgoing KNOWS) and Carol (no outgoing KNOWS) match m IS NULL.
-	// Alice does NOT because her KNOWS→Bob matched the optional pattern.
-	assertCount(t, q, result, 2)
+	assertCount(t, q, result, 3)
 	names := make(map[string]bool)
 	for _, rec := range result.Records {
 		if v, ok := rec.Get("name"); ok {
@@ -1465,16 +1464,15 @@ func TestIntegration_OptionalMatch_WhereIsNull(t *testing.T) {
 			}
 		}
 	}
-	if names["Alice"] {
-		t.Errorf("Alice has a KNOWS match so should not appear in m IS NULL results")
-	}
-	if !names["Bob"] || !names["Carol"] {
-		t.Errorf("Bob and Carol should appear in m IS NULL results, got %v", names)
+	for _, want := range []string{"Alice", "Bob", "Carol"} {
+		if !names[want] {
+			t.Errorf("%s should appear in the results, got %v", want, names)
+		}
 	}
 }
 
-// TestIntegration_OptionalMatch_PropIsNotNull verifies that WHERE m.name IS NOT NULL
-// filters using the optional node's property.
+// TestIntegration_OptionalMatch_PropIsNotNull verifies that WHERE m.name IS NOT
+// NULL inside OPTIONAL MATCH filters candidate matches, not the input rows.
 func TestIntegration_OptionalMatch_PropIsNotNull(t *testing.T) {
 	db := openDB(t)
 	q := `MATCH (n:Person) OPTIONAL MATCH (n)-[:KNOWS]->(m:Person) WHERE m.name IS NOT NULL RETURN n.name AS name, m.name AS friend`
@@ -1485,9 +1483,14 @@ func TestIntegration_OptionalMatch_PropIsNotNull(t *testing.T) {
 	)
 
 	result := query(t, db, q, nil)
-	assertCount(t, q, result, 1)
-	assertString(t, q, "name", get(t, q, result, 0, "name"), "Alice")
-	assertString(t, q, "friend", get(t, q, result, 0, "friend"), "Bob")
+	assertCount(t, q, result, 3)
+	friends := map[string]any{}
+	for i := range result.Records {
+		friends[get(t, q, result, i, "name").(string)] = get(t, q, result, i, "friend")
+	}
+	if friends["Alice"] != "Bob" || friends["Bob"] != nil || friends["Carol"] != nil {
+		t.Errorf("unexpected friends %v", friends)
+	}
 }
 
 // TestIntegration_OptionalMatch_WholeNodeNullable verifies that projecting the
@@ -1701,14 +1704,15 @@ func TestIntegration_Collect_ReturnsJSONArray(t *testing.T) {
 	if !ok {
 		t.Fatalf("query %q: key 'names' not found in record", cypher)
 	}
-	namesStr, ok := namesVal.(string)
+	names, ok := namesVal.([]any)
 	if !ok {
-		t.Fatalf("query %q: names is not a string, got %T %v", cypher, namesVal, namesVal)
+		t.Fatalf("query %q: names is not a list, got %T %v", cypher, namesVal, namesVal)
 	}
-	// The result is a JSON array like ["Alice","Bob","Carol"] (order may vary).
+	// collect() returns a list in match order (order may vary).
+	got := fmt.Sprint(names)
 	for _, name := range []string{"Alice", "Bob", "Carol"} {
-		if !strings.Contains(namesStr, name) {
-			t.Errorf("query %q: expected %q in collect result %q", cypher, name, namesStr)
+		if !strings.Contains(got, name) {
+			t.Errorf("query %q: expected %q in collect result %v", cypher, name, names)
 		}
 	}
 }
@@ -1729,13 +1733,14 @@ func TestIntegration_Collect_InWithPipeline(t *testing.T) {
 	if !ok {
 		t.Fatalf("query %q: key 'books' not found", cypher)
 	}
-	booksStr, ok := books.(string)
+	bookList, ok := books.([]any)
 	if !ok {
-		t.Fatalf("query %q: books is not a string, got %T %v", cypher, books, books)
+		t.Fatalf("query %q: books is not a list, got %T %v", cypher, books, books)
 	}
+	got := fmt.Sprint(bookList)
 	for _, title := range []string{"LOTR", "Silmarillion"} {
-		if !strings.Contains(booksStr, title) {
-			t.Errorf("query %q: expected %q in books result %q", cypher, title, booksStr)
+		if !strings.Contains(got, title) {
+			t.Errorf("query %q: expected %q in books result %v", cypher, title, bookList)
 		}
 	}
 }

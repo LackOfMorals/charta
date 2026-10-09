@@ -45,6 +45,7 @@ import (
 	"strings"
 
 	"github.com/LackOfMorals/graphlite/v2/cypher"
+	"github.com/LackOfMorals/graphlite/v2/cypher/proc"
 	glsql "github.com/LackOfMorals/graphlite/v2/sql"
 	"github.com/LackOfMorals/graphlite/v2/store"
 )
@@ -56,6 +57,7 @@ type DB struct {
 	readOnly    bool
 	maxPathHops int
 	cache       *planCache // bounded LRU cache for parse→plan→translate results
+	procs       proc.Set   // user-registered procedures callable with CALL
 }
 
 // Open opens (or creates) a graphlite database at path and returns a *DB.
@@ -139,6 +141,9 @@ func (d *DB) Close(_ context.Context) error {
 // Returns ErrReadOnly if the database was opened with WithReadOnly and the
 // query contains write statements.
 func (d *DB) RunQuery(ctx context.Context, cypherStr string, params map[string]any) (*Result, error) {
+	if useInterpreter() {
+		return runInterp(ctx, d.st.Exec(), cypherStr, params, d.st.BeginExecTx, d.readOnly, &d.procs)
+	}
 	if d.readOnly {
 		sqlResult, err := buildSQLResult(cypherStr, params, d.maxPathHops, d.cache)
 		if err != nil {
@@ -166,7 +171,7 @@ func (d *DB) BeginTx(ctx context.Context) (*Tx, error) {
 	if err != nil {
 		return nil, fmt.Errorf("graphlite: begin transaction: %w", err)
 	}
-	return &Tx{rawTx: txEx, maxPathHops: d.maxPathHops, cache: d.cache}, nil
+	return &Tx{rawTx: txEx, maxPathHops: d.maxPathHops, cache: d.cache, procs: &d.procs}, nil
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -176,6 +181,8 @@ func (d *DB) BeginTx(ctx context.Context) (*Tx, error) {
 // execer is an alias for store.Execer used throughout the execution helpers.
 // Any *sql.DB, *sql.Tx, or store.TxExecer satisfies this interface.
 type execer = store.Execer
+
+type txExecer = store.TxExecer
 
 // runQuery is the execution pipeline for auto-commit mode.
 // beginTxFn is used to start an implicit transaction for atomic MERGE operations.
@@ -189,7 +196,10 @@ func runQuery(ctx context.Context, ex execer, cypherStr string, params map[strin
 
 // runQueryTx is the execution pipeline for transactional mode. beginTxFn is
 // nil because the caller already holds an open transaction.
-func runQueryTx(ctx context.Context, ex execer, cypherStr string, params map[string]any, maxPathHops int, cache *planCache) (*Result, error) {
+func runQueryTx(ctx context.Context, ex execer, cypherStr string, params map[string]any, maxPathHops int, cache *planCache, procs *proc.Set) (*Result, error) {
+	if useInterpreter() {
+		return runInterp(ctx, ex, cypherStr, params, nil, false, procs)
+	}
 	sqlResult, err := buildSQLResult(cypherStr, params, maxPathHops, cache)
 	if err != nil {
 		return nil, err
@@ -207,8 +217,8 @@ func runQueryTx(ctx context.Context, ex execer, cypherStr string, params map[str
 // goroutines is safe.
 func buildSQLResult(cypherStr string, params map[string]any, maxPathHops int, cache *planCache) (glsql.Result, error) {
 	var (
-		unbound   glsql.Result
-		cacheHit  bool
+		unbound  glsql.Result
+		cacheHit bool
 	)
 
 	if cache != nil {
@@ -869,3 +879,11 @@ func execMergeBatch(ctx context.Context, ex execer, stmts []glsql.Statement, idM
 
 	return consumed, nil
 }
+
+// RegisterProcedure makes a procedure callable with CALL. A later registration
+// under the same name replaces the earlier one. Procedures are honoured by the
+// Go-side executor (GRAPHLITE_ENGINE=exec); the SQL translator does not run them.
+func (d *DB) RegisterProcedure(p *proc.Procedure) { d.procs.Register(p) }
+
+// ClearProcedures removes every registered procedure.
+func (d *DB) ClearProcedures() { d.procs.Clear() }

@@ -91,6 +91,9 @@ type Statement struct {
 	Version string
 	// Options holds `CYPHER 25 key=value …` options, in source order.
 	Options []QueryOption
+	// Params lists the distinct $parameter names the statement references, in
+	// order of first use.
+	Params []string
 	// Body is the statement proper.
 	Body Body
 }
