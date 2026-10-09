@@ -34,7 +34,7 @@ tasks:
       reconstruct paths only for the endpoints that are returned; keep allShortestPaths correct by recording every
       equal-length predecessor. Honour WithMaxPathHops. Add a benchmark on a 100k-node graph (grid and
       scale-free) for ANY SHORTEST between random pairs, before and after.
-    status: pending
+    status: completed
     dependencies:
       - task-001
     acceptance_criteria:
@@ -49,7 +49,7 @@ tasks:
       search, expanding the smaller frontier, for ANY SHORTEST and shortestPath(). Fall back to the current search
       for unbound ends and for ALL SHORTEST / k-shortest forms. Relationship type and direction constraints must be
       respected in both directions.
-    status: pending
+    status: completed
     dependencies:
       - task-002
     acceptance_criteria:
@@ -63,7 +63,7 @@ tasks:
       the selector allows it (k shortest by increasing depth bound; ANY k stops after k per partition) and a clear
       error or cap (WithMaxPathHops or a result limit) for ALL over unbounded cyclic patterns instead of running
       away.
-    status: pending
+    status: completed
     dependencies:
       - task-002
     acceptance_criteria:
@@ -75,7 +75,7 @@ tasks:
     description: |
       Document the supported path features and limits (nested quantified path patterns are not supported) in the
       README and AGENTS.md and run the standard verification commands.
-    status: pending
+    status: completed
     dependencies:
       - task-003
       - task-004

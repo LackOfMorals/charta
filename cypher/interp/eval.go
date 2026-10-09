@@ -63,6 +63,21 @@ type exec struct {
 	// node scans.
 	pushed     []pushedEq
 	regexCache map[string]*regexp.Regexp
+	// relLimit prunes pattern matching to paths of at most relLimit-1
+	// relationships while a selector searches by increasing length; 0 means no
+	// limit. relPruned records that the limit cut a search short.
+	relLimit  int
+	relPruned bool
+}
+
+// overBudget reports whether a path that already has n relationships may not be
+// extended.
+func (ex *exec) overBudget(n int) bool {
+	if ex.relLimit > 0 && n+1 >= ex.relLimit {
+		ex.relPruned = true
+		return true
+	}
+	return false
 }
 
 func (ex *exec) eval(e syntax.Expr, r row) (any, error) {

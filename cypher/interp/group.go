@@ -3,6 +3,7 @@ package interp
 import (
 	"errors"
 	"sort"
+	"sync/atomic"
 
 	"github.com/LackOfMorals/graphlite/v2/cypher/syntax"
 )
@@ -240,24 +241,51 @@ func (ex *exec) matchSelected(part *syntax.PatternPart, r row, used map[int64]bo
 	if sel.Kind == syntax.SelectorAny && !selectedEarlyStopDisabled && endsBound(part, r) {
 		stopAfter = k
 	}
-	total := 0
-	err := ex.matchPart(&inner, r, used, func(r2 row) error {
-		if total++; total > maxSelectedMatches {
-			return unsupported("path selector over more than %d matches; bound the pattern's length or its endpoints", maxSelectedMatches)
+	collect := func() error {
+		groups = map[[2]int64][]match{}
+		order = nil
+		total := 0
+		err := ex.matchPart(&inner, r, used, func(r2 row) error {
+			if total++; total > maxSelectedMatches {
+				return unsupported("path selector over more than %d matches; bound the pattern's length or its endpoints", maxSelectedMatches)
+			}
+			p := r2[pathVar].(*Path)
+			key := [2]int64{p.Nodes[0].ID, p.Nodes[len(p.Nodes)-1].ID}
+			if _, seen := groups[key]; !seen {
+				order = append(order, key)
+			}
+			groups[key] = append(groups[key], match{r2, len(p.Rels)})
+			if stopAfter > 0 && int64(total) >= stopAfter {
+				return errSelectedDone
+			}
+			return nil
+		})
+		if err == errSelectedDone {
+			err = nil
 		}
-		p := r2[pathVar].(*Path)
-		key := [2]int64{p.Nodes[0].ID, p.Nodes[len(p.Nodes)-1].ID}
-		if _, seen := groups[key]; !seen {
-			order = append(order, key)
+		return err
+	}
+	var err error
+	if deepen := shortestKind(sel.Kind) && !selectedEarlyStopDisabled && endsBound(part, r); deepen {
+		// Both ends are bound, so there is one (start, end) partition: search
+		// by increasing path length and stop at the first length that satisfies
+		// the selector instead of enumerating every path.
+		selectedDeepenRuns.Add(1)
+		saved := ex.relLimit
+		defer func() { ex.relLimit = saved }()
+		for limit := 0; ; limit++ {
+			ex.relLimit, ex.relPruned = limit+1, false
+			if err = collect(); err != nil {
+				break
+			}
+			ms := groups[[2]int64{boundID(part.Elems[0], r), boundID(part.Elems[len(part.Elems)-1], r)}]
+			if selectorSatisfied(sel.Kind, k, ms2lengths(ms, func(m match) int { return m.length })) || !ex.relPruned {
+				break
+			}
 		}
-		groups[key] = append(groups[key], match{r2, len(p.Rels)})
-		if stopAfter > 0 && int64(total) >= stopAfter {
-			return errSelectedDone
-		}
-		return nil
-	})
-	if err == errSelectedDone {
-		err = nil
+		ex.relLimit = saved
+	} else {
+		err = collect()
 	}
 	if err != nil {
 		return err
@@ -316,7 +344,46 @@ var maxSelectedMatches = 1_000_000
 // selectedEarlyStopDisabled is a test hook that turns off early termination.
 var selectedEarlyStopDisabled bool
 
+// selectedDeepenRuns counts iterative-deepening searches (read by tests).
+var selectedDeepenRuns atomic.Int64
+
 var errSelectedDone = errors.New("selector satisfied")
+
+func shortestKind(k syntax.SelectorKind) bool {
+	return k == syntax.SelectorShortest || k == syntax.SelectorShortestGroups ||
+		k == syntax.SelectorAnyShortest || k == syntax.SelectorAllShortest
+}
+
+func boundID(e syntax.PatternElem, r row) int64 {
+	return r[e.(*syntax.NodePattern).Var].(*Node).ID
+}
+
+func ms2lengths[T any](ms []T, length func(T) int) []int {
+	out := make([]int, len(ms))
+	for i, m := range ms {
+		out[i] = length(m)
+	}
+	return out
+}
+
+// selectorSatisfied reports whether the match lengths found so far (all at most
+// the current limit) already determine the selector's result: a longer path
+// cannot change it.
+func selectorSatisfied(kind syntax.SelectorKind, k int64, lengths []int) bool {
+	switch kind {
+	case syntax.SelectorShortest:
+		return int64(len(lengths)) >= k
+	case syntax.SelectorShortestGroups:
+		seen := map[int]bool{}
+		for _, l := range lengths {
+			seen[l] = true
+		}
+		return int64(len(seen)) >= k
+	case syntax.SelectorAnyShortest, syntax.SelectorAllShortest:
+		return len(lengths) > 0
+	}
+	return false
+}
 
 // endsBound reports whether the first and last elements of the pattern are
 // node patterns whose variables are already bound to nodes in r.
