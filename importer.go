@@ -106,7 +106,7 @@ type importJSONDocument struct {
 // Supported formats: FormatJSON, FormatCSVNodes, FormatCSVEdges.
 //
 // Security limits (FormatJSON only):
-//   - Maximum input size: 500 MiB (returns ErrImportTooLarge if exceeded)
+//   - Maximum input size: 500 MiB (returns ErrImportTooLarge if exceeded); CSV is streamed and has no size limit
 //   - Maximum JSON nesting depth: 20 (returns ErrImportDepthExceeded if exceeded)
 func (d *DB) Import(ctx context.Context, r io.Reader, format Format) error {
 	switch format {
@@ -358,7 +358,7 @@ func parseCSVPropValue(raw, propType string) (any, error) {
 
 // importCSVNodes imports a node CSV file into the database atomically.
 func (d *DB) importCSVNodes(ctx context.Context, r io.Reader) (retErr error) {
-	cr := csv.NewReader(io.LimitReader(r, importMaxBytes+1))
+	cr := csv.NewReader(r)
 	cr.TrimLeadingSpace = true
 
 	// Read header row.
@@ -388,13 +388,8 @@ func (d *DB) importCSVNodes(ctx context.Context, r io.Reader) (retErr error) {
 		return fmt.Errorf("charta: csv node import: missing :LABEL column")
 	}
 
-	// Read all data rows.
-	rows, err := cr.ReadAll()
-	if err != nil {
-		return fmt.Errorf("charta: csv node import: read rows: %w", err)
-	}
-
-	// Open a transaction: all inserts are atomic.
+	// Open a transaction: all inserts are atomic. Rows are read and inserted one
+	// at a time, so memory stays constant however large the file is.
 	tx, err := d.st.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("charta: csv node import: begin transaction: %w", err)
@@ -407,8 +402,16 @@ func (d *DB) importCSVNodes(ctx context.Context, r io.Reader) (retErr error) {
 		}
 	}()
 
+	cr.ReuseRecord = true
 	var nodeIDs []int64
-	for rowIdx, row := range rows {
+	for rowIdx := 0; ; rowIdx++ {
+		row, err := cr.Read()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return fmt.Errorf("charta: csv node import: read rows: %w", err)
+		}
 		if len(row) != len(defs) {
 			return fmt.Errorf("charta: csv node import: row %d: expected %d columns, got %d", rowIdx+2, len(defs), len(row))
 		}
@@ -471,7 +474,7 @@ func (d *DB) importCSVNodes(ctx context.Context, r io.Reader) (retErr error) {
 // The :START_ID and :END_ID values must match node row IDs already in the DB
 // (i.e. the integer primary keys stored as ElementId strings).
 func (d *DB) importCSVEdges(ctx context.Context, r io.Reader) (retErr error) {
-	cr := csv.NewReader(io.LimitReader(r, importMaxBytes+1))
+	cr := csv.NewReader(r)
 	cr.TrimLeadingSpace = true
 
 	// Read header row.
@@ -506,13 +509,8 @@ func (d *DB) importCSVEdges(ctx context.Context, r io.Reader) (retErr error) {
 		return fmt.Errorf("charta: csv edge import: missing :TYPE column")
 	}
 
-	// Read all data rows.
-	rows, err := cr.ReadAll()
-	if err != nil {
-		return fmt.Errorf("charta: csv edge import: read rows: %w", err)
-	}
-
-	// Open a transaction: all inserts are atomic.
+	// Open a transaction: all inserts are atomic. Rows are read and inserted one
+	// at a time, so memory stays constant however large the file is.
 	tx, err := d.st.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("charta: csv edge import: begin transaction: %w", err)
@@ -525,8 +523,16 @@ func (d *DB) importCSVEdges(ctx context.Context, r io.Reader) (retErr error) {
 		}
 	}()
 
+	cr.ReuseRecord = true
 	var relIDs []int64
-	for rowIdx, row := range rows {
+	for rowIdx := 0; ; rowIdx++ {
+		row, err := cr.Read()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return fmt.Errorf("charta: csv edge import: read rows: %w", err)
+		}
 		if len(row) != len(defs) {
 			return fmt.Errorf("charta: csv edge import: row %d: expected %d columns, got %d", rowIdx+2, len(defs), len(row))
 		}
