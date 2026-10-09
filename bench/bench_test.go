@@ -1,6 +1,6 @@
 //go:build !unit
 
-// Package bench_test contains standard Go benchmarks for graphlite.
+// Package bench_test contains standard Go benchmarks for charta.
 //
 // Run all benchmarks:
 //
@@ -24,7 +24,7 @@ import (
 	"sync"
 	"testing"
 
-	graphlite "github.com/LackOfMorals/graphlite/v2"
+	charta "github.com/LackOfMorals/charta"
 )
 
 // bench1M is a flag that enables the 1M-node benchmark. Off by default because
@@ -38,14 +38,14 @@ var bench1M = flag.Bool("bench-1m", false, "enable the 1M-node single-hop benchm
 // smallDB is a 1K-node in-memory database used for targeted micro-benchmarks.
 var (
 	smallOnce sync.Once
-	smallDB   *graphlite.DB
+	smallDB   *charta.DB
 	smallErr  error
 )
 
-func getSmallDB(b *testing.B) *graphlite.DB {
+func getSmallDB(b *testing.B) *charta.DB {
 	b.Helper()
 	smallOnce.Do(func() {
-		db, err := graphlite.Open(":memory:")
+		db, err := charta.Open(":memory:")
 		if err != nil {
 			smallErr = fmt.Errorf("open small db: %w", err)
 			return
@@ -66,14 +66,14 @@ func getSmallDB(b *testing.B) *graphlite.DB {
 // medium100KDB is a 100K-node, 100K-edge in-memory database.
 var (
 	medium100KOnce sync.Once
-	medium100KDB   *graphlite.DB
+	medium100KDB   *charta.DB
 	medium100KErr  error
 )
 
-func get100KDB(b *testing.B) *graphlite.DB {
+func get100KDB(b *testing.B) *charta.DB {
 	b.Helper()
 	medium100KOnce.Do(func() {
-		db, err := graphlite.Open(":memory:")
+		db, err := charta.Open(":memory:")
 		if err != nil {
 			medium100KErr = fmt.Errorf("open 100K db: %w", err)
 			return
@@ -94,14 +94,14 @@ func get100KDB(b *testing.B) *graphlite.DB {
 // large1MDB is a 1M-node, 500K-edge in-memory database.
 var (
 	large1MOnce sync.Once
-	large1MDB   *graphlite.DB
+	large1MDB   *charta.DB
 	large1MErr  error
 )
 
-func get1MDB(b *testing.B) *graphlite.DB {
+func get1MDB(b *testing.B) *charta.DB {
 	b.Helper()
 	large1MOnce.Do(func() {
-		db, err := graphlite.Open(":memory:")
+		db, err := charta.Open(":memory:")
 		if err != nil {
 			large1MErr = fmt.Errorf("open 1M db: %w", err)
 			return
@@ -123,7 +123,7 @@ func get1MDB(b *testing.B) *graphlite.DB {
 // Seed helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-// importDoc is the shape used with graphlite.FormatJSON.
+// importDoc is the shape used with charta.FormatJSON.
 type importDoc struct {
 	Nodes []importNode `json:"nodes"`
 	Edges []importEdge `json:"edges"`
@@ -143,7 +143,7 @@ type importEdge struct {
 }
 
 // seedNodes imports n Person nodes (no edges) using JSON bulk import.
-func seedNodes(db *graphlite.DB, n int) error {
+func seedNodes(db *charta.DB, n int) error {
 	doc := importDoc{Nodes: make([]importNode, n)}
 	for i := range doc.Nodes {
 		doc.Nodes[i] = importNode{
@@ -156,12 +156,12 @@ func seedNodes(db *graphlite.DB, n int) error {
 	if err != nil {
 		return fmt.Errorf("marshal: %w", err)
 	}
-	return db.Import(context.Background(), bytes.NewReader(raw), graphlite.FormatJSON)
+	return db.Import(context.Background(), bytes.NewReader(raw), charta.FormatJSON)
 }
 
 // seedGraph imports nodeCount Person nodes and edgeCount KNOWS edges (as a ring
 // so every node participates) using JSON bulk import.
-func seedGraph(db *graphlite.DB, nodeCount, edgeCount int) error {
+func seedGraph(db *charta.DB, nodeCount, edgeCount int) error {
 	nodes := make([]importNode, nodeCount)
 	for i := range nodes {
 		nodes[i] = importNode{
@@ -183,7 +183,7 @@ func seedGraph(db *graphlite.DB, nodeCount, edgeCount int) error {
 	if err != nil {
 		return fmt.Errorf("marshal: %w", err)
 	}
-	return db.Import(context.Background(), bytes.NewReader(raw), graphlite.FormatJSON)
+	return db.Import(context.Background(), bytes.NewReader(raw), charta.FormatJSON)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -191,7 +191,7 @@ func seedGraph(db *graphlite.DB, nodeCount, edgeCount int) error {
 // ─────────────────────────────────────────────────────────────────────────────
 
 // BenchmarkMatchNodeByID measures the cost of a MATCH by a specific property
-// value (name) on a 1K-node graph. Because graphlite does not expose raw
+// value (name) on a 1K-node graph. Because charta does not expose raw
 // integer IDs in the public API, we use a unique name property as the
 // functional equivalent of "match by ID".
 func BenchmarkMatchNodeByID(b *testing.B) {
@@ -280,7 +280,7 @@ func BenchmarkSingleHopTraversal_1M(b *testing.B) {
 // iteration in a fresh in-memory database. Each benchmark iteration gets a
 // unique name to avoid property uniqueness concerns.
 func BenchmarkCreateSingle(b *testing.B) {
-	db, err := graphlite.Open(":memory:")
+	db, err := charta.Open(":memory:")
 	if err != nil {
 		b.Fatalf("open: %v", err)
 	}
@@ -324,11 +324,11 @@ func BenchmarkCreateBatch_1000(b *testing.B) {
 
 	b.ResetTimer()
 	for range b.N {
-		db, err := graphlite.Open(":memory:")
+		db, err := charta.Open(":memory:")
 		if err != nil {
 			b.Fatalf("open: %v", err)
 		}
-		if err := db.Import(ctx, bytes.NewReader(payload), graphlite.FormatJSON); err != nil {
+		if err := db.Import(ctx, bytes.NewReader(payload), charta.FormatJSON); err != nil {
 			_ = db.Close(context.Background())
 			b.Fatalf("import: %v", err)
 		}
@@ -364,14 +364,14 @@ func BenchmarkAggregationPipeline(b *testing.B) {
 
 var (
 	tenKOnce sync.Once
-	tenKDB   *graphlite.DB
+	tenKDB   *charta.DB
 	tenKErr  error
 )
 
-func get10KDB(b *testing.B) *graphlite.DB {
+func get10KDB(b *testing.B) *charta.DB {
 	b.Helper()
 	tenKOnce.Do(func() {
-		db, err := graphlite.Open(":memory:")
+		db, err := charta.Open(":memory:")
 		if err != nil {
 			tenKErr = fmt.Errorf("open 10K db: %w", err)
 			return
@@ -392,7 +392,7 @@ func get10KDB(b *testing.B) *graphlite.DB {
 // seedMixedNodes imports n nodes where the first n/2 have label "Person" and
 // the remaining n/2 have label "Employee". This gives BenchmarkMatchByLabel a
 // 50% match rate when querying for MATCH (n:Person).
-func seedMixedNodes(db *graphlite.DB, n int) error {
+func seedMixedNodes(db *charta.DB, n int) error {
 	nodes := make([]importNode, n)
 	for i := range nodes {
 		label := "Person"
@@ -410,7 +410,7 @@ func seedMixedNodes(db *graphlite.DB, n int) error {
 	if err != nil {
 		return fmt.Errorf("marshal: %w", err)
 	}
-	return db.Import(context.Background(), bytes.NewReader(raw), graphlite.FormatJSON)
+	return db.Import(context.Background(), bytes.NewReader(raw), charta.FormatJSON)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -440,7 +440,7 @@ func BenchmarkRunQuerySimpleSelect(b *testing.B) {
 // RunQuery in auto-commit mode on a fresh in-memory database. Each iteration
 // uses a unique name to avoid any SQLite uniqueness effects.
 func BenchmarkRunQueryCreateNode(b *testing.B) {
-	db, err := graphlite.Open(":memory:")
+	db, err := charta.Open(":memory:")
 	if err != nil {
 		b.Fatalf("open: %v", err)
 	}
@@ -507,11 +507,11 @@ func BenchmarkImportJSON(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for range b.N {
-		db, err := graphlite.Open(":memory:")
+		db, err := charta.Open(":memory:")
 		if err != nil {
 			b.Fatalf("open: %v", err)
 		}
-		if err := db.Import(ctx, bytes.NewReader(payload), graphlite.FormatJSON); err != nil {
+		if err := db.Import(ctx, bytes.NewReader(payload), charta.FormatJSON); err != nil {
 			_ = db.Close(ctx)
 			b.Fatalf("import: %v", err)
 		}
@@ -603,16 +603,16 @@ func BenchmarkImportCSVEdges(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for range b.N {
-		db, err := graphlite.Open(":memory:")
+		db, err := charta.Open(":memory:")
 		if err != nil {
 			b.Fatalf("open: %v", err)
 		}
 		// Import nodes first so foreign-key constraints are satisfiable.
-		if err := db.Import(ctx, bytes.NewReader(nodePayload), graphlite.FormatCSVNodes); err != nil {
+		if err := db.Import(ctx, bytes.NewReader(nodePayload), charta.FormatCSVNodes); err != nil {
 			_ = db.Close(ctx)
 			b.Fatalf("import nodes: %v", err)
 		}
-		if err := db.Import(ctx, bytes.NewReader(edgePayload), graphlite.FormatCSVEdges); err != nil {
+		if err := db.Import(ctx, bytes.NewReader(edgePayload), charta.FormatCSVEdges); err != nil {
 			_ = db.Close(ctx)
 			b.Fatalf("import edges: %v", err)
 		}

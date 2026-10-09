@@ -10,9 +10,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/LackOfMorals/graphlite/v2/cypher/spatial"
-	"github.com/LackOfMorals/graphlite/v2/cypher/temporal"
-	"github.com/LackOfMorals/graphlite/v2/cypher/vector"
+	"github.com/LackOfMorals/charta/cypher/spatial"
+	"github.com/LackOfMorals/charta/cypher/temporal"
+	"github.com/LackOfMorals/charta/cypher/vector"
 )
 
 // DB is the SQL surface the interpreter needs. *sql.DB, *sql.Tx and the

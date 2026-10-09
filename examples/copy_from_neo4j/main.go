@@ -1,8 +1,8 @@
-// copy_from_neo4j demonstrates seeding a local graphlite database from a remote
+// copy_from_neo4j demonstrates seeding a local charta database from a remote
 // Neo4j instance.
 //
 // Pattern: connect to both databases, read nodes and relationships from Neo4j
-// using session.Run / Collect, then write them into a local graphlite database
+// using session.Run / Collect, then write them into a local charta database
 // using BeginTx / tx.Run / tx.Commit. The local file can then be used offline or
 // in tests without requiring a running Neo4j instance.
 //
@@ -11,7 +11,7 @@
 //	NEO4J_URI   — bolt or neo4j URI (default: neo4j://localhost:7687)
 //	NEO4J_USER  — username (default: neo4j)
 //	NEO4J_PASS  — password (default: empty)
-//	GRAPHLITE_PATH — output file path (default: copy_from_neo4j.db)
+//	CHARTA_PATH — output file path (default: copy_from_neo4j.db)
 //
 // Run with:
 //
@@ -24,7 +24,7 @@ import (
 	"log"
 	"os"
 
-	graphlite "github.com/LackOfMorals/graphlite/v2"
+	charta "github.com/LackOfMorals/charta"
 	"github.com/neo4j/neo4j-go-driver/v6/neo4j"
 	"github.com/neo4j/neo4j-go-driver/v6/neo4j/dbtype"
 )
@@ -43,11 +43,11 @@ func main() {
 	}
 	defer driver.Close(ctx)
 
-	// ── graphlite destination ─────────────────────────────────────────────────
-	dbPath := envOrDefault("GRAPHLITE_PATH", "copy_from_neo4j.db")
-	db, err := graphlite.Open(dbPath)
+	// ── charta destination ─────────────────────────────────────────────────
+	dbPath := envOrDefault("CHARTA_PATH", "copy_from_neo4j.db")
+	db, err := charta.Open(dbPath)
 	if err != nil {
-		log.Fatalf("graphlite.Open: %v", err)
+		log.Fatalf("charta.Open: %v", err)
 	}
 	defer db.Close(ctx)
 
@@ -66,7 +66,7 @@ func main() {
 
 	tx, err := db.BeginTx(ctx)
 	if err != nil {
-		log.Fatalf("graphlite.BeginTx: %v", err)
+		log.Fatalf("charta.BeginTx: %v", err)
 	}
 
 	nodeCount := 0
@@ -96,14 +96,14 @@ func main() {
 		cypher := fmt.Sprintf("CREATE (n:`%s` $props)", label)
 		if _, err := tx.Run(ctx, cypher, map[string]any{"props": params}); err != nil {
 			_ = tx.Rollback()
-			log.Fatalf("graphlite CREATE node: %v", err)
+			log.Fatalf("charta CREATE node: %v", err)
 		}
 		nodeCount++
 	}
 	if err := tx.Commit(); err != nil {
-		log.Fatalf("graphlite Commit nodes: %v", err)
+		log.Fatalf("charta Commit nodes: %v", err)
 	}
-	fmt.Printf("Copied %d node(s) from Neo4j → graphlite\n", nodeCount)
+	fmt.Printf("Copied %d node(s) from Neo4j → charta\n", nodeCount)
 
 	// ── Copy relationships ────────────────────────────────────────────────────
 	relResult, err := session.Run(ctx, `MATCH (a)-[r]->(b) RETURN a, r, b`, nil)
@@ -117,7 +117,7 @@ func main() {
 
 	tx2, err := db.BeginTx(ctx)
 	if err != nil {
-		log.Fatalf("graphlite.BeginTx (rels): %v", err)
+		log.Fatalf("charta.BeginTx (rels): %v", err)
 	}
 
 	relCount := 0
@@ -150,14 +150,14 @@ func main() {
 		)
 		if _, err := tx2.Run(ctx, cypher, params); err != nil {
 			_ = tx2.Rollback()
-			log.Fatalf("graphlite CREATE rel: %v", err)
+			log.Fatalf("charta CREATE rel: %v", err)
 		}
 		relCount++
 	}
 	if err := tx2.Commit(); err != nil {
-		log.Fatalf("graphlite Commit rels: %v", err)
+		log.Fatalf("charta Commit rels: %v", err)
 	}
-	fmt.Printf("Copied %d relationship(s) from Neo4j → graphlite\n", relCount)
+	fmt.Printf("Copied %d relationship(s) from Neo4j → charta\n", relCount)
 	fmt.Printf("Database written to: %s\n", dbPath)
 }
 

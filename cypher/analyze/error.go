@@ -10,7 +10,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/LackOfMorals/graphlite/v2/cypher/syntax"
+	"github.com/LackOfMorals/charta/cypher/syntax"
 )
 
 // Error classes, as used by the openCypher TCK.

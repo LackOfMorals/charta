@@ -4,7 +4,7 @@
 
 ## Overview
 
-The single most-cited feature developers looked for in KuzuDB (archived October 2025 after Apple acqui-hired the team) was its built-in HNSW vector index, used for hybrid graph+vector retrieval in GraphRAG-style applications — a workload that moved from research to production through 2026 (Microsoft GraphRAG, LightRAG, HippoRAG; Neo4j and ArangoDB both shipped native vector indexes for the same reason). This is graphlite's clearest differentiation opportunity given the Kuzu-shaped gap in the Go ecosystem, but it comes with a hard architectural constraint that every comparable implementation (`sqlite-vec`, most HNSW libraries) violates: `AGENTS.md` mandates **CGO must remain disabled** — `modernc.org/sqlite`, never `mattn/go-sqlite3`, and by extension no C-extension SQLite loadable modules like `sqlite-vec`. This PRD is deliberately marked exploratory: it proposes a pure-Go approach (brute-force or a pure-Go approximate index) and calls out the open questions that need resolving — scale limits, index persistence, and library-vs-build-it-yourself — before committing to an implementation plan.
+The single most-cited feature developers looked for in KuzuDB (archived October 2025 after Apple acqui-hired the team) was its built-in HNSW vector index, used for hybrid graph+vector retrieval in GraphRAG-style applications — a workload that moved from research to production through 2026 (Microsoft GraphRAG, LightRAG, HippoRAG; Neo4j and ArangoDB both shipped native vector indexes for the same reason). This is charta's clearest differentiation opportunity given the Kuzu-shaped gap in the Go ecosystem, but it comes with a hard architectural constraint that every comparable implementation (`sqlite-vec`, most HNSW libraries) violates: `AGENTS.md` mandates **CGO must remain disabled** — `modernc.org/sqlite`, never `mattn/go-sqlite3`, and by extension no C-extension SQLite loadable modules like `sqlite-vec`. This PRD is deliberately marked exploratory: it proposes a pure-Go approach (brute-force or a pure-Go approximate index) and calls out the open questions that need resolving — scale limits, index persistence, and library-vs-build-it-yourself — before committing to an implementation plan.
 
 ## Goals
 
@@ -16,8 +16,8 @@ The single most-cited feature developers looked for in KuzuDB (archived October 
 ## Non-Goals
 
 - No `sqlite-vec` or any other C-extension integration — this violates the CGO-free constraint outright and is not reconsidered by this PRD.
-- No multi-modal embedding generation (calling out to an embedding model) — graphlite stores and searches vectors a caller already computed; it does not compute embeddings itself.
-- No distributed/sharded vector index — this remains a single-process, single-file embedded feature, consistent with graphlite's overall scope.
+- No multi-modal embedding generation (calling out to an embedding model) — charta stores and searches vectors a caller already computed; it does not compute embeddings itself.
+- No distributed/sharded vector index — this remains a single-process, single-file embedded feature, consistent with charta's overall scope.
 - No guarantee of matching HNSW's asymptotic query performance at very large scale (millions of vectors) in the first version — see Open Questions on where brute-force stops being acceptable.
 
 ## Requirements

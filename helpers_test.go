@@ -1,11 +1,11 @@
-package graphlite_test
+package charta_test
 
 import (
 	"context"
 	"errors"
 	"testing"
 
-	"github.com/LackOfMorals/graphlite/v2"
+	"github.com/LackOfMorals/charta"
 )
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -31,9 +31,9 @@ func TestGetProperty_NodeString(t *testing.T) {
 	if !ok {
 		t.Fatal("expected key 'n'")
 	}
-	node := val.(*graphlite.Node)
+	node := val.(*charta.Node)
 
-	name, err := graphlite.GetProperty[string](node, "name")
+	name, err := charta.GetProperty[string](node, "name")
 	if err != nil {
 		t.Fatalf("GetProperty: %v", err)
 	}
@@ -57,9 +57,9 @@ func TestGetProperty_NodeNumeric(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Single: %v", err)
 	}
-	node := rec.Values()[0].(*graphlite.Node)
+	node := rec.Values()[0].(*charta.Node)
 
-	score, err := graphlite.GetProperty[int64](node, "score")
+	score, err := charta.GetProperty[int64](node, "score")
 	if err != nil {
 		t.Fatalf("GetProperty[int64]: %v", err)
 	}
@@ -83,9 +83,9 @@ func TestGetProperty_MissingKey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Single: %v", err)
 	}
-	node := rec.Values()[0].(*graphlite.Node)
+	node := rec.Values()[0].(*charta.Node)
 
-	_, err = graphlite.GetProperty[string](node, "missing")
+	_, err = charta.GetProperty[string](node, "missing")
 	if err == nil {
 		t.Error("expected error for missing key, got nil")
 	}
@@ -106,9 +106,9 @@ func TestGetProperty_RelationshipProp(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Single: %v", err)
 	}
-	rel := rec.Values()[0].(*graphlite.Relationship)
+	rel := rec.Values()[0].(*charta.Relationship)
 
-	weight, err := graphlite.GetProperty[float64](rel, "weight")
+	weight, err := charta.GetProperty[float64](rel, "weight")
 	if err != nil {
 		t.Fatalf("GetProperty[float64]: %v", err)
 	}
@@ -137,7 +137,7 @@ func TestGetRecordValue_Scalar(t *testing.T) {
 		t.Fatalf("Single: %v", err)
 	}
 
-	v, isNil, err := graphlite.GetRecordValue[string](rec, "v")
+	v, isNil, err := charta.GetRecordValue[string](rec, "v")
 	if err != nil {
 		t.Fatalf("GetRecordValue: %v", err)
 	}
@@ -165,7 +165,7 @@ func TestGetRecordValue_Node(t *testing.T) {
 		t.Fatalf("Single: %v", err)
 	}
 
-	node, isNil, err := graphlite.GetRecordValue[*graphlite.Node](rec, "n")
+	node, isNil, err := charta.GetRecordValue[*charta.Node](rec, "n")
 	if err != nil {
 		t.Fatalf("GetRecordValue[*Node]: %v", err)
 	}
@@ -196,7 +196,7 @@ func TestGetRecordValue_MissingKey(t *testing.T) {
 		t.Fatalf("Single: %v", err)
 	}
 
-	_, _, err = graphlite.GetRecordValue[string](rec, "missing")
+	_, _, err = charta.GetRecordValue[string](rec, "missing")
 	if err == nil {
 		t.Error("expected error for missing key")
 	}
@@ -221,8 +221,8 @@ func TestCollectT_Names(t *testing.T) {
 		t.Fatalf("RunQuery: %v", err)
 	}
 
-	names, err := graphlite.CollectT(ctx, qr, func(rec *graphlite.Record) (string, error) {
-		v, _, err := graphlite.GetRecordValue[string](rec, "name")
+	names, err := charta.CollectT(ctx, qr, func(rec *charta.Record) (string, error) {
+		v, _, err := charta.GetRecordValue[string](rec, "name")
 		return v, err
 	})
 	if err != nil {
@@ -253,7 +253,7 @@ func TestCollectT_MapperError(t *testing.T) {
 	}
 
 	sentinel := errors.New("mapper failed")
-	_, err = graphlite.CollectT(ctx, qr, func(_ *graphlite.Record) (int, error) {
+	_, err = charta.CollectT(ctx, qr, func(_ *charta.Record) (int, error) {
 		return 0, sentinel
 	})
 	if !errors.Is(err, sentinel) {
@@ -278,8 +278,8 @@ func TestSingleT_ExactlyOne(t *testing.T) {
 		t.Fatalf("RunQuery: %v", err)
 	}
 
-	name, err := graphlite.SingleT(ctx, qr, func(rec *graphlite.Record) (string, error) {
-		v, _, err := graphlite.GetRecordValue[string](rec, "name")
+	name, err := charta.SingleT(ctx, qr, func(rec *charta.Record) (string, error) {
+		v, _, err := charta.GetRecordValue[string](rec, "name")
 		return v, err
 	})
 	if err != nil {
@@ -299,11 +299,11 @@ func TestSingleT_ErrNoRecords(t *testing.T) {
 		t.Fatalf("RunQuery: %v", err)
 	}
 
-	_, err = graphlite.SingleT(ctx, qr, func(rec *graphlite.Record) (string, error) {
-		v, _, e := graphlite.GetRecordValue[string](rec, "name")
+	_, err = charta.SingleT(ctx, qr, func(rec *charta.Record) (string, error) {
+		v, _, e := charta.GetRecordValue[string](rec, "name")
 		return v, e
 	})
-	if !errors.Is(err, graphlite.ErrNoRecords) {
+	if !errors.Is(err, charta.ErrNoRecords) {
 		t.Errorf("expected ErrNoRecords, got %v", err)
 	}
 }
@@ -321,11 +321,11 @@ func TestSingleT_ErrMultipleRecords(t *testing.T) {
 		t.Fatalf("RunQuery: %v", err)
 	}
 
-	_, err = graphlite.SingleT(ctx, qr, func(rec *graphlite.Record) (int64, error) {
-		v, _, e := graphlite.GetRecordValue[int64](rec, "v")
+	_, err = charta.SingleT(ctx, qr, func(rec *charta.Record) (int64, error) {
+		v, _, e := charta.GetRecordValue[int64](rec, "v")
 		return v, e
 	})
-	if !errors.Is(err, graphlite.ErrMultipleRecords) {
+	if !errors.Is(err, charta.ErrMultipleRecords) {
 		t.Errorf("expected ErrMultipleRecords, got %v", err)
 	}
 }

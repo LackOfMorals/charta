@@ -44,7 +44,7 @@ func (p *parser) parseCypherPrefix(st *Statement) {
 	if v := p.cur(); v.Kind == INT || v.Kind == FLOAT {
 		p.next()
 		if v.Text != "25" {
-			p.fail(v.Pos, "graphlite implements Cypher 25; CYPHER %s is not supported", v.Text)
+			p.fail(v.Pos, "charta implements Cypher 25; CYPHER %s is not supported", v.Text)
 		}
 		st.Version = v.Text
 	}

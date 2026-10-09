@@ -4,8 +4,8 @@ import (
 	"context"
 	"sort"
 
-	"github.com/LackOfMorals/graphlite/v2/cypher/proc"
-	"github.com/LackOfMorals/graphlite/v2/cypher/syntax"
+	"github.com/LackOfMorals/charta/cypher/proc"
+	"github.com/LackOfMorals/charta/cypher/syntax"
 )
 
 // resolve finds the procedure a CALL names: registered first, then built-in.

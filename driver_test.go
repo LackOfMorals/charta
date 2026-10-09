@@ -1,4 +1,4 @@
-package graphlite_test
+package charta_test
 
 import (
 	"context"
@@ -9,16 +9,16 @@ import (
 	"testing"
 	"time"
 
-	"github.com/LackOfMorals/graphlite/v2"
+	"github.com/LackOfMorals/charta"
 )
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-func openMemDB(t *testing.T) *graphlite.DB {
+func openMemDB(t *testing.T) *charta.DB {
 	t.Helper()
-	db, err := graphlite.Open(":memory:")
+	db, err := charta.Open(":memory:")
 	if err != nil {
 		t.Fatalf("Open(:memory:): %v", err)
 	}
@@ -40,7 +40,7 @@ func TestOpen_PathTraversal(t *testing.T) {
 		"a/b/../../c/../../etc/shadow",
 	}
 	for _, p := range traversalPaths {
-		_, err := graphlite.Open(p)
+		_, err := charta.Open(p)
 		if err == nil {
 			t.Errorf("Open(%q): expected error for path traversal, got nil", p)
 			continue
@@ -53,7 +53,7 @@ func TestOpen_PathTraversal(t *testing.T) {
 
 // TestOpen_Memory verifies that Open(":memory:") returns a usable *DB.
 func TestOpen_Memory(t *testing.T) {
-	db, err := graphlite.Open(":memory:")
+	db, err := charta.Open(":memory:")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -71,7 +71,7 @@ func TestOpen_File(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "test.db")
 
-	db, err := graphlite.Open(path)
+	db, err := charta.Open(path)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -89,7 +89,7 @@ func TestOpen_File(t *testing.T) {
 
 // TestWithBusyTimeout verifies that WithBusyTimeout is accepted without error.
 func TestWithBusyTimeout(t *testing.T) {
-	db, err := graphlite.Open(":memory:", graphlite.WithBusyTimeout(5*time.Second))
+	db, err := charta.Open(":memory:", charta.WithBusyTimeout(5*time.Second))
 	if err != nil {
 		t.Fatalf("Open with WithBusyTimeout: %v", err)
 	}
@@ -102,13 +102,13 @@ func TestWithReadOnly(t *testing.T) {
 	ctx := context.Background()
 
 	// Seed data in a normal read-write database.
-	rw := graphlite.NewTestDB(t)
+	rw := charta.NewTestDB(t)
 	if _, err := rw.RunQuery(ctx, `CREATE (n:Person {name: "Alice"})`, nil); err != nil {
 		t.Fatalf("CREATE: %v", err)
 	}
 
 	// Open a second in-memory db (fresh) as read-only.
-	ro, err := graphlite.Open(":memory:", graphlite.WithReadOnly())
+	ro, err := charta.Open(":memory:", charta.WithReadOnly())
 	if err != nil {
 		t.Fatalf("Open ro: %v", err)
 	}
@@ -124,7 +124,7 @@ func TestWithReadOnly(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected ErrReadOnly, got nil")
 	}
-	if err != graphlite.ErrReadOnly {
+	if err != charta.ErrReadOnly {
 		t.Fatalf("expected ErrReadOnly, got: %v", err)
 	}
 }
@@ -133,7 +133,7 @@ func TestWithReadOnly(t *testing.T) {
 // ErrReadOnly immediately when the database was opened with WithReadOnly.
 func TestWithReadOnly_BeginTxReturnsErrReadOnly(t *testing.T) {
 	ctx := context.Background()
-	ro, err := graphlite.Open(":memory:", graphlite.WithReadOnly())
+	ro, err := charta.Open(":memory:", charta.WithReadOnly())
 	if err != nil {
 		t.Fatalf("Open ro: %v", err)
 	}
@@ -143,7 +143,7 @@ func TestWithReadOnly_BeginTxReturnsErrReadOnly(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected ErrReadOnly from BeginTx on read-only DB, got nil")
 	}
-	if err != graphlite.ErrReadOnly {
+	if err != charta.ErrReadOnly {
 		t.Fatalf("expected ErrReadOnly, got: %v", err)
 	}
 }
@@ -151,7 +151,7 @@ func TestWithReadOnly_BeginTxReturnsErrReadOnly(t *testing.T) {
 // TestNewTestDB verifies that NewTestDB returns a usable *DB and that cleanup
 // is registered (the test would leak if Close were not called).
 func TestNewTestDB(t *testing.T) {
-	db := graphlite.NewTestDB(t)
+	db := charta.NewTestDB(t)
 	if db == nil {
 		t.Fatal("expected non-nil *DB")
 	}
@@ -168,7 +168,7 @@ func TestNewTestDB(t *testing.T) {
 // TestClose verifies that Close releases resources; the DB object should report
 // an error if Close is called a second time.
 func TestClose_ReleasesResources(t *testing.T) {
-	db, err := graphlite.Open(":memory:")
+	db, err := charta.Open(":memory:")
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
@@ -260,9 +260,9 @@ func TestRunQuery_MissingParam(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for missing parameter, got nil")
 	}
-	var mp *graphlite.ErrMissingParameter
+	var mp *charta.ErrMissingParameter
 	if ok := func() bool {
-		e, ok := err.(*graphlite.ErrMissingParameter)
+		e, ok := err.(*charta.ErrMissingParameter)
 		if ok {
 			mp = e
 		}
@@ -476,9 +476,9 @@ func TestRunQuery_NodeProjection(t *testing.T) {
 	if !ok {
 		t.Fatal("expected 'n' key in record")
 	}
-	node, isNode := raw.(*graphlite.Node)
+	node, isNode := raw.(*charta.Node)
 	if !isNode {
-		t.Fatalf("expected *graphlite.Node, got %T", raw)
+		t.Fatalf("expected *charta.Node, got %T", raw)
 	}
 	if len(node.Labels) == 0 || node.Labels[0] != "Animal" {
 		t.Errorf("Labels = %v, want [Animal]", node.Labels)

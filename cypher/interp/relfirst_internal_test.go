@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/LackOfMorals/graphlite/v2/cypher/analyze"
-	"github.com/LackOfMorals/graphlite/v2/cypher/syntax"
-	"github.com/LackOfMorals/graphlite/v2/store"
+	"github.com/LackOfMorals/charta/cypher/analyze"
+	"github.com/LackOfMorals/charta/cypher/syntax"
+	"github.com/LackOfMorals/charta/store"
 )
 
 func runInternal(t *testing.T, db *store.SQLiteStore, q string, params map[string]any) []string {

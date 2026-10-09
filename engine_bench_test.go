@@ -1,4 +1,4 @@
-package graphlite_test
+package charta_test
 
 import (
 	"context"
@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/LackOfMorals/graphlite/v2"
+	"github.com/LackOfMorals/charta"
 )
 
 // BenchmarkQueries measures common query shapes on a 2,000-node chain graph.
@@ -27,7 +27,7 @@ func BenchmarkQueries(b *testing.B) {
 		for _, qq := range queries {
 			b.Run(qq.name, func(b *testing.B) {
 				ctx := context.Background()
-				db, err := graphlite.Open(":memory:")
+				db, err := charta.Open(":memory:")
 				if err != nil {
 					b.Fatal(err)
 				}
@@ -69,7 +69,7 @@ func BenchmarkParallelReads(b *testing.B) {
 		for _, qq := range queries {
 			b.Run(fmt.Sprintf("conns=%d/%s", conns, qq.name), func(b *testing.B) {
 				ctx := context.Background()
-				db, err := graphlite.Open(filepath.Join(b.TempDir(), "g.db"), graphlite.WithMaxReadConns(conns))
+				db, err := charta.Open(filepath.Join(b.TempDir(), "g.db"), charta.WithMaxReadConns(conns))
 				if err != nil {
 					b.Fatal(err)
 				}
@@ -108,7 +108,7 @@ func BenchmarkParallelReads(b *testing.B) {
 // which must not regress when the read pool is added.
 func BenchmarkFileWrites(b *testing.B) {
 	ctx := context.Background()
-	db, err := graphlite.Open(filepath.Join(b.TempDir(), "g.db"))
+	db, err := charta.Open(filepath.Join(b.TempDir(), "g.db"))
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -124,12 +124,12 @@ func BenchmarkFileWrites(b *testing.B) {
 // BenchmarkVectorSearch measures db.index.vector.queryNodes end to end at
 // several sizes and dimension 384: the first (cold) query builds the in-memory
 // matrix from the stored properties, later queries scan it. Sizes above 100k
-// are skipped unless GRAPHLITE_BIG=1 because loading them takes minutes.
+// are skipped unless CHARTA_BIG=1 because loading them takes minutes.
 func BenchmarkVectorSearch(b *testing.B) {
 	for _, n := range []int{1000, 10000, 100000} {
 		b.Run(fmt.Sprintf("n=%d", n), func(b *testing.B) {
 			ctx := context.Background()
-			db, err := graphlite.Open(filepath.Join(b.TempDir(), "g.db"))
+			db, err := charta.Open(filepath.Join(b.TempDir(), "g.db"))
 			if err != nil {
 				b.Fatal(err)
 			}
@@ -182,9 +182,9 @@ func BenchmarkVectorSearch(b *testing.B) {
 // index and the automatic index on 100,000 nodes and 100,000 relationships.
 func BenchmarkPropertyLookup(b *testing.B) {
 	const n = 100000
-	build := func(b *testing.B, opts ...graphlite.Option) *graphlite.DB {
+	build := func(b *testing.B, opts ...charta.Option) *charta.DB {
 		ctx := context.Background()
-		db, err := graphlite.Open(filepath.Join(b.TempDir(), "g.db"), opts...)
+		db, err := charta.Open(filepath.Join(b.TempDir(), "g.db"), opts...)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -197,7 +197,7 @@ func BenchmarkPropertyLookup(b *testing.B) {
 		}
 		return db
 	}
-	lookup := func(b *testing.B, db *graphlite.DB, q string) {
+	lookup := func(b *testing.B, db *charta.DB, q string) {
 		ctx := context.Background()
 		var ctr atomic.Int64
 		b.ResetTimer()
@@ -214,10 +214,10 @@ func BenchmarkPropertyLookup(b *testing.B) {
 	const nodeQ = "MATCH (p:P {id: $i}) RETURN p.name"
 	const relQ = "MATCH ()-[r:R {w: $i}]->() RETURN count(r)"
 	b.Run("node/no_index", func(b *testing.B) {
-		lookup(b, build(b, graphlite.WithoutAutomaticIndexes()), nodeQ)
+		lookup(b, build(b, charta.WithoutAutomaticIndexes()), nodeQ)
 	})
 	b.Run("node/declared_index", func(b *testing.B) {
-		db := build(b, graphlite.WithoutAutomaticIndexes())
+		db := build(b, charta.WithoutAutomaticIndexes())
 		if err := db.CreatePropertyIndex(context.Background(), "P", "id"); err != nil {
 			b.Fatal(err)
 		}
@@ -233,10 +233,10 @@ func BenchmarkPropertyLookup(b *testing.B) {
 		lookup(b, db, nodeQ)
 	})
 	b.Run("relationship/no_index", func(b *testing.B) {
-		lookup(b, build(b, graphlite.WithoutAutomaticIndexes()), relQ)
+		lookup(b, build(b, charta.WithoutAutomaticIndexes()), relQ)
 	})
 	b.Run("relationship/declared_index", func(b *testing.B) {
-		db := build(b, graphlite.WithoutAutomaticIndexes())
+		db := build(b, charta.WithoutAutomaticIndexes())
 		if _, err := db.RunQuery(context.Background(), "CREATE INDEX FOR ()-[r:R]-() ON (r.w)", nil); err != nil {
 			b.Fatal(err)
 		}
@@ -274,12 +274,12 @@ func BenchmarkShortestPath(b *testing.B) {
 	}
 	sb.WriteString(`]}`)
 	ctx := context.Background()
-	db, err := graphlite.Open(":memory:")
+	db, err := charta.Open(":memory:")
 	if err != nil {
 		b.Fatal(err)
 	}
 	defer db.Close(ctx)
-	if err := db.Import(ctx, strings.NewReader(sb.String()), graphlite.FormatJSON); err != nil {
+	if err := db.Import(ctx, strings.NewReader(sb.String()), charta.FormatJSON); err != nil {
 		b.Fatal(err)
 	}
 	if _, err := db.RunQuery(ctx, "CREATE INDEX FOR (n:G) ON (n.k)", nil); err != nil {

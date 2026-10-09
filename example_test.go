@@ -1,4 +1,4 @@
-package graphlite_test
+package charta_test
 
 import (
 	"context"
@@ -8,14 +8,14 @@ import (
 	"strings"
 	"time"
 
-	graphlite "github.com/LackOfMorals/graphlite/v2"
+	charta "github.com/LackOfMorals/charta"
 )
 
 // ExampleOpen demonstrates opening an in-memory database and running a query.
 func ExampleOpen() {
 	ctx := context.Background()
 
-	db, err := graphlite.Open(":memory:")
+	db, err := charta.Open(":memory:")
 	if err != nil {
 		panic(err)
 	}
@@ -39,7 +39,7 @@ func ExampleOpen() {
 
 // ExampleWithBusyTimeout shows how to configure SQLite busy-wait behaviour.
 func ExampleWithBusyTimeout() {
-	db, err := graphlite.Open(":memory:", graphlite.WithBusyTimeout(5*time.Second))
+	db, err := charta.Open(":memory:", charta.WithBusyTimeout(5*time.Second))
 	if err != nil {
 		panic(err)
 	}
@@ -55,7 +55,7 @@ func ExampleWithReadOnly() {
 	ctx := context.Background()
 
 	// Seed data in a normal read-write database.
-	rw, err := graphlite.Open(":memory:")
+	rw, err := charta.Open(":memory:")
 	if err != nil {
 		panic(err)
 	}
@@ -66,14 +66,14 @@ func ExampleWithReadOnly() {
 	// Here we demonstrate WithReadOnly rejecting writes.
 	_ = rw.Close(ctx)
 
-	ro, err := graphlite.Open(":memory:", graphlite.WithReadOnly())
+	ro, err := charta.Open(":memory:", charta.WithReadOnly())
 	if err != nil {
 		panic(err)
 	}
 	defer func() { _ = ro.Close(ctx) }()
 
 	_, err = ro.RunQuery(ctx, `CREATE (n:Config)`, nil)
-	fmt.Println(err == graphlite.ErrReadOnly)
+	fmt.Println(err == charta.ErrReadOnly)
 
 	// Output:
 	// true
@@ -83,7 +83,7 @@ func ExampleWithReadOnly() {
 func ExampleDB_Import() {
 	ctx := context.Background()
 
-	db, err := graphlite.Open(":memory:")
+	db, err := charta.Open(":memory:")
 	if err != nil {
 		panic(err)
 	}
@@ -99,7 +99,7 @@ func ExampleDB_Import() {
 		]
 	}`
 
-	if err := db.Import(ctx, strings.NewReader(data), graphlite.FormatJSON); err != nil {
+	if err := db.Import(ctx, strings.NewReader(data), charta.FormatJSON); err != nil {
 		panic(err)
 	}
 
@@ -124,7 +124,7 @@ func ExampleDB_Import() {
 func ExampleDB_Snapshot() {
 	ctx := context.Background()
 
-	db, err := graphlite.Open(":memory:")
+	db, err := charta.Open(":memory:")
 	if err != nil {
 		panic(err)
 	}
@@ -135,7 +135,7 @@ func ExampleDB_Snapshot() {
 		panic(err)
 	}
 
-	dir, err := os.MkdirTemp("", "graphlite-snap-*")
+	dir, err := os.MkdirTemp("", "charta-snap-*")
 	if err != nil {
 		panic(err)
 	}
@@ -147,7 +147,7 @@ func ExampleDB_Snapshot() {
 	}
 
 	// Reopen the snapshot as a normal database.
-	snap, err := graphlite.Open(snapPath)
+	snap, err := charta.Open(snapPath)
 	if err != nil {
 		panic(err)
 	}

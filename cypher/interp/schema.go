@@ -8,20 +8,20 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/LackOfMorals/graphlite/v2/cypher/syntax"
-	"github.com/LackOfMorals/graphlite/v2/cypher/vector"
+	"github.com/LackOfMorals/charta/cypher/syntax"
+	"github.com/LackOfMorals/charta/cypher/vector"
 )
 
 // Schema commands (CREATE/DROP INDEX|CONSTRAINT, SHOW INDEXES|CONSTRAINTS).
 //
-// Definitions live in the graphlite_schema table. A RANGE/TEXT index and the
+// Definitions live in the charta_schema table. A RANGE/TEXT index and the
 // lookup index behind a uniqueness constraint are SQLite expression indexes on
 // json_extract(props, '$."key"'); the other index kinds are recorded so SHOW
 // reports them, but queries do not need them to be correct. Constraints are
 // enforced by the interpreter when a statement finishes, over the entities the
 // statement created or changed.
 
-const schemaTable = "graphlite_schema"
+const schemaTable = "charta_schema"
 
 // schemaDef is one index or constraint.
 type schemaDef struct {
@@ -622,7 +622,7 @@ func (ex *exec) validateExisting(d schemaDef) error {
 //
 // The dimension is required (1 to vector.MaxDimension); the similarity function
 // is cosine (default) or euclidean. The HNSW tuning keys Neo4j accepts are
-// accepted and ignored, since graphlite searches exhaustively.
+// accepted and ignored, since charta searches exhaustively.
 func (ex *exec) vectorConfig(opts syntax.Expr) (dims int, sim string, err error) {
 	bad := func(format string, args ...any) (int, string, error) {
 		return 0, "", schemaError("InvalidOptions", format, args...)

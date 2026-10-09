@@ -8,11 +8,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/LackOfMorals/graphlite/v2/cypher/analyze"
-	"github.com/LackOfMorals/graphlite/v2/cypher/interp"
-	"github.com/LackOfMorals/graphlite/v2/cypher/proc"
-	"github.com/LackOfMorals/graphlite/v2/cypher/syntax"
-	"github.com/LackOfMorals/graphlite/v2/store"
+	"github.com/LackOfMorals/charta/cypher/analyze"
+	"github.com/LackOfMorals/charta/cypher/interp"
+	"github.com/LackOfMorals/charta/cypher/proc"
+	"github.com/LackOfMorals/charta/cypher/syntax"
+	"github.com/LackOfMorals/charta/store"
 )
 
 // newDB opens an empty in-memory graph.

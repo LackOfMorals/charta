@@ -16,7 +16,7 @@ tasks:
     title: "shortestPath()/allShortestPaths(), Path values, length/nodes/relationships"
     description: |
       Superseded: the interpreter implements shortestPath() and allShortestPaths(), ANY SHORTEST / ALL SHORTEST /
-      SHORTEST k / SHORTEST k GROUPS / ANY k / ALL selectors, quantified path patterns, graphlite.Path results and
+      SHORTEST k / SHORTEST k GROUPS / ANY k / ALL selectors, quantified path patterns, charta.Path results and
       the path functions (length, nodes, relationships). The PRD's CTE-based tasks 001-009 do not apply: there is
       no SQL translator any more.
     status: completed

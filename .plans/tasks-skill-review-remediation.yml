@@ -316,7 +316,7 @@ tasks:
       `SELECT` round-trips executed per edge row to validate start and end node existence.
       Rely on the `PRAGMA foreign_keys = ON` constraint (from task-002) to reject dangling edges
       natively. Map the resulting SQLite `FOREIGN KEY constraint failed` error to the appropriate
-      graphlite error type with a clear error message.
+      charta error type with a clear error message.
     status: completed
     dependencies: [task-002, task-015]
     acceptance_criteria:

@@ -4,13 +4,13 @@
 
 ## Overview
 
-`store/store.go:98-101`'s `Store` interface doc comment claims: "The Store is safe for concurrent reads when opened with WAL mode (which the SQLiteStore implementation enables automatically)." In practice this promise is not delivered: `store/sqlite.go:59` calls `db.SetMaxOpenConns(1)`, so the underlying `*sql.DB` connection pool never has more than one connection. WAL mode (`store/sqlite.go:62`) is enabled, but its main practical benefit — concurrent readers proceeding without blocking on a writer — is unreachable, because every read and write from a single `*graphlite.DB` handle is serialized through that one connection. This is a real, user-visible gap versus comparable Go+SQLite graph libraries (e.g. `go-sqlite-graph`, which pools connections explicitly for concurrent access) and is the kind of limitation that shows up immediately in any non-trivial embedded use — e.g. a web server issuing concurrent read queries against a shared `graphlite.DB`.
+`store/store.go:98-101`'s `Store` interface doc comment claims: "The Store is safe for concurrent reads when opened with WAL mode (which the SQLiteStore implementation enables automatically)." In practice this promise is not delivered: `store/sqlite.go:59` calls `db.SetMaxOpenConns(1)`, so the underlying `*sql.DB` connection pool never has more than one connection. WAL mode (`store/sqlite.go:62`) is enabled, but its main practical benefit — concurrent readers proceeding without blocking on a writer — is unreachable, because every read and write from a single `*charta.DB` handle is serialized through that one connection. This is a real, user-visible gap versus comparable Go+SQLite graph libraries (e.g. `go-sqlite-graph`, which pools connections explicitly for concurrent access) and is the kind of limitation that shows up immediately in any non-trivial embedded use — e.g. a web server issuing concurrent read queries against a shared `charta.DB`.
 
 This PRD adds a second, size-bounded pool of read-only connections for file-backed databases, routes read-only Cypher queries to it, and keeps a single dedicated connection for all writes — closing the gap between the `Store` interface's documented promise and what `SQLiteStore` actually does.
 
 ## Goals
 
-- File-backed (non-`:memory:`) `graphlite.DB` handles support genuinely concurrent reads: multiple goroutines calling `RunQuery` with read-only Cypher can execute simultaneously without serializing through a single connection.
+- File-backed (non-`:memory:`) `charta.DB` handles support genuinely concurrent reads: multiple goroutines calling `RunQuery` with read-only Cypher can execute simultaneously without serializing through a single connection.
 - Writes remain strictly single-writer, as SQLite requires — no change to write correctness or the existing `KindMatchForWrite` single-connection-cursor constraint documented in `AGENTS.md`.
 - The `Store` interface's existing doc comment ("safe for concurrent reads … WAL mode") becomes true rather than aspirational.
 - `:memory:` databases are explicitly documented as remaining single-connection (they are inherently per-connection in SQLite, per `AGENTS.md`'s existing gotcha), with no behavior change and no silent data-isolation bugs.
@@ -18,10 +18,10 @@ This PRD adds a second, size-bounded pool of read-only connections for file-back
 ## Non-Goals
 
 - No change to write concurrency — SQLite (and this PRD) still allows exactly one writer at a time.
-- No distributed/multi-process concurrency story — this is entirely about intra-process goroutine concurrency on a single open `*graphlite.DB`.
+- No distributed/multi-process concurrency story — this is entirely about intra-process goroutine concurrency on a single open `*charta.DB`.
 - No change to the `store.Store`/`store.Execer`/`store.TxExecer` interface *signatures* — only to what backs them inside `SQLiteStore`.
 - No support for concurrent reads on `:memory:` databases (architecturally impossible without a shared-cache mode change that is out of scope here — see Open Questions).
-- No new `graphlite.Open` option is required for this to work by default; a `WithMaxReadConns` option may be added but is not required for the base goal (see Requirements).
+- No new `charta.Open` option is required for this to work by default; a `WithMaxReadConns` option may be added but is not required for the base goal (see Requirements).
 
 ## Requirements
 
@@ -39,10 +39,10 @@ This PRD adds a second, size-bounded pool of read-only connections for file-back
 ### Non-Functional Requirements
 
 - REQ-NF-001: `go build ./...`, `go vet ./...`, and `CGO_ENABLED=0 go test -tags=unit -count=1 ./...` pass.
-- REQ-NF-002: A new concurrency-focused test (under `-race`) issues concurrent `RunQuery` reads against a file-backed `graphlite.DB` and asserts no data races and no serialization stalls beyond what the read-pool size implies.
+- REQ-NF-002: A new concurrency-focused test (under `-race`) issues concurrent `RunQuery` reads against a file-backed `charta.DB` and asserts no data races and no serialization stalls beyond what the read-pool size implies.
 - REQ-NF-003: No regression to existing single-writer semantics: a benchmark comparable to existing ones in `bench/` shows write throughput unchanged (within noise) versus the pre-PRD baseline.
 - REQ-NF-004: The `store/` package continues to work only with raw IDs, labels, and JSON blobs — no Cypher types cross into `store/` as part of this change (`AGENTS.md`'s architectural constraint).
-- REQ-NF-005: `db.Close(ctx)` closes both the write connection and the read pool; no connection leak (verified via a test that opens/closes many `graphlite.DB` instances under `-race` with goroutine-leak detection, per the project's existing testing conventions).
+- REQ-NF-005: `db.Close(ctx)` closes both the write connection and the read pool; no connection leak (verified via a test that opens/closes many `charta.DB` instances under `-race` with goroutine-leak detection, per the project's existing testing conventions).
 
 ## Technical Considerations
 
@@ -58,8 +58,8 @@ This PRD adds a second, size-bounded pool of read-only connections for file-back
 
 ## Acceptance Criteria
 
-- [ ] A file-backed `graphlite.DB` served concurrently by N goroutines each running read-only `RunQuery` calls shows real concurrency (measurable via a benchmark or a blocking-read test) rather than full serialization.
-- [ ] A concurrent read + a concurrent write against the same file-backed `graphlite.DB` do not deadlock and do not corrupt data (verified under `-race` and with a data-integrity assertion after the run).
+- [ ] A file-backed `charta.DB` served concurrently by N goroutines each running read-only `RunQuery` calls shows real concurrency (measurable via a benchmark or a blocking-read test) rather than full serialization.
+- [ ] A concurrent read + a concurrent write against the same file-backed `charta.DB` do not deadlock and do not corrupt data (verified under `-race` and with a data-integrity assertion after the run).
 - [ ] `:memory:` databases behave exactly as before (single connection, no read pool) — verified by a test that a `:memory:` DB's read pool is never created.
 - [ ] `WithMaxReadConns(n)` option exists, defaults sensibly, and `n <= 0` is a no-op.
 - [ ] `WithReadOnly()` databases use the read pool for 100% of queries.

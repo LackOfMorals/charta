@@ -9,10 +9,10 @@ import (
 	"strconv"
 	"strings"
 
-	graphlite "github.com/LackOfMorals/graphlite/v2"
-	"github.com/LackOfMorals/graphlite/v2/cypher/spatial"
-	"github.com/LackOfMorals/graphlite/v2/cypher/temporal"
-	"github.com/LackOfMorals/graphlite/v2/cypher/vector"
+	charta "github.com/LackOfMorals/charta"
+	"github.com/LackOfMorals/charta/cypher/spatial"
+	"github.com/LackOfMorals/charta/cypher/temporal"
+	"github.com/LackOfMorals/charta/cypher/vector"
 )
 
 // TCK result tables write values in a Cypher-like notation: 1, 1.5, 'text',
@@ -351,15 +351,15 @@ func fromActual(v any, lenient bool) any {
 			return int64(x)
 		}
 		return x
-	case *graphlite.Node:
+	case *charta.Node:
 		return actualNode(x, lenient)
-	case graphlite.Node:
+	case charta.Node:
 		return actualNode(&x, lenient)
-	case *graphlite.Relationship:
+	case *charta.Relationship:
 		return actualRel(x, lenient)
-	case graphlite.Relationship:
+	case charta.Relationship:
 		return actualRel(&x, lenient)
-	case graphlite.Path:
+	case charta.Path:
 		p := &tvPath{}
 		for _, n := range x.Nodes {
 			n := n
@@ -391,7 +391,7 @@ func fromActual(v any, lenient bool) any {
 	return fmt.Sprintf("<unsupported %T: %v>", v, v)
 }
 
-func actualNode(n *graphlite.Node, lenient bool) *tvNode {
+func actualNode(n *charta.Node, lenient bool) *tvNode {
 	out := &tvNode{labels: append([]string(nil), n.Labels...), props: map[string]any{}}
 	sort.Strings(out.labels)
 	for k, v := range n.Props {
@@ -400,7 +400,7 @@ func actualNode(n *graphlite.Node, lenient bool) *tvNode {
 	return out
 }
 
-func actualRel(r *graphlite.Relationship, lenient bool) *tvRel {
+func actualRel(r *charta.Relationship, lenient bool) *tvRel {
 	out := &tvRel{typ: r.Type, props: map[string]any{}}
 	for k, v := range r.Props {
 		out.props[k] = fromActual(v, lenient)

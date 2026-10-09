@@ -3,7 +3,7 @@ package temporal_test
 import (
 	"testing"
 
-	"github.com/LackOfMorals/graphlite/v2/cypher/temporal"
+	"github.com/LackOfMorals/charta/cypher/temporal"
 )
 
 func str(t *testing.T, k temporal.Kind, arg any) string {

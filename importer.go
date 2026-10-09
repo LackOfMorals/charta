@@ -1,4 +1,4 @@
-package graphlite
+package charta
 
 import (
 	"bytes"
@@ -12,9 +12,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/LackOfMorals/graphlite/v2/cypher/interp"
-	"github.com/LackOfMorals/graphlite/v2/cypher/syntax"
-	"github.com/LackOfMorals/graphlite/v2/store"
+	"github.com/LackOfMorals/charta/cypher/interp"
+	"github.com/LackOfMorals/charta/cypher/syntax"
+	"github.com/LackOfMorals/charta/store"
 )
 
 // Format identifies the file format accepted by Import.
@@ -117,7 +117,7 @@ func (d *DB) Import(ctx context.Context, r io.Reader, format Format) error {
 	case FormatCSVEdges:
 		return d.importCSVEdges(ctx, r)
 	default:
-		return fmt.Errorf("graphlite: import: unsupported format %d", format)
+		return fmt.Errorf("charta: import: unsupported format %d", format)
 	}
 }
 
@@ -139,7 +139,7 @@ func (d *DB) Export(ctx context.Context, w io.Writer, format ExportFormat) error
 		}
 		return d.exportCSVEdges(ctx, w)
 	default:
-		return fmt.Errorf("graphlite: export: unsupported format %d", format)
+		return fmt.Errorf("charta: export: unsupported format %d", format)
 	}
 }
 
@@ -156,7 +156,7 @@ func (d *DB) importJSON(ctx context.Context, r io.Reader) (retErr error) {
 	// inputs. The byte slice is then decoded with the streaming token-by-token parser.
 	raw, err := io.ReadAll(io.LimitReader(r, importMaxBytes+1))
 	if err != nil {
-		return fmt.Errorf("graphlite: import: read: %w", err)
+		return fmt.Errorf("charta: import: read: %w", err)
 	}
 	if int64(len(raw)) > importMaxBytes {
 		return &ErrImportTooLarge{MaxBytes: importMaxBytes}
@@ -170,7 +170,7 @@ func (d *DB) importJSON(ctx context.Context, r io.Reader) (retErr error) {
 	// Open a transaction: all inserts are atomic.
 	tx, err := d.st.Begin(ctx)
 	if err != nil {
-		return fmt.Errorf("graphlite: import: begin transaction: %w", err)
+		return fmt.Errorf("charta: import: begin transaction: %w", err)
 	}
 	// Rollback is a no-op after a successful Commit (task-012), so this deferred
 	// guard is always safe and eliminates per-error inline rollback calls.
@@ -188,16 +188,16 @@ func (d *DB) importJSON(ctx context.Context, r io.Reader) (retErr error) {
 	for i, n := range doc.Nodes {
 		propsJSON, err := marshalProps(n.Props)
 		if err != nil {
-			return fmt.Errorf("graphlite: import: node %d (%q) props: %w", i, n.ID, err)
+			return fmt.Errorf("charta: import: node %d (%q) props: %w", i, n.ID, err)
 		}
 		dbID, err := tx.InsertNode(ctx, store.Labels(n.Labels), propsJSON)
 		if err != nil {
-			return fmt.Errorf("graphlite: import: insert node %d (%q): %w", i, n.ID, err)
+			return fmt.Errorf("charta: import: insert node %d (%q): %w", i, n.ID, err)
 		}
 		nodeIDs = append(nodeIDs, dbID)
 		if n.ID != "" {
 			if _, dup := idMap[n.ID]; dup {
-				return fmt.Errorf("graphlite: import: duplicate node id %q", n.ID)
+				return fmt.Errorf("charta: import: duplicate node id %q", n.ID)
 			}
 			idMap[n.ID] = dbID
 		}
@@ -206,23 +206,23 @@ func (d *DB) importJSON(ctx context.Context, r io.Reader) (retErr error) {
 	// Insert edges.
 	for i, e := range doc.Edges {
 		if e.Type == "" {
-			return fmt.Errorf("graphlite: import: edge %d: missing type", i)
+			return fmt.Errorf("charta: import: edge %d: missing type", i)
 		}
 		startDBID, ok := idMap[e.StartID]
 		if !ok {
-			return fmt.Errorf("graphlite: import: edge %d: unknown startId %q", i, e.StartID)
+			return fmt.Errorf("charta: import: edge %d: unknown startId %q", i, e.StartID)
 		}
 		endDBID, ok := idMap[e.EndID]
 		if !ok {
-			return fmt.Errorf("graphlite: import: edge %d: unknown endId %q", i, e.EndID)
+			return fmt.Errorf("charta: import: edge %d: unknown endId %q", i, e.EndID)
 		}
 		propsJSON, err := marshalProps(e.Props)
 		if err != nil {
-			return fmt.Errorf("graphlite: import: edge %d props: %w", i, err)
+			return fmt.Errorf("charta: import: edge %d props: %w", i, err)
 		}
 		edgeID, err := tx.InsertEdge(ctx, e.Type, startDBID, endDBID, propsJSON)
 		if err != nil {
-			return fmt.Errorf("graphlite: import: insert edge %d: %w", i, err)
+			return fmt.Errorf("charta: import: insert edge %d: %w", i, err)
 		}
 		relIDs = append(relIDs, edgeID)
 	}
@@ -234,7 +234,7 @@ func (d *DB) importJSON(ctx context.Context, r io.Reader) (retErr error) {
 		return err
 	}
 	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("graphlite: import: commit: %w", err)
+		return fmt.Errorf("charta: import: commit: %w", err)
 	}
 	d.eng.InvalidateVectors()
 	return nil
@@ -245,7 +245,7 @@ func (d *DB) importJSON(ctx context.Context, r io.Reader) (retErr error) {
 // violation fails the whole import with *ErrConstraintViolation.
 func (d *DB) checkImport(ctx context.Context, tx store.Tx, nodeIDs, relIDs []int64) error {
 	if err := d.eng.ValidateImported(ctx, tx.Exec(), nodeIDs, relIDs); err != nil {
-		return fmt.Errorf("graphlite: import: %w", execError(err))
+		return fmt.Errorf("charta: import: %w", execError(err))
 	}
 	return nil
 }
@@ -257,15 +257,15 @@ func (d *DB) applyImportSchema(ctx context.Context, tx store.Tx, statements []st
 	for _, q := range statements {
 		st, err := parseSyntax(q, &d.eng)
 		if err != nil {
-			return fmt.Errorf("graphlite: import: schema statement %q: %w", q, err)
+			return fmt.Errorf("charta: import: schema statement %q: %w", q, err)
 		}
 		switch st.Body.(type) {
 		case *syntax.CreateIndex, *syntax.CreateConstraint:
 		default:
-			return fmt.Errorf("graphlite: import: schema statement %q is not a CREATE INDEX or CREATE CONSTRAINT", q)
+			return fmt.Errorf("charta: import: schema statement %q is not a CREATE INDEX or CREATE CONSTRAINT", q)
 		}
 		if _, err := interp.RunWith(ctx, tx.Exec(), st, nil, &d.eng); err != nil {
-			return fmt.Errorf("graphlite: import: schema statement %q: %w", q, execError(err))
+			return fmt.Errorf("charta: import: schema statement %q: %w", q, execError(err))
 		}
 	}
 	return nil
@@ -315,7 +315,7 @@ func parseCSVHeader(headers []string) ([]csvColDef, error) {
 			parts := strings.SplitN(h, ":", 2)
 			propName := strings.TrimSpace(parts[0])
 			if propName == "" {
-				return nil, fmt.Errorf("graphlite: csv import: empty column name at position %d", i)
+				return nil, fmt.Errorf("charta: csv import: empty column name at position %d", i)
 			}
 			propType := "string"
 			if len(parts) == 2 {
@@ -364,7 +364,7 @@ func (d *DB) importCSVNodes(ctx context.Context, r io.Reader) (retErr error) {
 	// Read header row.
 	headers, err := cr.Read()
 	if err != nil {
-		return fmt.Errorf("graphlite: csv node import: read header: %w", err)
+		return fmt.Errorf("charta: csv node import: read header: %w", err)
 	}
 	defs, err := parseCSVHeader(headers)
 	if err != nil {
@@ -382,22 +382,22 @@ func (d *DB) importCSVNodes(ctx context.Context, r io.Reader) (retErr error) {
 		}
 	}
 	if !hasID {
-		return fmt.Errorf("graphlite: csv node import: missing :ID column")
+		return fmt.Errorf("charta: csv node import: missing :ID column")
 	}
 	if !hasLabel {
-		return fmt.Errorf("graphlite: csv node import: missing :LABEL column")
+		return fmt.Errorf("charta: csv node import: missing :LABEL column")
 	}
 
 	// Read all data rows.
 	rows, err := cr.ReadAll()
 	if err != nil {
-		return fmt.Errorf("graphlite: csv node import: read rows: %w", err)
+		return fmt.Errorf("charta: csv node import: read rows: %w", err)
 	}
 
 	// Open a transaction: all inserts are atomic.
 	tx, err := d.st.Begin(ctx)
 	if err != nil {
-		return fmt.Errorf("graphlite: csv node import: begin transaction: %w", err)
+		return fmt.Errorf("charta: csv node import: begin transaction: %w", err)
 	}
 	// Rollback is a no-op after a successful Commit (task-012), so this deferred
 	// guard is always safe and eliminates per-error inline rollback calls.
@@ -410,7 +410,7 @@ func (d *DB) importCSVNodes(ctx context.Context, r io.Reader) (retErr error) {
 	var nodeIDs []int64
 	for rowIdx, row := range rows {
 		if len(row) != len(defs) {
-			return fmt.Errorf("graphlite: csv node import: row %d: expected %d columns, got %d", rowIdx+2, len(defs), len(row))
+			return fmt.Errorf("charta: csv node import: row %d: expected %d columns, got %d", rowIdx+2, len(defs), len(row))
 		}
 
 		var nodeID, labelStr string
@@ -429,7 +429,7 @@ func (d *DB) importCSVNodes(ctx context.Context, r io.Reader) (retErr error) {
 				}
 				pv, err := parseCSVPropValue(val, def.propType)
 				if err != nil {
-					return fmt.Errorf("graphlite: csv node import: row %d col %q: %w", rowIdx+2, def.propName, err)
+					return fmt.Errorf("charta: csv node import: row %d col %q: %w", rowIdx+2, def.propName, err)
 				}
 				if pv != nil {
 					props[def.propName] = pv
@@ -438,17 +438,17 @@ func (d *DB) importCSVNodes(ctx context.Context, r io.Reader) (retErr error) {
 		}
 
 		if nodeID == "" {
-			return fmt.Errorf("graphlite: csv node import: row %d: empty :ID value", rowIdx+2)
+			return fmt.Errorf("charta: csv node import: row %d: empty :ID value", rowIdx+2)
 		}
 
 		propsJSON, err := marshalProps(props)
 		if err != nil {
-			return fmt.Errorf("graphlite: csv node import: row %d props: %w", rowIdx+2, err)
+			return fmt.Errorf("charta: csv node import: row %d props: %w", rowIdx+2, err)
 		}
 
 		id, err := tx.InsertNode(ctx, store.DecodeLabels(labelStr), propsJSON)
 		if err != nil {
-			return fmt.Errorf("graphlite: csv node import: row %d insert: %w", rowIdx+2, err)
+			return fmt.Errorf("charta: csv node import: row %d insert: %w", rowIdx+2, err)
 		}
 		nodeIDs = append(nodeIDs, id)
 	}
@@ -457,7 +457,7 @@ func (d *DB) importCSVNodes(ctx context.Context, r io.Reader) (retErr error) {
 		return err
 	}
 	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("graphlite: csv node import: commit: %w", err)
+		return fmt.Errorf("charta: csv node import: commit: %w", err)
 	}
 	d.eng.InvalidateVectors()
 	return nil
@@ -477,7 +477,7 @@ func (d *DB) importCSVEdges(ctx context.Context, r io.Reader) (retErr error) {
 	// Read header row.
 	headers, err := cr.Read()
 	if err != nil {
-		return fmt.Errorf("graphlite: csv edge import: read header: %w", err)
+		return fmt.Errorf("charta: csv edge import: read header: %w", err)
 	}
 	defs, err := parseCSVHeader(headers)
 	if err != nil {
@@ -497,25 +497,25 @@ func (d *DB) importCSVEdges(ctx context.Context, r io.Reader) (retErr error) {
 		}
 	}
 	if !hasStart {
-		return fmt.Errorf("graphlite: csv edge import: missing :START_ID column")
+		return fmt.Errorf("charta: csv edge import: missing :START_ID column")
 	}
 	if !hasEnd {
-		return fmt.Errorf("graphlite: csv edge import: missing :END_ID column")
+		return fmt.Errorf("charta: csv edge import: missing :END_ID column")
 	}
 	if !hasType {
-		return fmt.Errorf("graphlite: csv edge import: missing :TYPE column")
+		return fmt.Errorf("charta: csv edge import: missing :TYPE column")
 	}
 
 	// Read all data rows.
 	rows, err := cr.ReadAll()
 	if err != nil {
-		return fmt.Errorf("graphlite: csv edge import: read rows: %w", err)
+		return fmt.Errorf("charta: csv edge import: read rows: %w", err)
 	}
 
 	// Open a transaction: all inserts are atomic.
 	tx, err := d.st.Begin(ctx)
 	if err != nil {
-		return fmt.Errorf("graphlite: csv edge import: begin transaction: %w", err)
+		return fmt.Errorf("charta: csv edge import: begin transaction: %w", err)
 	}
 	// Rollback is a no-op after a successful Commit (task-012), so this deferred
 	// guard is always safe and eliminates per-error inline rollback calls.
@@ -528,7 +528,7 @@ func (d *DB) importCSVEdges(ctx context.Context, r io.Reader) (retErr error) {
 	var relIDs []int64
 	for rowIdx, row := range rows {
 		if len(row) != len(defs) {
-			return fmt.Errorf("graphlite: csv edge import: row %d: expected %d columns, got %d", rowIdx+2, len(defs), len(row))
+			return fmt.Errorf("charta: csv edge import: row %d: expected %d columns, got %d", rowIdx+2, len(defs), len(row))
 		}
 
 		var startIDStr, endIDStr, edgeType string
@@ -549,7 +549,7 @@ func (d *DB) importCSVEdges(ctx context.Context, r io.Reader) (retErr error) {
 				}
 				pv, err := parseCSVPropValue(val, def.propType)
 				if err != nil {
-					return fmt.Errorf("graphlite: csv edge import: row %d col %q: %w", rowIdx+2, def.propName, err)
+					return fmt.Errorf("charta: csv edge import: row %d col %q: %w", rowIdx+2, def.propName, err)
 				}
 				if pv != nil {
 					props[def.propName] = pv
@@ -558,21 +558,21 @@ func (d *DB) importCSVEdges(ctx context.Context, r io.Reader) (retErr error) {
 		}
 
 		if edgeType == "" {
-			return fmt.Errorf("graphlite: csv edge import: row %d: empty :TYPE value", rowIdx+2)
+			return fmt.Errorf("charta: csv edge import: row %d: empty :TYPE value", rowIdx+2)
 		}
 
 		startID, err := strconv.ParseInt(startIDStr, 10, 64)
 		if err != nil {
-			return fmt.Errorf("graphlite: csv edge import: row %d: invalid :START_ID %q: %w", rowIdx+2, startIDStr, err)
+			return fmt.Errorf("charta: csv edge import: row %d: invalid :START_ID %q: %w", rowIdx+2, startIDStr, err)
 		}
 		endID, err := strconv.ParseInt(endIDStr, 10, 64)
 		if err != nil {
-			return fmt.Errorf("graphlite: csv edge import: row %d: invalid :END_ID %q: %w", rowIdx+2, endIDStr, err)
+			return fmt.Errorf("charta: csv edge import: row %d: invalid :END_ID %q: %w", rowIdx+2, endIDStr, err)
 		}
 
 		propsJSON, err := marshalProps(props)
 		if err != nil {
-			return fmt.Errorf("graphlite: csv edge import: row %d props: %w", rowIdx+2, err)
+			return fmt.Errorf("charta: csv edge import: row %d props: %w", rowIdx+2, err)
 		}
 
 		edgeID, err := tx.InsertEdge(ctx, edgeType, startID, endID, propsJSON)
@@ -584,9 +584,9 @@ func (d *DB) importCSVEdges(ctx context.Context, r io.Reader) (retErr error) {
 			// start_id or end_id do not exist in the nodes table. Translate
 			// the opaque constraint error into a clear, actionable message.
 			if strings.Contains(err.Error(), "FOREIGN KEY constraint failed") {
-				return fmt.Errorf("graphlite: csv edge import: row %d: node not found (start_id=%d, end_id=%d)", rowIdx+2, startID, endID)
+				return fmt.Errorf("charta: csv edge import: row %d: node not found (start_id=%d, end_id=%d)", rowIdx+2, startID, endID)
 			}
-			return fmt.Errorf("graphlite: csv edge import: row %d insert: %w", rowIdx+2, err)
+			return fmt.Errorf("charta: csv edge import: row %d insert: %w", rowIdx+2, err)
 		}
 	}
 
@@ -594,7 +594,7 @@ func (d *DB) importCSVEdges(ctx context.Context, r io.Reader) (retErr error) {
 		return err
 	}
 	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("graphlite: csv edge import: commit: %w", err)
+		return fmt.Errorf("charta: csv edge import: commit: %w", err)
 	}
 	d.eng.InvalidateVectors()
 	return nil
@@ -631,11 +631,11 @@ type exportJSONDocument struct {
 func (d *DB) exportJSON(ctx context.Context, w io.Writer) error {
 	nodes, err := d.st.ListNodes(ctx)
 	if err != nil {
-		return fmt.Errorf("graphlite: export json: list nodes: %w", err)
+		return fmt.Errorf("charta: export json: list nodes: %w", err)
 	}
 	edges, err := d.st.ListEdges(ctx)
 	if err != nil {
-		return fmt.Errorf("graphlite: export json: list edges: %w", err)
+		return fmt.Errorf("charta: export json: list edges: %w", err)
 	}
 
 	doc := exportJSONDocument{
@@ -646,7 +646,7 @@ func (d *DB) exportJSON(ctx context.Context, w io.Writer) error {
 	for _, n := range nodes {
 		props, err := unmarshalProps(n.Props)
 		if err != nil {
-			return fmt.Errorf("graphlite: export json: node %d props: %w", n.ID, err)
+			return fmt.Errorf("charta: export json: node %d props: %w", n.ID, err)
 		}
 		labels := []string(n.Labels)
 		doc.Nodes = append(doc.Nodes, exportJSONNode{
@@ -659,7 +659,7 @@ func (d *DB) exportJSON(ctx context.Context, w io.Writer) error {
 	for _, e := range edges {
 		props, err := unmarshalProps(e.Props)
 		if err != nil {
-			return fmt.Errorf("graphlite: export json: edge %d props: %w", e.ID, err)
+			return fmt.Errorf("charta: export json: edge %d props: %w", e.ID, err)
 		}
 		doc.Edges = append(doc.Edges, exportJSONEdge{
 			ID:      strconv.FormatInt(e.ID, 10),
@@ -672,14 +672,14 @@ func (d *DB) exportJSON(ctx context.Context, w io.Writer) error {
 
 	schema, err := d.eng.SchemaStatements(ctx, d.st.Exec())
 	if err != nil {
-		return fmt.Errorf("graphlite: export json: schema: %w", err)
+		return fmt.Errorf("charta: export json: schema: %w", err)
 	}
 	doc.Schema = schema
 
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
 	if err := enc.Encode(doc); err != nil {
-		return fmt.Errorf("graphlite: export json: encode: %w", err)
+		return fmt.Errorf("charta: export json: encode: %w", err)
 	}
 	return nil
 }
@@ -694,7 +694,7 @@ func (d *DB) exportJSON(ctx context.Context, w io.Writer) error {
 func (d *DB) exportCSVNodes(ctx context.Context, w io.Writer) error {
 	nodes, err := d.st.ListNodes(ctx)
 	if err != nil {
-		return fmt.Errorf("graphlite: export csv nodes: list nodes: %w", err)
+		return fmt.Errorf("charta: export csv nodes: list nodes: %w", err)
 	}
 
 	// Collect all property keys across all nodes to build a stable header.
@@ -703,7 +703,7 @@ func (d *DB) exportCSVNodes(ctx context.Context, w io.Writer) error {
 	for i, n := range nodes {
 		props, err := unmarshalProps(n.Props)
 		if err != nil {
-			return fmt.Errorf("graphlite: export csv nodes: node %d props: %w", n.ID, err)
+			return fmt.Errorf("charta: export csv nodes: node %d props: %w", n.ID, err)
 		}
 		nodeProps[i] = props
 		for k := range props {
@@ -722,7 +722,7 @@ func (d *DB) exportCSVNodes(ctx context.Context, w io.Writer) error {
 		header = append(header, k+":string")
 	}
 	if err := cw.Write(header); err != nil {
-		return fmt.Errorf("graphlite: export csv nodes: write header: %w", err)
+		return fmt.Errorf("charta: export csv nodes: write header: %w", err)
 	}
 
 	// Write rows.
@@ -739,7 +739,7 @@ func (d *DB) exportCSVNodes(ctx context.Context, w io.Writer) error {
 			row = append(row, anyToString(v))
 		}
 		if err := cw.Write(row); err != nil {
-			return fmt.Errorf("graphlite: export csv nodes: write row: %w", err)
+			return fmt.Errorf("charta: export csv nodes: write row: %w", err)
 		}
 	}
 
@@ -756,7 +756,7 @@ func (d *DB) exportCSVNodes(ctx context.Context, w io.Writer) error {
 func (d *DB) exportCSVEdges(ctx context.Context, w io.Writer) error {
 	edges, err := d.st.ListEdges(ctx)
 	if err != nil {
-		return fmt.Errorf("graphlite: export csv edges: list edges: %w", err)
+		return fmt.Errorf("charta: export csv edges: list edges: %w", err)
 	}
 
 	// Collect all property keys across all edges to build a stable header.
@@ -765,7 +765,7 @@ func (d *DB) exportCSVEdges(ctx context.Context, w io.Writer) error {
 	for i, e := range edges {
 		props, err := unmarshalProps(e.Props)
 		if err != nil {
-			return fmt.Errorf("graphlite: export csv edges: edge %d props: %w", e.ID, err)
+			return fmt.Errorf("charta: export csv edges: edge %d props: %w", e.ID, err)
 		}
 		edgeProps[i] = props
 		for k := range props {
@@ -784,7 +784,7 @@ func (d *DB) exportCSVEdges(ctx context.Context, w io.Writer) error {
 		header = append(header, k+":string")
 	}
 	if err := cw.Write(header); err != nil {
-		return fmt.Errorf("graphlite: export csv edges: write header: %w", err)
+		return fmt.Errorf("charta: export csv edges: write header: %w", err)
 	}
 
 	// Write rows.
@@ -805,7 +805,7 @@ func (d *DB) exportCSVEdges(ctx context.Context, w io.Writer) error {
 			row = append(row, anyToString(v))
 		}
 		if err := cw.Write(row); err != nil {
-			return fmt.Errorf("graphlite: export csv edges: write row: %w", err)
+			return fmt.Errorf("charta: export csv edges: write row: %w", err)
 		}
 	}
 
@@ -917,7 +917,7 @@ func decodeImportJSON(r io.Reader) (*importJSONDocument, error) {
 		if errors.As(err, &depthErr) {
 			return depthErr
 		}
-		return fmt.Errorf("graphlite: import: JSON parse error: %w", err)
+		return fmt.Errorf("charta: import: JSON parse error: %w", err)
 	}
 
 	// readToken reads the next token, updating outerDepth for delimiters.
@@ -964,7 +964,7 @@ func decodeImportJSON(r io.Reader) (*importJSONDocument, error) {
 		return nil, wrapErr(err)
 	}
 	if d, ok := tok.(json.Delim); !ok || d != '{' {
-		return nil, fmt.Errorf("graphlite: import: expected JSON object at top level")
+		return nil, fmt.Errorf("charta: import: expected JSON object at top level")
 	}
 
 	// Iterate over top-level keys.
@@ -975,7 +975,7 @@ func decodeImportJSON(r io.Reader) (*importJSONDocument, error) {
 		}
 		key, ok := keyTok.(string)
 		if !ok {
-			return nil, fmt.Errorf("graphlite: import: expected string key, got %T", keyTok)
+			return nil, fmt.Errorf("charta: import: expected string key, got %T", keyTok)
 		}
 
 		switch key {
@@ -990,7 +990,7 @@ func decodeImportJSON(r io.Reader) (*importJSONDocument, error) {
 				break
 			}
 			if d, ok := tok.(json.Delim); !ok || d != '[' {
-				return nil, fmt.Errorf("graphlite: import: \"nodes\" must be a JSON array")
+				return nil, fmt.Errorf("charta: import: \"nodes\" must be a JSON array")
 			}
 			for dec.More() {
 				var n importJSONNode
@@ -1015,7 +1015,7 @@ func decodeImportJSON(r io.Reader) (*importJSONDocument, error) {
 				break
 			}
 			if d, ok := tok.(json.Delim); !ok || d != '[' {
-				return nil, fmt.Errorf("graphlite: import: \"edges\" must be a JSON array")
+				return nil, fmt.Errorf("charta: import: \"edges\" must be a JSON array")
 			}
 			for dec.More() {
 				var e importJSONEdge
@@ -1039,7 +1039,7 @@ func decodeImportJSON(r io.Reader) (*importJSONDocument, error) {
 			}
 			if string(raw) != "null" {
 				if err := json.Unmarshal(raw, &doc.Schema); err != nil {
-					return nil, fmt.Errorf("graphlite: import: \"schema\" must be an array of Cypher statements: %w", err)
+					return nil, fmt.Errorf("charta: import: \"schema\" must be an array of Cypher statements: %w", err)
 				}
 			}
 
@@ -1077,7 +1077,7 @@ func checkJSONDepth(data []byte, maxDepth int, startDepth int) error {
 		}
 		if err != nil {
 			// data was already successfully decoded above, so this is unexpected.
-			return fmt.Errorf("graphlite: import: depth check error: %w", err)
+			return fmt.Errorf("charta: import: depth check error: %w", err)
 		}
 		if d, ok := tok.(json.Delim); ok {
 			if d == '{' || d == '[' {

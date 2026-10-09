@@ -1,4 +1,4 @@
-package graphlite
+package charta
 
 import (
 	"context"
@@ -31,10 +31,10 @@ type SchemaInfo struct {
 // containing spaces, punctuation or backticks cannot change the statement.
 func quoteIdent(s string) (string, error) {
 	if s == "" {
-		return "", fmt.Errorf("graphlite: a schema name cannot be empty")
+		return "", fmt.Errorf("charta: a schema name cannot be empty")
 	}
 	if strings.ContainsRune(s, 0) {
-		return "", fmt.Errorf("graphlite: a schema name cannot contain a NUL character")
+		return "", fmt.Errorf("charta: a schema name cannot contain a NUL character")
 	}
 	return "`" + strings.ReplaceAll(s, "`", "``") + "`", nil
 }

@@ -1,20 +1,20 @@
-// backend_switch demonstrates how to choose between a local graphlite database
+// backend_switch demonstrates how to choose between a local charta database
 // and a remote Neo4j instance at application startup based on an environment
 // variable.
 //
-// Pattern: read GRAPHLITE_BACKEND from the environment.
-// - When GRAPHLITE_BACKEND=local (default), open a graphlite in-memory database.
-// - When GRAPHLITE_BACKEND=neo4j, connect to Neo4j using NEO4J_URI / NEO4J_USER /
+// Pattern: read CHARTA_BACKEND from the environment.
+// - When CHARTA_BACKEND=local (default), open a charta in-memory database.
+// - When CHARTA_BACKEND=neo4j, connect to Neo4j using NEO4J_URI / NEO4J_USER /
 //   NEO4J_PASS environment variables.
 //
 // Both backends run the same MATCH query, demonstrating that application logic
-// can be written once against graphlite's native API and switched to Neo4j for
+// can be written once against charta's native API and switched to Neo4j for
 // production without changing the query layer.
 //
 // Run with:
 //
-//	GRAPHLITE_BACKEND=local go run .
-//	GRAPHLITE_BACKEND=neo4j NEO4J_URI=neo4j://localhost:7687 NEO4J_USER=neo4j NEO4J_PASS=secret go run .
+//	CHARTA_BACKEND=local go run .
+//	CHARTA_BACKEND=neo4j NEO4J_URI=neo4j://localhost:7687 NEO4J_USER=neo4j NEO4J_PASS=secret go run .
 package main
 
 import (
@@ -23,36 +23,36 @@ import (
 	"log"
 	"os"
 
-	graphlite "github.com/LackOfMorals/graphlite/v2"
+	charta "github.com/LackOfMorals/charta"
 	"github.com/neo4j/neo4j-go-driver/v6/neo4j"
 )
 
 func main() {
 	ctx := context.Background()
 
-	backend := os.Getenv("GRAPHLITE_BACKEND")
+	backend := os.Getenv("CHARTA_BACKEND")
 	if backend == "" {
 		backend = "local"
 	}
 
 	switch backend {
 	case "local":
-		runWithGraphlite(ctx)
+		runWithCharta(ctx)
 	case "neo4j":
 		runWithNeo4j(ctx)
 	default:
-		log.Fatalf("unknown GRAPHLITE_BACKEND %q: expected \"local\" or \"neo4j\"", backend)
+		log.Fatalf("unknown CHARTA_BACKEND %q: expected \"local\" or \"neo4j\"", backend)
 	}
 }
 
-// runWithGraphlite opens a local in-memory graphlite database, seeds it with a
-// small graph, and runs a MATCH query using the graphlite native API.
-func runWithGraphlite(ctx context.Context) {
-	fmt.Println("Backend: graphlite (local)")
+// runWithCharta opens a local in-memory charta database, seeds it with a
+// small graph, and runs a MATCH query using the charta native API.
+func runWithCharta(ctx context.Context) {
+	fmt.Println("Backend: charta (local)")
 
-	db, err := graphlite.Open(":memory:")
+	db, err := charta.Open(":memory:")
 	if err != nil {
-		log.Fatalf("graphlite.Open: %v", err)
+		log.Fatalf("charta.Open: %v", err)
 	}
 	defer db.Close(ctx)
 
@@ -92,7 +92,7 @@ func runWithNeo4j(ctx context.Context) {
 	session := driver.NewSession(ctx, neo4j.SessionConfig{})
 	defer session.Close(ctx)
 
-	// Run the same query against Neo4j. The column names match the graphlite path.
+	// Run the same query against Neo4j. The column names match the charta path.
 	result, err := session.Run(ctx, `MATCH (p:Person) RETURN p.name AS name, p.age AS age`, nil)
 	if err != nil {
 		log.Fatalf("session.Run: %v", err)
@@ -108,8 +108,8 @@ func runWithNeo4j(ctx context.Context) {
 	}
 }
 
-// printResult drains a graphlite *Result and prints each record's name and age columns.
-func printResult(ctx context.Context, result *graphlite.Result) {
+// printResult drains a charta *Result and prints each record's name and age columns.
+func printResult(ctx context.Context, result *charta.Result) {
 	for result.Next(ctx) {
 		rec := result.Record()
 		name, _ := rec.Get("name")

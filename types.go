@@ -1,11 +1,11 @@
-package graphlite
+package charta
 
 import (
 	"fmt"
 
-	"github.com/LackOfMorals/graphlite/v2/cypher/spatial"
-	"github.com/LackOfMorals/graphlite/v2/cypher/temporal"
-	"github.com/LackOfMorals/graphlite/v2/cypher/vector"
+	"github.com/LackOfMorals/charta/cypher/spatial"
+	"github.com/LackOfMorals/charta/cypher/temporal"
+	"github.com/LackOfMorals/charta/cypher/vector"
 )
 
 // Node represents a graph node with a unique element ID, a set of labels, and
@@ -62,7 +62,7 @@ type Record struct {
 // values is copied because the caller (Result.Next) reuses its vals buffer.
 func newRecord(keys []string, values []any) *Record {
 	if len(keys) != len(values) {
-		panic(fmt.Sprintf("graphlite: newRecord: keys length %d != values length %d", len(keys), len(values)))
+		panic(fmt.Sprintf("charta: newRecord: keys length %d != values length %d", len(keys), len(values)))
 	}
 	v := make([]any, len(values))
 	copy(v, values)
@@ -105,7 +105,7 @@ func (r *Record) Values() []any {
 }
 
 // ErrUnsupportedCypher is returned when a query uses a Cypher construct that
-// graphlite does not support. Use errors.As to inspect the Clause and Position
+// charta does not support. Use errors.As to inspect the Clause and Position
 // fields.
 type ErrUnsupportedCypher struct {
 	// Clause is the Cypher clause or construct that is not supported
@@ -124,12 +124,12 @@ type ErrUnsupportedCypher struct {
 // Error implements the error interface.
 func (e *ErrUnsupportedCypher) Error() string {
 	if e.Position > 0 {
-		return fmt.Sprintf("graphlite: unsupported Cypher construct %q at position %d: %s", e.Clause, e.Position, e.Detail)
+		return fmt.Sprintf("charta: unsupported Cypher construct %q at position %d: %s", e.Clause, e.Position, e.Detail)
 	}
 	if e.Detail != "" {
-		return fmt.Sprintf("graphlite: unsupported Cypher construct %q: %s", e.Clause, e.Detail)
+		return fmt.Sprintf("charta: unsupported Cypher construct %q: %s", e.Clause, e.Detail)
 	}
-	return fmt.Sprintf("graphlite: unsupported Cypher construct %q", e.Clause)
+	return fmt.Sprintf("charta: unsupported Cypher construct %q", e.Clause)
 }
 
 // ErrMissingParameter is returned when a parameterised query references a
@@ -141,7 +141,7 @@ type ErrMissingParameter struct {
 
 // Error implements the error interface.
 func (e *ErrMissingParameter) Error() string {
-	return fmt.Sprintf("graphlite: missing query parameter $%s", e.Name)
+	return fmt.Sprintf("charta: missing query parameter $%s", e.Name)
 }
 
 // ErrImportDepthExceeded is returned by Import when the input JSON nesting
@@ -153,7 +153,7 @@ type ErrImportDepthExceeded struct {
 
 // Error implements the error interface.
 func (e *ErrImportDepthExceeded) Error() string {
-	return fmt.Sprintf("graphlite: import JSON nesting depth exceeds maximum of %d", e.MaxDepth)
+	return fmt.Sprintf("charta: import JSON nesting depth exceeds maximum of %d", e.MaxDepth)
 }
 
 // ErrImportTooLarge is returned by Import when the input stream exceeds the
@@ -165,20 +165,20 @@ type ErrImportTooLarge struct {
 
 // Error implements the error interface.
 func (e *ErrImportTooLarge) Error() string {
-	return fmt.Sprintf("graphlite: import data exceeds maximum size of %d bytes", e.MaxBytes)
+	return fmt.Sprintf("charta: import data exceeds maximum size of %d bytes", e.MaxBytes)
 }
 
 // ErrReadOnly is returned when a write query is executed against a database
 // opened with WithReadOnly().
-var ErrReadOnly = fmt.Errorf("graphlite: database is read-only")
+var ErrReadOnly = fmt.Errorf("charta: database is read-only")
 
 // ErrNoRecords is returned by Result.Single when the result set contains no
 // records. It is a sentinel value and can be checked with errors.Is.
-var ErrNoRecords = fmt.Errorf("graphlite: result contains no records")
+var ErrNoRecords = fmt.Errorf("charta: result contains no records")
 
 // ErrMultipleRecords is returned by Result.Single when the result set contains
 // more than one record. It is a sentinel value and can be checked with errors.Is.
-var ErrMultipleRecords = fmt.Errorf("graphlite: result contains multiple records")
+var ErrMultipleRecords = fmt.Errorf("charta: result contains multiple records")
 
 // Temporal value types returned for Cypher DATE, LOCAL TIME, TIME, LOCAL
 // DATETIME, DATETIME and DURATION results. Each renders as its canonical

@@ -1,7 +1,7 @@
 package interp
 
 import (
-	"github.com/LackOfMorals/graphlite/v2/cypher/syntax"
+	"github.com/LackOfMorals/charta/cypher/syntax"
 )
 
 // labelNames flattens a conjunction of labels (`:A:B`, `A&B`, `$(expr)`) into

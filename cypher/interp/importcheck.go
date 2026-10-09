@@ -132,7 +132,7 @@ func propList(d schemaDef, v string) string {
 
 // SchemaStatements returns Cypher that recreates the user-defined indexes and
 // constraints (not the built-in token lookup indexes), in creation order, with
-// IF NOT EXISTS so replaying them is harmless. Index kinds graphlite cannot
+// IF NOT EXISTS so replaying them is harmless. Index kinds charta cannot
 // recreate from their definition (full-text) are left out.
 func (e *Engine) SchemaStatements(ctx context.Context, db DB) ([]string, error) {
 	g := newGraph(ctx, db)

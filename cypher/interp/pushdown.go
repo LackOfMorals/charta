@@ -4,7 +4,7 @@ import (
 	"math"
 	"strings"
 
-	"github.com/LackOfMorals/graphlite/v2/cypher/syntax"
+	"github.com/LackOfMorals/charta/cypher/syntax"
 )
 
 // propHint is a property equality, key = val, used to narrow a node scan in

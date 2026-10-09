@@ -1,5 +1,5 @@
-feature: graphlite-v2-api-redesign
-prd: ./prd-graphlite-v2-api-redesign.md
+feature: charta-v2-api-redesign
+prd: ./prd-charta-v2-api-redesign.md
 created_at: 2026-05-25T00:00:00Z
 updated_at: 2026-05-25T00:00:00Z
 
@@ -217,17 +217,17 @@ tasks:
       - "Package doc in `driver.go` does not mention `neo4j.DriverWithContext`, `DriverCompat`, `NewDriver`, or the compat layer"
       - "Package doc accurately describes the v2.0 entry point (`Open`, `RunQuery`, `BeginTx`)"
       - "Every exported symbol in the package has a doc comment"
-      - "`go doc github.com/LackOfMorals/graphlite` output contains no v1.x references"
+      - "`go doc github.com/LackOfMorals/charta` output contains no v1.x references"
     completed_at: "2026-05-26T09:00:00Z"
 
   - id: task-012
     title: "Add example programs: backend_switch, copy_from_neo4j, copy_to_neo4j"
     description: |
       Create three self-contained example programs under `examples/`, each with
-      its own `go.mod` that imports both graphlite and the neo4j driver. The
+      its own `go.mod` that imports both charta and the neo4j driver. The
       programs demonstrate: choosing a backend at startup via env var
-      (`examples/backend_switch/`), seeding a local graphlite DB from Neo4j
-      (`examples/copy_from_neo4j/`), and pushing a sub-graph from graphlite to
+      (`examples/backend_switch/`), seeding a local charta DB from Neo4j
+      (`examples/copy_from_neo4j/`), and pushing a sub-graph from charta to
       Neo4j (`examples/copy_to_neo4j/`). Each must compile with `go build`.
     status: completed
     dependencies:
@@ -236,7 +236,7 @@ tasks:
       - "`examples/backend_switch/main.go` and `examples/backend_switch/go.mod` exist and compile"
       - "`examples/copy_from_neo4j/main.go` and `examples/copy_from_neo4j/go.mod` exist and compile"
       - "`examples/copy_to_neo4j/main.go` and `examples/copy_to_neo4j/go.mod` exist and compile"
-      - "Each example's `go.mod` imports both `github.com/LackOfMorals/graphlite` and `github.com/neo4j/neo4j-go-driver/v6`"
+      - "Each example's `go.mod` imports both `github.com/LackOfMorals/charta` and `github.com/neo4j/neo4j-go-driver/v6`"
       - "Each example includes a brief comment block explaining the pattern it demonstrates"
     completed_at: "2026-05-26T10:00:00Z"
 
@@ -248,14 +248,14 @@ tasks:
       Replace the opening value proposition with: zero-infrastructure embedded
       property graph database, openCypher over SQLite, no external process, no
       driver dependency. Update the Quick Start section to use the native API
-      (`Open`, `RunQuery`, `BeginTx`). Replace the "Switching Between graphlite
+      (`Open`, `RunQuery`, `BeginTx`). Replace the "Switching Between charta
       and Neo4j" section with a pointer to the example programs.
     status: completed
     dependencies:
       - task-012
     acceptance_criteria:
       - "README contains no references to `NewDriver`, `DriverCompat`, `CopyFrom`, or `CopyTo`"
-      - "README Quick Start uses `graphlite.Open` and `db.RunQuery` / `db.BeginTx`"
+      - "README Quick Start uses `charta.Open` and `db.RunQuery` / `db.BeginTx`"
       - "README links to `examples/` for side-by-side neo4j usage patterns"
       - "README accurately describes the v2.0 API surface (Open, RunQuery, BeginTx, Result, Record)"
       - "README retains the Cypher Compatibility table and TCK pass rate"

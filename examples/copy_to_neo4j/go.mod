@@ -1,9 +1,9 @@
-module github.com/LackOfMorals/graphlite/examples/copy_to_neo4j
+module github.com/LackOfMorals/charta/examples/copy_to_neo4j
 
 go 1.24
 
 require (
-	github.com/LackOfMorals/graphlite v0.0.0
+	github.com/LackOfMorals/charta v0.0.0
 	github.com/neo4j/neo4j-go-driver/v6 v6.1.0
 )
 
@@ -27,4 +27,4 @@ require (
 	modernc.org/sqlite v1.35.0 // indirect
 )
 
-replace github.com/LackOfMorals/graphlite => ../..
+replace github.com/LackOfMorals/charta => ../..

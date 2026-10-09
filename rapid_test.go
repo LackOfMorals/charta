@@ -1,4 +1,4 @@
-// Package graphlite_test contains property-based tests using pgregory.net/rapid.
+// Package charta_test contains property-based tests using pgregory.net/rapid.
 // These tests generate random graphs and verify full round-trip fidelity via
 // CREATE → MATCH cycles, exercising JSON encoding, label parsing, and the scope
 // tracker.
@@ -6,7 +6,7 @@
 // Run with:
 //
 //	CGO_ENABLED=0 go test -run TestRapid ./...
-package graphlite_test
+package charta_test
 
 import (
 	"context"
@@ -15,7 +15,7 @@ import (
 	"strings"
 	"testing"
 
-	graphlite "github.com/LackOfMorals/graphlite/v2"
+	charta "github.com/LackOfMorals/charta"
 	"pgregory.net/rapid"
 )
 
@@ -243,7 +243,7 @@ func buildCreateCypher(spec nodeSpec) (string, map[string]any) {
 
 // normaliseProps converts a property map from the input spec to a canonical
 // form for comparison. All values (including nil/null) are preserved because
-// graphlite stores nil params as JSON null and retrieves them as nil.
+// charta stores nil params as JSON null and retrieves them as nil.
 func normaliseProps(input map[string]any) map[string]any {
 	out := make(map[string]any, len(input))
 	for k, v := range input {
@@ -319,7 +319,7 @@ func TestRapid_NodeRoundTrip(t *testing.T) {
 	rapid.Check(t, func(t *rapid.T) {
 		ctx := context.Background()
 
-		db, err := graphlite.Open(":memory:")
+		db, err := charta.Open(":memory:")
 		if err != nil {
 			t.Fatalf("Open: %v", err)
 		}
@@ -359,15 +359,15 @@ func TestRapid_NodeRoundTrip(t *testing.T) {
 
 		// Verify each spec against the retrieved nodes. Since SQLite returns nodes
 		// in insertion order (AUTOINCREMENT), we can match by index.
-		nodes := make([]*graphlite.Node, 0, len(records))
+		nodes := make([]*charta.Node, 0, len(records))
 		for _, rec := range records {
 			v, ok := rec.Get("n")
 			if !ok {
 				t.Fatalf("record missing key 'n'")
 			}
-			node, ok := v.(*graphlite.Node)
+			node, ok := v.(*charta.Node)
 			if !ok {
-				t.Fatalf("expected *graphlite.Node, got %T", v)
+				t.Fatalf("expected *charta.Node, got %T", v)
 			}
 			nodes = append(nodes, node)
 		}
@@ -397,7 +397,7 @@ func TestRapid_LabelRoundTrip(t *testing.T) {
 	rapid.Check(t, func(t *rapid.T) {
 		ctx := context.Background()
 
-		db, err := graphlite.Open(":memory:")
+		db, err := charta.Open(":memory:")
 		if err != nil {
 			t.Fatalf("Open: %v", err)
 		}
@@ -436,9 +436,9 @@ func TestRapid_LabelRoundTrip(t *testing.T) {
 		if !ok {
 			t.Fatalf("record missing key 'n'")
 		}
-		node, ok := v.(*graphlite.Node)
+		node, ok := v.(*charta.Node)
 		if !ok {
-			t.Fatalf("expected *graphlite.Node, got %T", v)
+			t.Fatalf("expected *charta.Node, got %T", v)
 		}
 
 		// All labels in the spec must be present on the retrieved node.
@@ -465,13 +465,13 @@ func TestRapid_LabelRoundTrip(t *testing.T) {
 }
 
 // TestRapid_JSONImportRoundTrip generates a small graph (1–30 nodes, 0–20
-// edges), imports it via graphlite.Import(FormatJSON), then verifies node and
+// edges), imports it via charta.Import(FormatJSON), then verifies node and
 // edge counts via MATCH queries.
 func TestRapid_JSONImportRoundTrip(t *testing.T) {
 	rapid.Check(t, func(t *rapid.T) {
 		ctx := context.Background()
 
-		db, err := graphlite.Open(":memory:")
+		db, err := charta.Open(":memory:")
 		if err != nil {
 			t.Fatalf("Open: %v", err)
 		}
@@ -529,7 +529,7 @@ func TestRapid_JSONImportRoundTrip(t *testing.T) {
 		}
 
 		// Import.
-		if err := db.Import(ctx, strings.NewReader(string(jsonBytes)), graphlite.FormatJSON); err != nil {
+		if err := db.Import(ctx, strings.NewReader(string(jsonBytes)), charta.FormatJSON); err != nil {
 			t.Fatalf("Import: %v", err)
 		}
 

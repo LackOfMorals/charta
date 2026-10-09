@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/LackOfMorals/graphlite/v2/cypher/syntax"
+	"github.com/LackOfMorals/charta/cypher/syntax"
 )
 
 // csvSource is the state LOAD CSV exposes to file() and linenumber().
@@ -24,7 +24,7 @@ type csvSource struct {
 func (ex *exec) resolveCSVPath(raw string) (string, error) {
 	if ex.g.eng == nil || ex.g.eng.ImportDir == "" {
 		return "", errorf("ConfigurationError", "LoadCSVDisabled",
-			"LOAD CSV is disabled: open the database with an import directory (graphlite.WithImportDirectory)")
+			"LOAD CSV is disabled: open the database with an import directory (charta.WithImportDirectory)")
 	}
 	path := raw
 	if strings.Contains(raw, "://") {

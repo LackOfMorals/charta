@@ -1,20 +1,20 @@
 //go:build ignore
 
-// neo4j_roundtrip shows the pull → modify → push cycle using graphlite as a
+// neo4j_roundtrip shows the pull → modify → push cycle using charta as a
 // local processing layer between two drivers.
 //
 //  1. Pull: use CopyFrom to copy a graph from a remote Neo4j driver into a
-//     local in-memory graphlite instance.
+//     local in-memory charta instance.
 //  2. Modify: run Cypher against the local copy to enrich or transform the data.
 //  3. Push: use CopyTo to promote the modified graph to the destination driver.
 //
-// The remote and destination variables below use in-memory graphlite instances
+// The remote and destination variables below use in-memory charta instances
 // so this example runs without a live Neo4j server. To point at real Neo4j,
 // replace those two lines with:
 //
 //	import (
 //	    "github.com/neo4j/neo4j-go-driver/v6/neo4j"
-//	    "github.com/LackOfMorals/graphlite/v2/neo4jadapter"
+//	    "github.com/LackOfMorals/charta/neo4jadapter"
 //	)
 //
 //	neo4jDriver, err := neo4j.NewDriverWithContext(
@@ -25,7 +25,7 @@
 //
 // Run with:
 //
-//	go run github.com/LackOfMorals/graphlite/examples/neo4j_roundtrip.go
+//	go run github.com/LackOfMorals/charta/examples/neo4j_roundtrip.go
 //
 // or from the repo root:
 //
@@ -36,16 +36,16 @@ import (
 	"context"
 	"fmt"
 
-	graphlite "github.com/LackOfMorals/graphlite/v2"
+	charta "github.com/LackOfMorals/charta"
 )
 
 func main() {
 	ctx := context.Background()
 
 	// ── Step 1: seed the remote source ───────────────────────────────────────
-	// Using an in-memory graphlite instance here. In production replace with:
+	// Using an in-memory charta instance here. In production replace with:
 	//   remote := neo4jadapter.New(neo4jDriver)
-	remote, err := graphlite.NewDriver(":memory:", graphlite.NoAuth())
+	remote, err := charta.NewDriver(":memory:", charta.NoAuth())
 	must(err)
 	defer remote.Close(ctx)
 
@@ -53,8 +53,8 @@ func main() {
 	fmt.Println("=== Remote graph (before) ===")
 	printGraph(ctx, remote)
 
-	// ── Step 2: pull into a local graphlite instance ──────────────────────────
-	local, err := graphlite.Open(":memory:")
+	// ── Step 2: pull into a local charta instance ──────────────────────────
+	local, err := charta.Open(":memory:")
 	must(err)
 	defer local.Close(ctx)
 
@@ -81,7 +81,7 @@ func main() {
 			map[string]any{"name": name},
 		)
 		must(err)
-		eager, err := graphlite.NewEagerResult(ctx, qr)
+		eager, err := charta.NewEagerResult(ctx, qr)
 		must(err)
 		if len(eager.Records) == 0 {
 			continue
@@ -105,9 +105,9 @@ func main() {
 	must(err)
 
 	// ── Step 4: push the enriched graph to the destination ───────────────────
-	// Using an in-memory graphlite instance here. In production replace with:
+	// Using an in-memory charta instance here. In production replace with:
 	//   destination := neo4jadapter.New(destinationNeo4jDriver)
-	destination, err := graphlite.NewDriver(":memory:", graphlite.NoAuth())
+	destination, err := charta.NewDriver(":memory:", charta.NoAuth())
 	must(err)
 	defer destination.Close(ctx)
 
@@ -119,7 +119,7 @@ func main() {
 }
 
 // seed populates the driver with a small org-chart graph.
-func seed(ctx context.Context, driver graphlite.Driver) {
+func seed(ctx context.Context, driver charta.Driver) {
 	queries := []struct {
 		cypher string
 		params map[string]any
@@ -147,19 +147,19 @@ func seed(ctx context.Context, driver graphlite.Driver) {
 		},
 	}
 	for _, q := range queries {
-		_, err := graphlite.ExecuteQuery[*graphlite.EagerResult](ctx, driver, q.cypher, q.params, graphlite.EagerResultTransformer)
+		_, err := charta.ExecuteQuery[*charta.EagerResult](ctx, driver, q.cypher, q.params, charta.EagerResultTransformer)
 		must(err)
 	}
 }
 
 // printGraph prints employees, their roles, and the department they work in.
-func printGraph(ctx context.Context, driver graphlite.Driver) {
-	result, err := graphlite.ExecuteQuery[*graphlite.EagerResult](ctx, driver,
+func printGraph(ctx context.Context, driver charta.Driver) {
+	result, err := charta.ExecuteQuery[*charta.EagerResult](ctx, driver,
 		`MATCH (e:Employee)-[:WORKS_IN]->(d:Department)
 		 RETURN e.name AS name, e.role AS role, e.yearsExp AS exp,
 		        d.name AS dept, d.region AS region
 		 ORDER BY e.name`,
-		nil, graphlite.EagerResultTransformer,
+		nil, charta.EagerResultTransformer,
 	)
 	must(err)
 	for _, rec := range result.Records {
@@ -170,11 +170,11 @@ func printGraph(ctx context.Context, driver graphlite.Driver) {
 }
 
 // printManagers prints MANAGES relationships.
-func printManagers(ctx context.Context, driver graphlite.Driver) {
-	result, err := graphlite.ExecuteQuery[*graphlite.EagerResult](ctx, driver,
+func printManagers(ctx context.Context, driver charta.Driver) {
+	result, err := charta.ExecuteQuery[*charta.EagerResult](ctx, driver,
 		`MATCH (mgr:Employee)-[:MANAGES]->(rep:Employee)
 		 RETURN mgr.name AS manager, rep.name AS report`,
-		nil, graphlite.EagerResultTransformer,
+		nil, charta.EagerResultTransformer,
 	)
 	must(err)
 	for _, rec := range result.Records {

@@ -1,4 +1,4 @@
-module github.com/LackOfMorals/graphlite/v2
+module github.com/LackOfMorals/charta
 
 go 1.26.5
 

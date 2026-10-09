@@ -73,7 +73,7 @@ tasks:
   - id: task-005
     title: "Column type mapping, now including temporal types"
     description: |
-      Map Kuzu column types to graphlite values: INT8-INT64/UINT* -> integer (range checked), FLOAT/DOUBLE -> float,
+      Map Kuzu column types to charta values: INT8-INT64/UINT* -> integer (range checked), FLOAT/DOUBLE -> float,
       STRING -> string, BOOL -> boolean, DATE -> date, TIMESTAMP -> localdatetime, TIMESTAMP_TZ -> datetime,
       INTERVAL -> duration (parsed with cypher/temporal), FLOAT arrays -> list of floats or vector when a dimension is
       mapped. LIST of scalars -> list. STRUCT, MAP, UNION, NODE, REL, RECURSIVE_REL: clear error naming column and type,

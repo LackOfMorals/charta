@@ -16,7 +16,7 @@ tasks:
     title: "Declare indexes and constraints (SQLite expression indexes, metadata table)"
     description: |
       Superseded by Cypher schema commands. CREATE INDEX / CREATE CONSTRAINT are executed by cypher/interp
-      (schema.go); definitions live in the graphlite_schema table and RANGE/TEXT indexes and the lookup index
+      (schema.go); definitions live in the charta_schema table and RANGE/TEXT indexes and the lookup index
       of unique/key constraints are SQLite expression indexes gl_idx_<id>. The PRD's property_index_meta table
       and store.CreatePropertyIndex were not needed.
     status: completed
@@ -45,11 +45,11 @@ tasks:
     title: "Public Go error type for constraint violations"
     description: |
       Map interp errors with class ConstraintVerificationFailed / code ConstraintValidationFailed to a public
-      *graphlite.ErrConstraintViolation{Constraint, Kind, Label, Properties, Detail} in engine.go (like
+      *charta.ErrConstraintViolation{Constraint, Kind, Label, Properties, Detail} in engine.go (like
       ErrUnsupportedCypher is mapped), so callers can use errors.As. Include the constraint name in the
       interp error so it can be reported.
     status: completed
-    notes: "Done: graphlite.ErrConstraintViolation (constraint_error.go) mapped in execError; interp.Error carries a SchemaRef; vector index dimension errors use it too."
+    notes: "Done: charta.ErrConstraintViolation (constraint_error.go) mapped in execError; interp.Error carries a SchemaRef; vector index dimension errors use it too."
     dependencies:
       - task-002
     acceptance_criteria:
@@ -109,7 +109,7 @@ tasks:
     title: "Schema survives reopen, Snapshot and CopyTo"
     description: |
       Tests: definitions and backing indexes persist after closing and reopening a file database; Snapshot
-      copies the graphlite_schema table; constraint enforcement still works after reopen without any warm-up.
+      copies the charta_schema table; constraint enforcement still works after reopen without any warm-up.
     status: completed
     notes: "Done: schema_persist_test.go (reopen and Snapshot)."
     dependencies:

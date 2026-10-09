@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/LackOfMorals/graphlite/v2/store"
+	"github.com/LackOfMorals/charta/store"
 )
 
 // TestOpenMemory verifies that Open(":memory:") returns a usable store.

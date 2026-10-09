@@ -55,7 +55,7 @@ DECISIONS (from the numbers)
       - hand the rows to a pool of up to 8 parser goroutines (the parse is 10 us, the fetch 4), so the build
         runs at the fetch speed; builders are merged and normalised in parallel at the end.
     The remaining floor is the fetch of the ~4 KB props text per node. A binary side table
-    graphlite_vectors(index_id, node_id, blob) would cut the row to ~1.5 KB but needs writes to keep it in step
+    charta_vectors(index_id, node_id, blob) would cut the row to ~1.5 KB but needs writes to keep it in step
     (and the bulk importer bypasses the interpreter), so it is not worth it at 0.4 s per 100,000.
     Also tried: mmap_size on the read pool (211 -> 197 ms at 10k, within noise), not adopted.
 
