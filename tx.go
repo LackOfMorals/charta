@@ -22,9 +22,10 @@ import (
 //	if err := doWork(tx); err != nil { return err }
 //	return tx.Commit()
 type Tx struct {
-	rawTx store.TxExecer
-	done  bool
-	eng   *interp.Engine // interpreter state of the parent DB
+	rawTx  store.TxExecer
+	done   bool
+	eng    *interp.Engine       // interpreter state of the parent DB
+	deltas []interp.VectorDelta // vector index changes, applied when the transaction commits
 }
 
 // Run executes cypherStr within the transaction and returns a lazy *Result.
@@ -37,7 +38,7 @@ func (t *Tx) Run(ctx context.Context, cypherStr string, params map[string]any) (
 	if t.done {
 		return nil, fmt.Errorf("graphlite: transaction already closed")
 	}
-	return runInterp(ctx, t.rawTx, cypherStr, params, nil, nil, false, t.eng)
+	return runInterp(ctx, t.rawTx, cypherStr, params, nil, nil, false, t.eng, &t.deltas)
 }
 
 // Commit commits the transaction.
@@ -49,6 +50,8 @@ func (t *Tx) Commit() error {
 		return fmt.Errorf("graphlite: commit: %w", err)
 	}
 	t.done = true
+	t.eng.ApplyVectorDeltas(t.deltas)
+	t.deltas = nil
 	return nil
 }
 
@@ -68,6 +71,7 @@ func (t *Tx) Rollback() error {
 		return nil
 	}
 	t.done = true
+	t.deltas = nil
 	t.eng.ResetIndexState() // the rollback may have undone an automatic index
 	if err := t.rawTx.Rollback(); err != nil {
 		return fmt.Errorf("graphlite: rollback: %w", err)

@@ -82,6 +82,8 @@ type graph struct {
 	constraintsLoaded bool
 	vectors           []schemaDef
 	vectorLoaded      bool
+	vectorCache       bool          // may search the shared vector matrices
+	deltas            []VectorDelta // vector index changes for the commit hook
 }
 
 func newGraph(ctx context.Context, db DB) *graph {

@@ -25,6 +25,7 @@ type dbConfig struct {
 	maxPathHops int
 	importDir   string
 	readConns   int
+	vectorCache int64
 }
 
 // WithBusyTimeout sets the SQLite busy_timeout pragma. When a write operation
@@ -100,6 +101,18 @@ func WithMaxReadConns(n int) Option {
 	return func(c *dbConfig) {
 		if n > 0 {
 			c.readConns = n
+		}
+	}
+}
+
+// WithMaxVectorCacheBytes bounds the memory used by the in-memory vector
+// matrices that serve db.index.vector.queryNodes (default 512 MiB across all
+// vector indexes). A search on an index that does not fit is still answered, from
+// a matrix built for that one query, which is slower. n <= 0 is a no-op.
+func WithMaxVectorCacheBytes(n int64) Option {
+	return func(c *dbConfig) {
+		if n > 0 {
+			c.vectorCache = n
 		}
 	}
 }

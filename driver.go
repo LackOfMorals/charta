@@ -104,6 +104,7 @@ func Open(path string, opts ...Option) (*DB, error) {
 	d := &DB{st: st, readOnly: cfg.readOnly, hasReadPool: st.HasReadPool()}
 	d.eng.MaxPathHops = cfg.maxPathHops
 	d.eng.ImportDir = cfg.importDir
+	d.eng.VectorCacheBytes = cfg.vectorCache
 	return d, nil
 }
 
@@ -150,7 +151,7 @@ func (d *DB) RunQuery(ctx context.Context, cypherStr string, params map[string]a
 	if d.hasReadPool {
 		beginRead = d.st.BeginReadTx
 	}
-	res, err := runInterp(ctx, d.st.Exec(), cypherStr, params, d.st.BeginExecTx, beginRead, d.readOnly, &d.eng)
+	res, err := runInterp(ctx, d.st.Exec(), cypherStr, params, d.st.BeginExecTx, beginRead, d.readOnly, &d.eng, nil)
 	if keys := d.eng.TakeWantedIndexes(); len(keys) > 0 {
 		d.buildIndexes(keys)
 	}
@@ -211,3 +212,43 @@ func (d *DB) RegisterProcedure(p *proc.Procedure) { d.eng.Procs.Register(p); d.e
 
 // ClearProcedures removes every registered procedure.
 func (d *DB) ClearProcedures() { d.eng.Procs.Clear(); d.eng.ClearStatements() }
+
+// VectorMatch is one result of [DB.VectorSearch].
+type VectorMatch struct {
+	// Node is the matching node.
+	Node *Node
+	// Score is the similarity in [0, 1], higher is more similar: (1 + cosine)/2
+	// for a cosine index, 1/(1 + squared distance) for a Euclidean one (the same
+	// scale as vector.similarity.cosine / vector.similarity.euclidean).
+	Score float64
+}
+
+// VectorSearch returns the k nodes whose vectors are most similar to query,
+// best first, using the named vector index (created with CREATE VECTOR INDEX).
+// It is a Go-level shorthand for db.index.vector.queryNodes: the search scans
+// the index exhaustively from an in-memory copy of its vectors, split across
+// CPUs, so it is exact. query must have the index's dimension.
+func (d *DB) VectorSearch(ctx context.Context, indexName string, query []float64, k int) ([]VectorMatch, error) {
+	q := make([]any, len(query))
+	for i, f := range query {
+		q[i] = f
+	}
+	res, err := d.RunQuery(ctx,
+		"CALL db.index.vector.queryNodes($index, $k, $query) YIELD node, score RETURN node, score",
+		map[string]any{"index": indexName, "k": int64(k), "query": q})
+	if err != nil {
+		return nil, err
+	}
+	recs, err := res.Collect(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]VectorMatch, 0, len(recs))
+	for _, r := range recs {
+		vals := r.Values()
+		node, _ := vals[0].(*Node)
+		score, _ := vals[1].(float64)
+		out = append(out, VectorMatch{Node: node, Score: score})
+	}
+	return out, nil
+}

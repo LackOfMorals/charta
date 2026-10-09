@@ -42,7 +42,7 @@ func (readOnlyDB) ExecContext(context.Context, string, ...any) (sql.Result, erro
 // error; otherwise ex is already transaction-scoped. When beginRead is also
 // non-nil, a statement without updating clauses runs instead in a read-only
 // transaction on the read pool, so it neither waits for nor blocks the writer.
-func runInterp(ctx context.Context, ex execer, cypherStr string, params map[string]any, beginTxFn, beginRead func(context.Context) (txExecer, error), readOnly bool, eng *interp.Engine) (*Result, error) {
+func runInterp(ctx context.Context, ex execer, cypherStr string, params map[string]any, beginTxFn, beginRead func(context.Context) (txExecer, error), readOnly bool, eng *interp.Engine, deltaSink *[]interp.VectorDelta) (*Result, error) {
 	st, err := parseSyntax(cypherStr, eng)
 	if err != nil {
 		return nil, err
@@ -76,7 +76,9 @@ func runInterp(ctx context.Context, ex execer, cypherStr string, params map[stri
 		if err != nil {
 			return nil, fmt.Errorf("graphlite: begin transaction: %w", err)
 		}
-		res, err = interp.RunWith(ctx, tx, st, params, eng)
+		// A statement with no updating clause and no enclosing transaction has no
+		// uncommitted writes of its own, so it may search the shared vector matrices.
+		res, err = interp.RunWithOptions(ctx, tx, st, params, eng, interp.Options{VectorCache: !hasWrites(st)})
 		if err != nil {
 			_ = tx.Rollback()
 			eng.ResetIndexState()
@@ -85,10 +87,14 @@ func runInterp(ctx context.Context, ex execer, cypherStr string, params map[stri
 		if err := tx.Commit(); err != nil {
 			return nil, fmt.Errorf("graphlite: commit: %w", err)
 		}
+		eng.ApplyVectorDeltas(res.VectorDeltas) // only now that the commit succeeded
 	} else {
 		res, err = interp.RunWith(ctx, ex, st, params, eng)
 		if err != nil {
 			return nil, execError(err)
+		}
+		if deltaSink != nil { // inside an explicit transaction: applied when it commits
+			*deltaSink = append(*deltaSink, res.VectorDeltas...)
 		}
 	}
 	return interpResult(res), nil

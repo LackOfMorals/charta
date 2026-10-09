@@ -135,6 +135,15 @@ var Builtin = []*Signature{
 	{Name: "db.labels", Outputs: []Param{{Name: "label", Type: "STRING"}}},
 	{Name: "db.relationshipTypes", Outputs: []Param{{Name: "relationshipType", Type: "STRING"}}},
 	{Name: "db.propertyKeys", Outputs: []Param{{Name: "propertyKey", Type: "STRING"}}},
+	{
+		Name: "db.index.vector.queryNodes",
+		Inputs: []Param{
+			{Name: "indexName", Type: "STRING", Nullable: true},
+			{Name: "numberOfNearestNeighbours", Type: "INTEGER", Nullable: true},
+			{Name: "query", Type: "ANY", Nullable: true},
+		},
+		Outputs: []Param{{Name: "node", Type: "NODE"}, {Name: "score", Type: "FLOAT"}},
+	},
 }
 
 // Key normalises a procedure name for lookup.

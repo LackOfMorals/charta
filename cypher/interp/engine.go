@@ -29,6 +29,12 @@ type Engine struct {
 	scans   map[string]int  // how often each key was used to narrow a scan
 	wanted  map[string]bool // keys read-only statements asked to have indexed
 
+	// VectorCacheBytes bounds the memory of the cached vector matrices in
+	// total (default DefaultVectorCacheBytes).
+	VectorCacheBytes int64
+	vecMu            sync.Mutex
+	vec              vecCache
+
 	stmtMu sync.RWMutex
 	stmts  map[string]*syntax.Statement // parsed and analysed statements, by text
 }

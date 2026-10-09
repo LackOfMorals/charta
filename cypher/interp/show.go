@@ -4,6 +4,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/LackOfMorals/graphlite/v2/cypher/proc"
 	"github.com/LackOfMorals/graphlite/v2/cypher/syntax"
 )
 
@@ -254,8 +255,8 @@ func (ex *exec) showConstraints(filter []string, what string) ([]row, error) {
 
 func (ex *exec) showProcedures() ([]row, error) {
 	names := map[string]bool{}
-	for _, n := range []string{"db.labels", "db.relationshipTypes", "db.propertyKeys"} {
-		names[n] = true
+	for _, sig := range proc.Builtin {
+		names[sig.Name] = true
 	}
 	if ex.procs != nil {
 		for _, n := range ex.procs.Names() {
