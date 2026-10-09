@@ -1,6 +1,7 @@
 package interp
 
 import (
+	"errors"
 	"sort"
 
 	"github.com/LackOfMorals/graphlite/v2/cypher/syntax"
@@ -233,15 +234,31 @@ func (ex *exec) matchSelected(part *syntax.PatternPart, r row, used map[int64]bo
 	}
 	groups := map[[2]int64][]match{}
 	var order [][2]int64
+	// With both ends bound there is a single (start, end) partition, so ANY k
+	// can stop as soon as k matches are found.
+	stopAfter := int64(0)
+	if sel.Kind == syntax.SelectorAny && !selectedEarlyStopDisabled && endsBound(part, r) {
+		stopAfter = k
+	}
+	total := 0
 	err := ex.matchPart(&inner, r, used, func(r2 row) error {
+		if total++; total > maxSelectedMatches {
+			return unsupported("path selector over more than %d matches; bound the pattern's length or its endpoints", maxSelectedMatches)
+		}
 		p := r2[pathVar].(*Path)
 		key := [2]int64{p.Nodes[0].ID, p.Nodes[len(p.Nodes)-1].ID}
 		if _, seen := groups[key]; !seen {
 			order = append(order, key)
 		}
 		groups[key] = append(groups[key], match{r2, len(p.Rels)})
+		if stopAfter > 0 && int64(total) >= stopAfter {
+			return errSelectedDone
+		}
 		return nil
 	})
+	if err == errSelectedDone {
+		err = nil
+	}
 	if err != nil {
 		return err
 	}
@@ -290,6 +307,32 @@ func (ex *exec) matchSelected(part *syntax.PatternPart, r row, used map[int64]bo
 		}
 	}
 	return nil
+}
+
+// maxSelectedMatches bounds how many matches a path selector other than the
+// shortest-path searches may enumerate before giving up with an error.
+var maxSelectedMatches = 1_000_000
+
+// selectedEarlyStopDisabled is a test hook that turns off early termination.
+var selectedEarlyStopDisabled bool
+
+var errSelectedDone = errors.New("selector satisfied")
+
+// endsBound reports whether the first and last elements of the pattern are
+// node patterns whose variables are already bound to nodes in r.
+func endsBound(part *syntax.PatternPart, r row) bool {
+	if len(part.Elems) < 2 {
+		return false
+	}
+	bound := func(e syntax.PatternElem) bool {
+		np, ok := e.(*syntax.NodePattern)
+		if !ok || np.Var == "" {
+			return false
+		}
+		_, isNode := r[np.Var].(*Node)
+		return isNode
+	}
+	return bound(part.Elems[0]) && bound(part.Elems[len(part.Elems)-1])
 }
 
 func min64(a, b int64) int64 {

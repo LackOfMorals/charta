@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math/rand"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -241,4 +242,68 @@ func BenchmarkPropertyLookup(b *testing.B) {
 		}
 		lookup(b, db, relQ)
 	})
+}
+
+// BenchmarkShortestPath measures shortest-path queries on a 100,000-node grid
+// (316 x 316, every cell linked to its right and lower neighbour).
+func BenchmarkShortestPath(b *testing.B) {
+	const side = 316
+	var sb strings.Builder
+	sb.WriteString(`{"nodes":[`)
+	for i := 0; i < side*side; i++ {
+		if i > 0 {
+			sb.WriteByte(',')
+		}
+		fmt.Fprintf(&sb, `{"id":"%d","labels":["G"],"props":{"k":%d}}`, i, i)
+	}
+	sb.WriteString(`],"edges":[`)
+	first := true
+	for y := 0; y < side; y++ {
+		for x := 0; x < side; x++ {
+			for _, to := range []int{x + 1 + y*side, x + (y+1)*side} {
+				if (to == x+1+y*side && x+1 >= side) || (to == x+(y+1)*side && y+1 >= side) {
+					continue
+				}
+				if !first {
+					sb.WriteByte(',')
+				}
+				first = false
+				fmt.Fprintf(&sb, `{"type":"R","startId":"%d","endId":"%d","props":{}}`, x+y*side, to)
+			}
+		}
+	}
+	sb.WriteString(`]}`)
+	ctx := context.Background()
+	db, err := graphlite.Open(":memory:")
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer db.Close(ctx)
+	if err := db.Import(ctx, strings.NewReader(sb.String()), graphlite.FormatJSON); err != nil {
+		b.Fatal(err)
+	}
+	if _, err := db.RunQuery(ctx, "CREATE INDEX FOR (n:G) ON (n.k)", nil); err != nil {
+		b.Fatal(err)
+	}
+	cases := []struct {
+		name, q string
+		params  map[string]any
+	}{
+		{"far-corner", "MATCH (a:G {k: $a}), (b:G {k: $b}), p = shortestPath((a)-[:R*]-(b)) RETURN length(p)", map[string]any{"a": 0, "b": side*side - 1}},
+		{"near-directed", "MATCH (a:G {k: $a}), (b:G {k: $b}), p = shortestPath((a)-[:R*]->(b)) RETURN length(p)", map[string]any{"a": 0, "b": 3*side + 3}},
+		{"near-all", "MATCH (a:G {k: $a}), (b:G {k: $b}), p = allShortestPaths((a)-[:R*]->(b)) RETURN count(p)", map[string]any{"a": 0, "b": 3*side + 3}},
+	}
+	for _, c := range cases {
+		b.Run(c.name, func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				res, err := db.RunQuery(ctx, c.q, c.params)
+				if err != nil {
+					b.Fatal(err)
+				}
+				if _, err := res.Collect(ctx); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
 }

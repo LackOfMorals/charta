@@ -1,0 +1,10 @@
+Shortest-path traversal progress
+
+Tasks 002/003 (parent-pointer BFS + bidirectional search): done.
+  BenchmarkShortestPath, 100,000-node grid (316x316), Apple M5 Max:
+    far-corner (undirected, unbounded):  old: fails (100,000-state cap)   new: 2.6 s
+    near-directed (6 hops):               old: 39 ms                       new: 0.24 ms
+    near-all (allShortestPaths, 6 hops):  old: 0.57 ms                     new: 0.40 ms
+  Property tests: cypher/interp/shortest_internal_test.go (strategies agree on random multigraphs).
+Task 004: ANY k stops early with bound ends; enumeration capped at 1,000,000 matches (clear error). Early termination for SHORTEST k / GROUPS (iterative deepening) not done: they still enumerate all matches up to the cap.
+Task 005: AGENTS.md updated; full verification run.
