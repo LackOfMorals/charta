@@ -19,7 +19,7 @@ for result.Next(ctx) {
 - **Tests run without infrastructure.** No Docker container to spin up, no port to reserve, no shared state between CI workers.
 - **Development is friction-free.** Clone the repo, run `go test` — it works. No `docker compose up`.
 - **No driver dependency.** charta has no dependency on the neo4j Go driver package. Add it to any project without import conflicts.
-- **Use alongside Neo4j.** The `examples/` directory shows patterns for switching between a local charta database and a remote Neo4j instance, copying data in either direction, and running the same Cypher queries against both backends.
+- **Neo4j-compatible.** Queries are openCypher / Cypher 25, so the same Cypher runs against a Neo4j server.
 
 charta is intentionally embedded-only. It does not implement the Bolt wire protocol and is not designed to run as a standalone server. Staying embedded means staying zero-infrastructure, CGO-free, and deployable anywhere Go runs.
 
@@ -269,20 +269,6 @@ snap, _ := charta.Open("/var/data/graph-checkpoint.db")
 
 ---
 
-## Examples: charta alongside Neo4j
-
-The `examples/` directory contains three self-contained programs. Each has its own `go.mod` that imports both charta and the neo4j Go driver, so they do not affect the root module.
-
-| Example | What it shows |
-|---|---|
-| `examples/backend_switch/` | Choose charta or Neo4j at startup via an env var; both run the same Cypher query |
-| `examples/copy_from_neo4j/` | Seed a local charta database from a running Neo4j instance |
-| `examples/copy_to_neo4j/` | Push a charta sub-graph to a remote Neo4j cluster |
-
-Run any example with `go run .` from its directory. See the comment block at the top of each `main.go` for environment variable configuration.
-
----
-
 ## API Reference
 
 ### Entry point
@@ -367,10 +353,6 @@ charta/
 │   └── schema.go     ← DDL: nodes/edges tables + indexes
 ├── compat/
 │   └── tck_test.go   ← openCypher TCK harness (opt-in: -tags=tck)
-├── examples/
-│   ├── backend_switch/   ← switch between charta and Neo4j at runtime
-│   ├── copy_from_neo4j/  ← seed charta from a Neo4j instance
-│   └── copy_to_neo4j/    ← push charta data to a Neo4j instance
 └── bench/
     └── *.go          ← benchmark suite
 ```
