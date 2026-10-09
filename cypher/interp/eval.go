@@ -41,7 +41,10 @@ type exec struct {
 	// expressions).
 	subst map[string]any
 	// regexCache avoids recompiling regular expressions.
-	procs      *proc.Set
+	procs *proc.Set
+	// pushed are WHERE equalities of the MATCH being executed, used to narrow
+	// node scans.
+	pushed     []pushedEq
 	regexCache map[string]*regexp.Regexp
 }
 

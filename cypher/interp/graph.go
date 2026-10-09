@@ -251,17 +251,23 @@ func (g *graph) internRel(id int64, typ string, start, end int64, props string) 
 
 // scanNodes returns every live node, restricted to those with the given label
 // when it is non-empty, in id order.
-func (g *graph) scanNodes(label string) ([]*Node, error) {
-	var rows *sql.Rows
-	var err error
-	if label == "" {
-		rows, err = g.db.QueryContext(g.ctx, `SELECT id, labels, props FROM nodes ORDER BY id`)
-	} else {
-		rows, err = g.db.QueryContext(g.ctx,
-			`SELECT n.id, n.labels, n.props FROM nodes n
-			 WHERE EXISTS (SELECT 1 FROM node_labels l WHERE l.node_id = n.id AND l.label = ?)
-			 ORDER BY n.id`, label)
+//
+// hints are property equalities the caller will re-check in Go; they only let
+// SQLite skip nodes that cannot match, so each must hold for every true match.
+func (g *graph) scanNodes(label string, hints []propHint) ([]*Node, error) {
+	var sb strings.Builder
+	var args []any
+	sb.WriteString(`SELECT n.id, n.labels, n.props FROM nodes n WHERE 1`)
+	if label != "" {
+		sb.WriteString(` AND EXISTS (SELECT 1 FROM node_labels l WHERE l.node_id = n.id AND l.label = ?)`)
+		args = append(args, label)
 	}
+	for _, h := range hints {
+		sb.WriteString(` AND json_extract(n.props, ?) = ?`)
+		args = append(args, `$."`+h.key+`"`, h.val)
+	}
+	sb.WriteString(` ORDER BY n.id`)
+	rows, err := g.db.QueryContext(g.ctx, sb.String(), args...)
 	if err != nil {
 		return nil, err
 	}

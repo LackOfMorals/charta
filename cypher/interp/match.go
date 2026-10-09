@@ -62,7 +62,7 @@ func (ex *exec) forEachStart(np *syntax.NodePattern, r row, fn func(*Node, row) 
 			return fn(n, r)
 		}
 	}
-	cands, err := ex.g.scanNodes(scanLabel(np.Labels))
+	cands, err := ex.g.scanNodes(scanLabel(np.Labels), ex.scanHints(np, r))
 	if err != nil {
 		return err
 	}

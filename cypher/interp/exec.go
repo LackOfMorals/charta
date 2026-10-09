@@ -268,6 +268,8 @@ func patternVars(parts []*syntax.PatternPart) []string {
 func (ex *exec) execMatch(cl *syntax.Match, st *qstate) error {
 	vars := patternVars(cl.Patterns)
 	st.declare(vars...)
+	defer func(saved []pushedEq) { ex.pushed = saved }(ex.pushed)
+	ex.pushed = whereEqualities(cl.Where)
 	var out []row
 	for _, r := range st.rows {
 		matched := false
