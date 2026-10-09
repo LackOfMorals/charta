@@ -31,7 +31,7 @@ func refL2(a, b []float32) float64 {
 	return s
 }
 
-func close(got float32, want float64) bool {
+func nearly(got float32, want float64) bool {
 	return math.Abs(float64(got)-want) <= 1e-4*math.Max(1, math.Abs(want))
 }
 
@@ -39,18 +39,18 @@ func TestKernelsMatchReference(t *testing.T) {
 	r := rand.New(rand.NewSource(1))
 	for _, dim := range []int{1, 2, 3, 7, 8, 9, 15, 16, 17, 100, 383, 384, 385, 768, 4096} {
 		a, b := randVec(r, dim), randVec(r, dim)
-		if got, want := Dot32(a, b), refDot(a, b); !close(got, want) {
+		if got, want := Dot32(a, b), refDot(a, b); !nearly(got, want) {
 			t.Errorf("dim %d: Dot32 = %v, want %v", dim, got, want)
 		}
-		if got, want := SquaredL2(a, b), refL2(a, b); !close(got, want) {
+		if got, want := SquaredL2(a, b), refL2(a, b); !nearly(got, want) {
 			t.Errorf("dim %d: SquaredL2 = %v, want %v", dim, got, want)
 		}
-		if got, want := Norm32(a), math.Sqrt(refDot(a, a)); !close(got, want) {
+		if got, want := Norm32(a), math.Sqrt(refDot(a, a)); !nearly(got, want) {
 			t.Errorf("dim %d: Norm32 = %v, want %v", dim, got, want)
 		}
 		cos, ok := Cosine32(a, b)
 		wantCos := refDot(a, b) / (math.Sqrt(refDot(a, a)) * math.Sqrt(refDot(b, b)))
-		if !ok || !close(cos, wantCos) {
+		if !ok || !nearly(cos, wantCos) {
 			t.Errorf("dim %d: Cosine32 = %v (%v), want %v", dim, cos, ok, wantCos)
 		}
 	}

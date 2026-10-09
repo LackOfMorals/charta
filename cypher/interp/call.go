@@ -165,6 +165,8 @@ func (ex *exec) callArgs(cl *syntax.Call, p *proc.Procedure, r row) ([]any, erro
 func (ex *exec) builtinProc(name string) proc.Func {
 	var q, col string
 	switch proc.Key(name) {
+	case "db.index.vector.querynodes":
+		return ex.queryVectorNodes
 	case "db.labels":
 		q, col = `SELECT DISTINCT label FROM node_labels ORDER BY label`, "label"
 	case "db.relationshiptypes":

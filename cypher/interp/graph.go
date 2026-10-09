@@ -82,6 +82,8 @@ type graph struct {
 	constraintsLoaded bool
 	vectors           []schemaDef
 	vectorLoaded      bool
+	vectorCache       bool          // may search the shared vector matrices
+	deltas            []VectorDelta // vector index changes for the commit hook
 }
 
 func newGraph(ctx context.Context, db DB) *graph {
@@ -954,4 +956,47 @@ func (g *graph) finish() error {
 		return err
 	}
 	return g.checkVectorIndexes()
+}
+
+// preloadNodes loads the given nodes into the cache with one query, so that a
+// following run of node(id) calls does not cost a round trip each.
+func (g *graph) preloadNodes(ids []int64) error {
+	var missing []any
+	for _, id := range ids {
+		if _, ok := g.nodes[id]; !ok {
+			missing = append(missing, id)
+		}
+	}
+	if len(missing) == 0 {
+		return nil
+	}
+	q := `SELECT id, labels, props FROM nodes WHERE id IN (?` + strings.Repeat(",?", len(missing)-1) + `)`
+	rows, err := g.db.QueryContext(g.ctx, q, missing...)
+	if err != nil {
+		return err
+	}
+	type rec struct {
+		id            int64
+		labels, props string
+	}
+	var recs []rec
+	for rows.Next() {
+		var r rec
+		if err := rows.Scan(&r.id, &r.labels, &r.props); err != nil {
+			rows.Close()
+			return err
+		}
+		recs = append(recs, r)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return err
+	}
+	rows.Close()
+	for _, r := range recs {
+		if _, err := g.internNode(r.id, r.labels, r.props); err != nil {
+			return err
+		}
+	}
+	return nil
 }

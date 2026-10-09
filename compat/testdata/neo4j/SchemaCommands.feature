@@ -382,6 +382,7 @@ Feature: SchemaCommands - indexes and constraints
       """
     Then the result should be, in any order:
       | name                   |
+      | 'db.index.vector.queryNodes' |
       | 'db.labels'            |
       | 'db.propertyKeys'      |
       | 'db.relationshipTypes' |

@@ -12,6 +12,25 @@ type Result struct {
 	Columns  []string
 	Rows     [][]any
 	Counters Counters
+	// VectorDeltas are the changes the statement made to vector indexes. After
+	// the transaction commits, pass them to Engine.ApplyVectorDeltas.
+	VectorDeltas []VectorDelta
+}
+
+// Options tune how a statement runs.
+type Options struct {
+	// ReadOnly means the database handle cannot write: automatic index creation
+	// is deferred to the caller.
+	ReadOnly bool
+	// VectorCache lets vector searches use the shared in-memory matrices. Set it
+	// only for a statement that has no uncommitted writes of its own (no updating
+	// clause, and not inside an explicit transaction).
+	VectorCache bool
+}
+
+// RunWithOptions is RunWith with explicit Options.
+func RunWithOptions(ctx context.Context, db DB, st *syntax.Statement, params map[string]any, eng *Engine, opts Options) (*Result, error) {
+	return run(ctx, db, st, params, eng, opts)
 }
 
 // Run executes a parsed (and analysed) statement against db. Updates are
@@ -23,7 +42,7 @@ func Run(ctx context.Context, db DB, st *syntax.Statement, params map[string]any
 
 // RunWith is Run using an Engine's registered procedures and index advisor.
 func RunWith(ctx context.Context, db DB, st *syntax.Statement, params map[string]any, eng *Engine) (*Result, error) {
-	return run(ctx, db, st, params, eng, false)
+	return run(ctx, db, st, params, eng, Options{})
 }
 
 // RunReadOnly is RunWith for a db that cannot write (a read-only connection or
@@ -31,16 +50,17 @@ func RunWith(ctx context.Context, db DB, st *syntax.Statement, params map[string
 // index creation is not attempted; keys worth indexing are queued on the Engine
 // (see Engine.TakeWantedIndexes).
 func RunReadOnly(ctx context.Context, db DB, st *syntax.Statement, params map[string]any, eng *Engine) (*Result, error) {
-	return run(ctx, db, st, params, eng, true)
+	return run(ctx, db, st, params, eng, Options{ReadOnly: true, VectorCache: true})
 }
 
-func run(ctx context.Context, db DB, st *syntax.Statement, params map[string]any, eng *Engine, readOnly bool) (*Result, error) {
+func run(ctx context.Context, db DB, st *syntax.Statement, params map[string]any, eng *Engine, opts Options) (*Result, error) {
 	if st.Mode == syntax.ModeExplain {
 		// EXPLAIN compiles the query but does not run it: no rows, no effects.
 		return &Result{Columns: explainColumns(st.Body)}, nil
 	}
 	g := newGraph(ctx, db)
-	g.readOnly = readOnly
+	g.readOnly = opts.ReadOnly
+	g.vectorCache = opts.VectorCache
 	g.eng = eng
 	ex := &exec{g: g, params: params, clock: time.Now()}
 	if eng != nil {
@@ -53,7 +73,7 @@ func run(ctx context.Context, db DB, st *syntax.Statement, params map[string]any
 	if err := g.finish(); err != nil {
 		return nil, err
 	}
-	res := &Result{Columns: cols, Counters: g.counters}
+	res := &Result{Columns: cols, Counters: g.counters, VectorDeltas: g.deltas}
 	if len(cols) == 0 {
 		return res, nil // a query without RETURN produces no rows
 	}

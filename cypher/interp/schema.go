@@ -293,6 +293,9 @@ func (ex *exec) addSchema(name string, ifNotExists bool, what string, def schema
 			return err
 		}
 	}
+	if def.Kind == "VECTOR" {
+		ex.g.eng.dropVectorMatrix(id)
+	}
 	if def.Constraint {
 		ex.g.counters.ConstraintsAdded++
 		ex.g.constraintsLoaded = false
@@ -342,6 +345,9 @@ func (ex *exec) execDropSchema(ds *syntax.DropSchema) error {
 				what = "a constraint"
 			}
 			return schemaError("SchemaRuleNotFound", "`%s` is %s, not a %s", ds.Name, what, map[bool]string{false: "index", true: "constraint"}[ds.Constraint])
+		}
+		if d.Kind == "VECTOR" {
+			ex.g.eng.dropVectorMatrix(d.ID)
 		}
 		if d.BackingIdx != "" {
 			if _, err := ex.g.db.ExecContext(ex.g.ctx, `DROP INDEX IF EXISTS `+d.BackingIdx); err != nil {
@@ -710,13 +716,14 @@ func vectorValue(v any, dims int) bool {
 // checkVectorIndexes validates the vector properties of the entities a
 // statement created or changed against the vector indexes covering them.
 func (g *graph) checkVectorIndexes() error {
-	if len(g.createdNodes)+len(g.nodeSnap)+len(g.createdRels)+len(g.relSnap) == 0 {
+	if len(g.createdNodes)+len(g.nodeSnap)+len(g.createdRels)+len(g.relSnap)+len(g.delNodes) == 0 {
 		return nil
 	}
 	idx, err := g.vectorIndexes()
 	if err != nil || len(idx) == 0 {
 		return err
 	}
+	defer func() { g.vectorDeltas(idx) }()
 	check := func(entity string, id int64, labels []string, props map[string]any) error {
 		for _, d := range idx {
 			if d.Entity != entity || !containsStr(labels, d.Targets[0]) {

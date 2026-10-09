@@ -3,9 +3,11 @@ package graphlite_test
 import (
 	"context"
 	"fmt"
+	"math/rand"
 	"path/filepath"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/LackOfMorals/graphlite/v2"
 )
@@ -115,5 +117,62 @@ func BenchmarkFileWrites(b *testing.B) {
 		if _, err := db.RunQuery(ctx, "CREATE (:W {i: $i})", map[string]any{"i": int64(i)}); err != nil {
 			b.Fatal(err)
 		}
+	}
+}
+
+// BenchmarkVectorSearch measures db.index.vector.queryNodes end to end at
+// several sizes and dimension 384: the first (cold) query builds the in-memory
+// matrix from the stored properties, later queries scan it. Sizes above 100k
+// are skipped unless GRAPHLITE_BIG=1 because loading them takes minutes.
+func BenchmarkVectorSearch(b *testing.B) {
+	for _, n := range []int{1000, 10000, 100000} {
+		b.Run(fmt.Sprintf("n=%d", n), func(b *testing.B) {
+			ctx := context.Background()
+			db, err := graphlite.Open(filepath.Join(b.TempDir(), "g.db"))
+			if err != nil {
+				b.Fatal(err)
+			}
+			defer db.Close(ctx)
+			const dim = 384
+			ddl := fmt.Sprintf("CREATE VECTOR INDEX v FOR (d:Doc) ON (d.e) OPTIONS {indexConfig: {`vector.dimensions`: %d}}", dim)
+			if _, err := db.RunQuery(ctx, ddl, nil); err != nil {
+				b.Fatal(err)
+			}
+			rnd := rand.New(rand.NewSource(1))
+			vec := func() []any {
+				v := make([]any, dim)
+				for i := range v {
+					v[i] = rnd.Float64()*2 - 1
+				}
+				return v
+			}
+			for lo := 0; lo < n; lo += 500 {
+				rows := make([]any, 0, 500)
+				for i := lo; i < lo+500 && i < n; i++ {
+					rows = append(rows, map[string]any{"id": int64(i), "e": vec()})
+				}
+				if _, err := db.RunQuery(ctx, "UNWIND $rows AS r CREATE (:Doc {id: r.id, e: r.e})", map[string]any{"rows": rows}); err != nil {
+					b.Fatal(err)
+				}
+			}
+			q := vec()
+			query := "CALL db.index.vector.queryNodes('v', 10, $q) YIELD node, score RETURN node.id, score"
+			run := func() {
+				res, err := db.RunQuery(ctx, query, map[string]any{"q": q})
+				if err != nil {
+					b.Fatal(err)
+				}
+				if _, err := res.Collect(ctx); err != nil {
+					b.Fatal(err)
+				}
+			}
+			start := time.Now()
+			run() // cold: builds the matrix
+			b.Logf("cold first query (decode %d vectors into the matrix): %v", n, time.Since(start))
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				run()
+			}
+		})
 	}
 }
