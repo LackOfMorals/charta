@@ -276,7 +276,6 @@ Runnable programs live in [`examples/`](examples/); run them from the repository
 | Example | What it shows |
 |---|---|
 | [`examples/basic`](examples/basic/main.go) | Create nodes and relationships, query them, update, run a transaction, and delete — `go run ./examples/basic` |
-| [`examples/csvImport`](examples/csvImport/main.go) | Convert a large flat CSV (an API request log) into node/relationship files, bulk-import them and time the import and some queries — `go run ./examples/csvImport -prepare -load` (needs `examples/csvImport/import.csv`, not in the repository) |
 | [`examples/movies`](examples/movies/main.go) | Build the movies graph (171 nodes, 253 relationships) by reading a file of Cypher statements, then query it — `go run ./examples/movies` |
 
 ---
