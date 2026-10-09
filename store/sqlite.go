@@ -269,7 +269,14 @@ func (s *SQLiteStore) Rollback() error {
 
 // InsertNode inserts a new node and returns its integer ID.
 func (s *SQLiteStore) InsertNode(ctx context.Context, labels Labels, propsJSON string) (int64, error) {
-	return insertNode(ctx, s.q, labels, propsJSON)
+	id, err := insertNode(ctx, s.q, labels, propsJSON)
+	if err != nil {
+		return 0, err
+	}
+	if err := writeNodeLabels(ctx, s.q, id, labels); err != nil {
+		return 0, err
+	}
+	return id, nil
 }
 
 // GetNode returns the node with the given ID, or sql.ErrNoRows if not found.
@@ -359,6 +366,33 @@ type querier interface {
 // ============================================================================
 // Helper functions (shared for both non-transactional and transactional use)
 // ============================================================================
+
+// writeNodeLabels records a node's labels in node_labels (one row per distinct
+// label). The nodes table's comma-separated labels column is written by the
+// caller; the two are kept in step by every writer of nodes.labels.
+func writeNodeLabels(ctx context.Context, q querier, id int64, labels Labels) error {
+	seen := make(map[string]bool, len(labels))
+	var sb strings.Builder
+	var args []any
+	for _, l := range labels {
+		if l == "" || seen[l] {
+			continue
+		}
+		seen[l] = true
+		if len(args) > 0 {
+			sb.WriteString(",")
+		}
+		sb.WriteString("(?,?)")
+		args = append(args, id, l)
+	}
+	if len(args) == 0 {
+		return nil
+	}
+	if _, err := q.ExecContext(ctx, `INSERT INTO node_labels (node_id, label) VALUES `+sb.String(), args...); err != nil {
+		return fmt.Errorf("store: insert node labels: %w", err)
+	}
+	return nil
+}
 
 func insertNode(ctx context.Context, q querier, labels Labels, propsJSON string) (int64, error) {
 	res, err := q.ExecContext(ctx,

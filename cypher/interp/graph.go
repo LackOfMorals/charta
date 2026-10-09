@@ -713,6 +713,9 @@ func (g *graph) createNode(labels []string, props map[string]any) (*Node, error)
 	if err != nil {
 		return nil, err
 	}
+	if err := g.writeNodeLabels(id, labels); err != nil {
+		return nil, err
+	}
 	n := &Node{ID: id, Labels: labels, Props: props}
 	g.nodes[id] = n
 	g.createdNodes[n] = true
@@ -787,7 +790,31 @@ func (g *graph) persistRelProps(r *Rel) error {
 }
 
 func (g *graph) persistLabels(n *Node) error {
-	_, err := g.db.ExecContext(g.ctx, `UPDATE nodes SET labels = ? WHERE id = ?`, strings.Join(n.Labels, ","), n.ID)
+	if _, err := g.db.ExecContext(g.ctx, `UPDATE nodes SET labels = ? WHERE id = ?`, strings.Join(n.Labels, ","), n.ID); err != nil {
+		return err
+	}
+	if _, err := g.db.ExecContext(g.ctx, `DELETE FROM node_labels WHERE node_id = ?`, n.ID); err != nil {
+		return err
+	}
+	return g.writeNodeLabels(n.ID, dedupe(n.Labels))
+}
+
+// writeNodeLabels records a node's (distinct) labels in node_labels, which label
+// lookups join against. Every write of nodes.labels must keep it in step.
+func (g *graph) writeNodeLabels(id int64, labels []string) error {
+	if len(labels) == 0 {
+		return nil
+	}
+	var sb strings.Builder
+	args := make([]any, 0, 2*len(labels))
+	for i, l := range labels {
+		if i > 0 {
+			sb.WriteByte(',')
+		}
+		sb.WriteString("(?,?)")
+		args = append(args, id, l)
+	}
+	_, err := g.db.ExecContext(g.ctx, `INSERT INTO node_labels (node_id, label) VALUES `+sb.String(), args...)
 	return err
 }
 
