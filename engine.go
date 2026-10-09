@@ -2,8 +2,8 @@ package graphlite
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"os"
 	"strconv"
 
 	"github.com/LackOfMorals/graphlite/v2/cypher/analyze"
@@ -11,18 +11,8 @@ import (
 	"github.com/LackOfMorals/graphlite/v2/cypher/syntax"
 )
 
-// Engine selection. GRAPHLITE_ENGINE chooses how queries execute:
-//
-//	exec  the Go interpreter (cypher/interp; full openCypher semantics)
-//	sql   the SQL translator (supports a fixed set of query shapes; being retired)
-//
-// The default is "exec".
-const engineEnv = "GRAPHLITE_ENGINE"
-
-func useInterpreter() bool { return os.Getenv(engineEnv) != "sql" }
-
-// parseSyntax parses and analyses a query, wrapping errors the way the SQL path
-// does so analyze.Describe sees the typed compile-time error.
+// parseSyntax parses and analyses a query, wrapping errors with %w so
+// analyze.Describe sees the typed compile-time error.
 func parseSyntax(cypherStr string, eng *interp.Engine) (*syntax.Statement, error) {
 	if st, ok := eng.Statement(cypherStr); ok {
 		return st, nil
@@ -67,7 +57,7 @@ func runInterp(ctx context.Context, ex execer, cypherStr string, params map[stri
 		if err != nil {
 			_ = tx.Rollback()
 			eng.ResetIndexState()
-			return nil, fmt.Errorf("graphlite: execute: %w", err)
+			return nil, execError(err)
 		}
 		if err := tx.Commit(); err != nil {
 			return nil, fmt.Errorf("graphlite: commit: %w", err)
@@ -75,7 +65,7 @@ func runInterp(ctx context.Context, ex execer, cypherStr string, params map[stri
 	} else {
 		res, err = interp.RunWith(ctx, ex, st, params, eng)
 		if err != nil {
-			return nil, fmt.Errorf("graphlite: execute: %w", err)
+			return nil, execError(err)
 		}
 	}
 	return interpResult(res), nil
@@ -191,4 +181,14 @@ func propsOf(m map[string]any) map[string]any {
 		out[k] = fromInterp(v)
 	}
 	return out
+}
+
+// execError wraps an interpreter error. A construct the interpreter does not
+// implement becomes an *ErrUnsupportedCypher.
+func execError(err error) error {
+	var ie *interp.Error
+	if errors.As(err, &ie) && ie.Code == "Unsupported" {
+		return &ErrUnsupportedCypher{Clause: ie.Msg, Detail: "not supported by the graphlite interpreter yet"}
+	}
+	return fmt.Errorf("graphlite: execute: %w", err)
 }

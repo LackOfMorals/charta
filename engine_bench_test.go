@@ -8,11 +8,8 @@ import (
 	"github.com/LackOfMorals/graphlite/v2"
 )
 
-// BenchmarkEngines compares the interpreter (default) with the SQL translator
-// (GRAPHLITE_ENGINE=sql) on a 2,000-node chain graph. The graph is built
-// with the interpreter: the translator silently creates no relationships for
-// the multi-pattern MATCH ... CREATE used to link the chain.
-func BenchmarkEngines(b *testing.B) {
+// BenchmarkQueries measures common query shapes on a 2,000-node chain graph.
+func BenchmarkQueries(b *testing.B) {
 	queries := []struct{ name, q string }{
 		{"lookup", "MATCH (n:P {id: 1000}) RETURN n.name"},
 		{"where_eq", "MATCH (n:P) WHERE n.id = 1000 RETURN n.name"},
@@ -21,10 +18,9 @@ func BenchmarkEngines(b *testing.B) {
 		{"aggregate", "MATCH (n:P) RETURN n.grp, count(*) AS c"},
 		{"create", "CREATE (:Tmp {x: 1})"},
 	}
-	for _, eng := range []string{"exec", "sql"} {
+	{
 		for _, qq := range queries {
-			b.Run(eng+"/"+qq.name, func(b *testing.B) {
-				b.Setenv("GRAPHLITE_ENGINE", "exec") // build the graph with the engine that creates it correctly
+			b.Run(qq.name, func(b *testing.B) {
 				ctx := context.Background()
 				db, err := graphlite.Open(":memory:")
 				if err != nil {
@@ -39,7 +35,6 @@ func BenchmarkEngines(b *testing.B) {
 				if _, err := db.RunQuery(ctx, "MATCH (a:P), (b:P) WHERE b.id = a.id + 1 CREATE (a)-[:K]->(b)", nil); err != nil {
 					b.Fatal(err)
 				}
-				b.Setenv("GRAPHLITE_ENGINE", eng)
 				b.ResetTimer()
 				for i := 0; i < b.N; i++ {
 					res, err := db.RunQuery(ctx, qq.q, nil)

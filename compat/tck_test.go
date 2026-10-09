@@ -11,9 +11,8 @@
 //
 // The harness loads all .feature files from testdata/tck/ (the full openCypher
 // TCK, see testdata/tck/README.md) and reports a TCK pass rate at the end of the
-// run. Scenarios that use features graphlite does not support yet are skipped
-// via a Before hook (see unsupportedPatterns); scenarios that need syntax
-// Cypher 25 removed are listed in testdata/excluded.txt.
+// run. Nothing is skipped: scenarios that need syntax Cypher 25 removed are
+// listed in testdata/excluded.txt, everything else must pass.
 //
 // Set TCK_REPORT=path to also write a per-area / per-feature markdown report.
 package compat
@@ -89,119 +88,6 @@ func (s *tckState) reset() {
 	s.propsSet = 0
 	s.skipped = false
 	s.params = nil
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Skip logic
-//
-// Scenarios are skipped when their Cypher uses features graphlite does not
-// support. The skip check runs in a Before hook by inspecting scenario step text.
-// ─────────────────────────────────────────────────────────────────────────────
-
-// unsupportedPatterns lists substrings in Cypher text that trigger a skip.
-// Each entry has a reason that is logged with the skip.
-var unsupportedPatterns = []struct {
-	pattern string
-	reason  string
-}{
-	// Unsupported clauses
-	{"CALL {", "CALL subquery not supported"},
-	{"FOREACH", "FOREACH not supported"},
-	{"UNWIND", "UNWIND not supported"},
-	{"UNION", "UNION not supported"},
-	{"RETURN *", "RETURN * not supported"},
-
-	// Unsupported path assignment syntax
-	{"= ()-", "named path variables not supported"},
-	{"= ()<-", "named path variables not supported"},
-	{"= ()--", "named path variables not supported"},
-
-	// Unsupported functions
-	{"toLower(", "string function toLower not supported"},
-	{"toUpper(", "string function toUpper not supported"},
-	{"trim(", "string function trim not supported"},
-	{"split(", "string function split not supported"},
-	{"size(", "size() function not supported"},
-	{"length(", "length() function not supported"},
-	{"abs(", "math function abs not supported"},
-	{"ceil(", "math function ceil not supported"},
-	{"floor(", "math function floor not supported"},
-	{"round(", "math function round not supported"},
-	{"type(", "type() function not supported"},
-	{"labels(", "labels() function not supported"},
-	{"keys(", "keys() function not supported"},
-	{"id(", "id() function not supported"},
-	{"nodes(", "nodes() function not supported"},
-	{"relationships(", "relationships() function not supported"},
-	{"head(", "head() function not supported"},
-	{"tail(", "tail() function not supported"},
-	{"last(", "last() function not supported"},
-	{"toString(", "toString() function not supported"},
-	{"toInteger(", "toInteger() function not supported"},
-	{"toFloat(", "toFloat() function not supported"},
-	{"toBoolean(", "toBoolean() function not supported"},
-	{"range(", "range() function not supported"},
-	{"coalesce(", "coalesce() function not supported"},
-	{"shortestPath(", "shortestPath() not supported"},
-	{"allShortestPaths(", "allShortestPaths() not supported"},
-
-	// Unsupported expression forms
-	{"[x IN", "list comprehensions not supported"},
-	{"[n IN", "list comprehensions not supported"},
-	{"[r IN", "list comprehensions not supported"},
-	{"[e IN", "list comprehensions not supported"},
-	{"[i IN", "list comprehensions not supported"},
-	{"any(", "any() predicate not supported"},
-	{"all(", "all() predicate not supported"},
-	{"none(", "none() predicate not supported"},
-	{"single(", "single() predicate not supported"},
-	{"extract(", "extract() not supported"},
-	{"filter(", "filter() not supported"},
-	{"reduce(", "reduce() not supported"},
-
-	// Pattern predicates in WHERE (e.g. WHERE (a)-[:R]->())
-	// Detected by the presence of WHERE followed by pattern syntax
-	// We use a different approach: skip scenarios with WHERE that contains
-	// a pattern predicate — but this is hard to detect textually.
-	// Instead we rely on the query failing and skip the result comparison.
-}
-
-// containsUnsupported returns a reason string if cypher uses unsupported features,
-// or empty string if it appears supported.
-func containsUnsupported(cypher string) string {
-	if os.Getenv("TCK_NOSKIP") != "" {
-		return "" // run every scenario, e.g. to measure the interpreter
-	}
-	for _, up := range unsupportedPatterns {
-		if strings.Contains(cypher, up.pattern) {
-			return up.reason
-		}
-	}
-	return ""
-}
-
-// shouldSkipScenario returns a non-empty skip reason if the scenario should be
-// skipped based on its step text.
-// godog.Scenario is an alias for messages.Pickle; Steps are []*messages.PickleStep
-// which carry DocString in step.Argument.DocString (not step.DocString directly).
-func shouldSkipScenario(scenario *godog.Scenario) string {
-	for _, step := range scenario.Steps {
-		if strings.Contains(step.Text, "there exists a procedure") && os.Getenv("TCK_NOSKIP") == "" {
-			return "test procedures (CALL) not supported"
-		}
-		// Check DocString content (multiline Cypher blocks)
-		if step.Argument != nil && step.Argument.DocString != nil {
-			cypher := step.Argument.DocString.Content
-			if reason := containsUnsupported(cypher); reason != "" {
-				return reason
-			}
-		}
-		// Also check step text itself for hints
-		if reason := containsUnsupported(step.Text); reason != "" {
-			return reason
-		}
-	}
-	return ""
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -404,7 +290,7 @@ func (s *tckState) compareResult(table *godog.Table, ordered, ignoreListOrder bo
 	if len(s.lastResult.Records) != len(dataRows) {
 		return fmt.Errorf("expected %d row(s), got %d", len(dataRows), len(s.lastResult.Records))
 	}
-	lenient := os.Getenv("GRAPHLITE_ENGINE") == "sql" // the SQL path loses int/float and list typing
+	const lenient = false // values must match exactly, including int vs float
 
 	expected := make([]string, len(dataRows))
 	for i, row := range dataRows {
@@ -789,13 +675,6 @@ func TestTCK(t *testing.T) {
 					ctrs.add(tckOutcome{state.feature, state.name, statusExcluded, reason})
 					return ctx, nil
 				}
-				if reason := shouldSkipScenario(scenario); reason != "" {
-					state.skipped = true
-					ctrs.add(tckOutcome{state.feature, state.name, statusSkipped, reason})
-					// Godog has no native skip mechanism; mark state and return nil.
-					// All step functions check s.skipped and no-op.
-					return ctx, nil
-				}
 				return ctx, nil
 			})
 
@@ -936,8 +815,8 @@ func TestTCK(t *testing.T) {
 
 	_ = exitCode // don't fail on non-zero Godog exit; we enforce threshold below
 
-	if executed > 0 && passRate < 50.0 {
-		t.Errorf("TCK pass rate %.1f%% is below the required 50%% threshold (%d/%d scenarios passed)",
+	if executed > 0 && passRate < 70.0 {
+		t.Errorf("TCK pass rate %.1f%% is below the required 70%% threshold (%d/%d scenarios passed)",
 			passRate, passed, executed)
 	}
 }

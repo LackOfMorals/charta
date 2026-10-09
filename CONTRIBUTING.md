@@ -38,7 +38,7 @@ CGO_ENABLED=0 go build ./...
 CGO_ENABLED=0 go test -count=1 ./...
 ```
 
-This runs all unit tests (parser, planner, translator, store) and the integration tests under each package. The `testdata/` package must be run explicitly:
+This runs all unit tests (parser, analysis, interpreter, store) and the integration tests under each package. The `testdata/` package must be run explicitly:
 
 ```bash
 CGO_ENABLED=0 go test github.com/LackOfMorals/graphlite/testdata
@@ -94,27 +94,17 @@ GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build ./...
 
 Adding a new Cypher clause or expression follows a five-step pipeline:
 
-### Step 1 — Extend the AST (`cypher/ast.go`)
+### Step 1 — Extend the syntax
 
-Add a new clause or expression struct under the appropriate section. Every new exported type needs a doc comment and must implement the `Clause` interface (for clauses) or `Expr` interface (for expressions) by adding the sealed `clauseNode()` / `exprNode()` method.
+Syntax lives in `cypher/syntax` (a hand-written lexer and recursive-descent parser that builds a fully typed AST, stdlib only). Add the new AST node to `cypher/syntax/ast.go`, parse it in `clause.go` (clauses), `expr.go` (expressions) or `pattern.go` (patterns), and add golden and error-position tests next to it.
 
-### Step 2 — Extend the parser
+### Step 2 — Teach the analysis
 
-Syntax lives in `cypher/syntax` (a hand-written lexer and recursive-descent parser that builds a fully typed AST, stdlib only). Add the new AST node to `cypher/syntax/ast.go`, parse it in `clause.go` (clauses), `expr.go` (expressions) or `pattern.go` (patterns), and add golden and error-position tests next to it. If the construct binds variables, has typing or aggregation rules, or can fail at compile time, teach `cypher/analyze` about it (and add a case to `analyze_test.go`; the TCK tests there catch false positives). Then lower it to the planner's AST in `cypher/parse.go` (clauses and patterns) or `cypher/parse_expr.go` (expressions); anything the `Query` AST cannot express yet should return a clear "not supported" error from the lowering.
+If the construct binds variables, has typing or aggregation rules, or can fail at compile time, teach `cypher/analyze` about it and add a case to `analyze_test.go`. The TCK tests there catch false positives and require the exact error class and code.
 
-Add unit tests in `cypher/parse_test.go` (and `cypher/parser_test.go`) covering at least five representative inputs, including edge cases.
+### Step 3 — Execute it
 
-### Step 3 — Add a plan node (`cypher/plan.go`)
-
-Define a new `*Plan` struct implementing `LogicalPlan` via the `planNode()` sealed method. Include doc comments on every exported field. If the feature requires a new expression type, add it as an `*Expr` struct implementing `Expr`.
-
-### Step 4 — Wire the planner (`cypher/planner.go`)
-
-Add a `planXxxClause` function and wire it into the `planQuery` switch statement. Populate the `BindingScope` for any new variables introduced by the clause. Add unit tests in `cypher/planner_test.go` asserting the exact `LogicalPlan` tree shape for each pattern.
-
-### Step 5 — Emit SQL (`sql/translator.go`)
-
-Add a case to `translateWritePlan` (for mutations) or `translatePlan` / `exprToSQL` (for read clauses and expressions). Add unit tests in `sql/translator_test.go` that compare the emitted SQL string against expected fixtures. Add end-to-end integration tests in `testdata/integration_test.go`.
+Implement the construct in `cypher/interp` (clauses in `exec.go`, `project.go` or `write.go`; expressions in `eval.go` or `funcs.go`; patterns in `match.go`). Add cases to `cypher/interp/interp_test.go`, then run the TCK (`CGO_ENABLED=0 go test -tags=tck ./compat/...`) and add end-to-end tests in `testdata/integration_test.go`.
 
 ---
 

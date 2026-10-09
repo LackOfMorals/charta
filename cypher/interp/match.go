@@ -295,6 +295,16 @@ func (ex *exec) walkVarLength(elems []syntax.PatternElem, i int, rp *syntax.RelP
 	if rp.Range.Max != nil {
 		max = *rp.Range.Max
 	}
+	if hops := int64(0); ex.g.eng != nil {
+		if hops = int64(ex.g.eng.MaxPathHops); hops > 0 {
+			if max > hops {
+				return argErr("variable-length upper bound %d exceeds the configured maximum of %d hops", max, hops)
+			}
+			if max < 0 {
+				max = hops
+			}
+		}
+	}
 	var chain []*Rel
 	var visited []*Node // the nodes reached along chain, in order
 	var dfs func(node *Node, depth int64) error

@@ -298,23 +298,18 @@ Run any example with `go run .` from its directory. See the comment block at the
 ```
 graphlite/
 ├── types.go          ← Node, Relationship, Record, error types
-├── driver.go         ← graphlite.Open, DB, RunQuery, BeginTx, execution engine
+├── driver.go         ← graphlite.Open, DB, RunQuery, BeginTx
 ├── tx.go             ← Tx type (Run, Commit, Rollback, Close)
 ├── result.go         ← Result cursor (Next, Record, Err, Keys, Collect, Single, Consume)
 ├── helpers.go        ← generic helpers (GetProperty, GetRecordValue, CollectT, SingleT)
 ├── importer.go       ← Import / Export (JSON, CSV)
 ├── options.go        ← functional options (WithBusyTimeout, WithReadOnly)
+├── engine.go         ← parse → analyze → interpret pipeline
 ├── cypher/
-│   ├── ast.go        ← Clause and expression AST types
-│   ├── parse.go      ← Parse: syntax AST → Query AST (parse_expr.go: expressions)
 │   ├── syntax/       ← hand-written Cypher 25 lexer + parser + typed AST
 │   ├── analyze/      ← semantic analysis (variables, aggregation, types)
-│   ├── plan.go       ← LogicalPlan types
-│   ├── planner.go    ← AST → LogicalPlan
-│   └── scope.go      ← BindingScope: Cypher vars → SQL aliases
-├── sql/
-│   ├── translator.go ← LogicalPlan → SQL + params
-│   └── dialect.go    ← SQL dialect interface (SQLite implementation)
+│   ├── interp/       ← Go interpreter: executes a statement against SQLite
+│   └── proc/         ← procedure signatures and registry (CALL)
 ├── store/
 │   ├── store.go      ← Store interface
 │   ├── sqlite.go     ← modernc.org/sqlite implementation
@@ -329,7 +324,7 @@ graphlite/
     └── *.go          ← benchmark suite
 ```
 
-Storage uses two tables in SQLite WAL mode. Variable-length path queries use `WITH RECURSIVE` CTEs generated at query time.
+Storage uses two tables in SQLite WAL mode. Queries are executed by a Go interpreter that reads nodes and relationships from SQLite (narrowing scans with property equalities and automatic expression indexes) and applies writes in one transaction per statement.
 
 ```sql
 CREATE TABLE nodes (

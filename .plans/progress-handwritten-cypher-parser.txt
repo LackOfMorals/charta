@@ -76,4 +76,16 @@ NOT DONE / NEXT
   * Iteration 8-10: UNWIND/UNION/functions in the planner and SQL, comprehension
     and subquery execution, Neo4j extension execution, temporal/spatial values.
   * Push the branch / open a draft PR when wanted (not pushed since 328cdba).
+
+ITERATIONS 8-10 (hybrid engine decision -> interpreter only)
+  * Added cypher/interp (Go interpreter over SQLite), cypher/proc (procedures) and
+    engine.go. The interpreter passes 2,831/3,895 TCK scenarios; ~1,000 of the
+    remaining failures are temporal values/functions (task-038).
+  * Measured the SQL translator: 26% of the TCK, wrong results on some queries it
+    accepted, silently created no relationships for multi-pattern MATCH..CREATE.
+    Interpreter with property pushdown + automatic expression indexes beats it on
+    lookups and traversals (19us vs 580us lookup). Translator, planner, Query AST,
+    plan cache and the rows-backed Result were deleted.
+  * Tasks 019-026 are done by the interpreter; task-027 (full TCK green) is waiting
+    on temporal types (task-038).
 ================================================================================

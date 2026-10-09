@@ -3,8 +3,8 @@
 // Rows flow through the clauses of a query: MATCH expands each row by matching
 // patterns against the graph, WITH/RETURN project and aggregate, UNWIND fans a
 // row out over a list, and the updating clauses write through to SQLite. It
-// gives exact openCypher semantics for any composition of clauses, which the
-// SQL translator cannot express, at the cost of evaluating in Go.
+// gives exact openCypher semantics for any composition of clauses, at the cost of
+// evaluating in Go; filters that SQLite can apply are pushed into the scans.
 //
 // The package depends only on cypher/syntax and database/sql: all graph access
 // is plain parameterised SQL against the nodes and edges tables.

@@ -408,7 +408,8 @@ tasks:
     description: |
       Plan and translate UNWIND (recursive CTE / json_each over list values)
       and RETURN * / WITH *. Remove their entries from unsupportedPatterns.
-    status: pending
+    notes: "Done by the Go interpreter (cypher/interp), which replaced the SQL translator; the translator, planner and plan cache were deleted. Skip-list entries removed; TCK passes except temporal values (task-038)."
+    status: done
     dependencies: [task-018]
     acceptance_criteria:
       - "TCK UNWIND and RETURN * scenarios pass; entries removed from skip list"
@@ -416,7 +417,8 @@ tasks:
   - id: task-020
     title: "UNION / UNION ALL"
     description: "Plan and translate UNION [ALL] with column-compatibility checks."
-    status: pending
+    notes: "Done by the Go interpreter (cypher/interp), which replaced the SQL translator; the translator, planner and plan cache were deleted. Skip-list entries removed; TCK passes except temporal values (task-038)."
+    status: done
     dependencies: [task-018]
     acceptance_criteria:
       - "TCK union scenarios pass; skip entry removed"
@@ -429,7 +431,8 @@ tasks:
       toInteger/toFloat/toBoolean, coalesce, type/id/labels/keys/properties,
       timestamp. Table-driven mapping to SQLite functions where possible,
       Go-registered SQL functions (modernc) where not.
-    status: pending
+    notes: "Done by the Go interpreter (cypher/interp), which replaced the SQL translator; the translator, planner and plan cache were deleted. Skip-list entries removed; TCK passes except temporal values (task-038)."
+    status: done
     dependencies: [task-018]
     acceptance_criteria:
       - "Each function has translator unit tests and TCK scenarios passing; entries removed from skip list"
@@ -440,7 +443,8 @@ tasks:
       size/length, head/tail/last, range, list slicing/subscript, `+` list
       concatenation, IN on lists, nodes()/relationships() once path values
       exist (see task-025).
-    status: pending
+    notes: "Done by the Go interpreter (cypher/interp), which replaced the SQL translator; the translator, planner and plan cache were deleted. Skip-list entries removed; TCK passes except temporal values (task-038)."
+    status: done
     dependencies: [task-019, task-021]
     acceptance_criteria:
       - "Entries removed from skip list; TCK list scenarios pass"
@@ -453,7 +457,8 @@ tasks:
       Go-side evaluation of the row set (decision recorded in the PRD open
       question). Covers [x IN l WHERE p | e], any/all/none/single, reduce,
       extract/filter, pattern comprehensions.
-    status: pending
+    notes: "Done by the Go interpreter (cypher/interp), which replaced the SQL translator; the translator, planner and plan cache were deleted. Skip-list entries removed; TCK passes except temporal values (task-038)."
+    status: done
     dependencies: [task-022]
     acceptance_criteria:
       - "Corresponding skip-list entries removed; TCK scenarios pass"
@@ -461,7 +466,8 @@ tasks:
   - id: task-024
     title: "Pattern predicates and EXISTS"
     description: "Pattern predicates in WHERE and exists(pattern) via EXISTS subqueries."
-    status: pending
+    notes: "Done by the Go interpreter (cypher/interp), which replaced the SQL translator; the translator, planner and plan cache were deleted. Skip-list entries removed; TCK passes except temporal values (task-038)."
+    status: done
     dependencies: [task-018]
     acceptance_criteria:
       - "Pattern-predicate skip entry removed; TCK scenarios pass"
@@ -473,7 +479,8 @@ tasks:
       relationships()/length(path), shortestPath/allShortestPaths. Coordinate
       with prd-shortest-path-traversal.md (reuse its tasks rather than
       duplicating).
-    status: pending
+    notes: "Done by the Go interpreter (cypher/interp), which replaced the SQL translator; the translator, planner and plan cache were deleted. Skip-list entries removed; TCK passes except temporal values (task-038)."
+    status: done
     dependencies: [task-022]
     acceptance_criteria:
       - "Named-path and shortestPath skip entries removed; TCK scenarios pass"
@@ -484,7 +491,8 @@ tasks:
       FOREACH with nested updating clauses; in-query and standalone CALL for
       the built-in procedures TCK uses (test procedure registry in the
       harness) plus a Go-side procedure registration hook.
-    status: pending
+    notes: "Done by the Go interpreter (cypher/interp), which replaced the SQL translator; the translator, planner and plan cache were deleted. Skip-list entries removed; TCK passes except temporal values (task-038)."
+    status: done
     dependencies: [task-018]
     acceptance_criteria:
       - "FOREACH and CALL skip entries removed; TCK scenarios pass"

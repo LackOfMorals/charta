@@ -98,9 +98,9 @@ func (r *Record) Values() []any {
 	return out
 }
 
-// ErrUnsupportedCypher is returned when the planner or translator encounters a
-// Cypher construct that graphlite does not support. Use errors.As to inspect the
-// Clause and Position fields.
+// ErrUnsupportedCypher is returned when a query uses a Cypher construct that
+// graphlite does not support. Use errors.As to inspect the Clause and Position
+// fields.
 type ErrUnsupportedCypher struct {
 	// Clause is the Cypher clause or construct that is not supported
 	// (e.g. "CALL", "UNION", "variable-length path").

@@ -358,3 +358,25 @@ func TestAutomaticPropertyIndex(t *testing.T) {
 		t.Errorf("unexpected extra index")
 	}
 }
+
+func TestMaxPathHops(t *testing.T) {
+	db := newDB(t)
+	if _, err := run(db, nil, "CREATE (:N {i:0})-[:R]->(:N {i:1})-[:R]->(:N {i:2})-[:R]->(:N {i:3})", nil); err != nil {
+		t.Fatal(err)
+	}
+	eng := &interp.Engine{MaxPathHops: 2}
+	res, err := run(db, eng, "MATCH (:N {i:0})-[:R*]->(n) RETURN n.i ORDER BY n.i", nil) // unbounded: capped at 2
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(rows(res), ","); got != "1,2" {
+		t.Errorf("capped traversal returned %s", got)
+	}
+	if _, err := run(db, eng, "MATCH (:N)-[:R*1..5]->(n) RETURN n", nil); err == nil {
+		t.Error("an explicit bound above the cap must be an error")
+	}
+	res, err = run(db, nil, "MATCH (:N {i:0})-[:R*]->(n) RETURN n.i ORDER BY n.i", nil)
+	if err != nil || strings.Join(rows(res), ",") != "1,2,3" {
+		t.Errorf("uncapped: %v %v", rows(res), err)
+	}
+}

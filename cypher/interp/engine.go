@@ -15,6 +15,10 @@ import (
 type Engine struct {
 	// Procs are the procedures callable with CALL, besides the built-ins.
 	Procs proc.Set
+	// MaxPathHops, when positive, caps variable-length patterns: an unbounded
+	// pattern stops at this many hops and an explicit upper bound above it is
+	// an error. Zero means no cap.
+	MaxPathHops int
 
 	mu      sync.Mutex
 	loaded  bool
