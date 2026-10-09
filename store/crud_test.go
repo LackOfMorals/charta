@@ -1176,44 +1176,6 @@ func TestNodeLabelsJunctionCascadesOnDelete(t *testing.T) {
 	}
 }
 
-// TestNodeLabelsJunctionUpdatedOnLabelChange verifies that the node_labels
-// junction table is synchronised when nodes.labels is updated (via the UPDATE
-// trigger). This is exercised by Cypher REMOVE label operations.
-func TestNodeLabelsJunctionUpdatedOnLabelChange(t *testing.T) {
-	s := openMemory(t)
-	ctx := context.Background()
-
-	id, err := s.InsertNode(ctx, store.DecodeLabels("Person,Employee"), `{}`)
-	if err != nil {
-		t.Fatalf("InsertNode: %v", err)
-	}
-
-	// Simulate a REMOVE :Employee operation by directly updating nodes.labels.
-	if _, err := s.DB().ExecContext(ctx,
-		`UPDATE nodes SET labels = ? WHERE id = ?`, "Person", id); err != nil {
-		t.Fatalf("UPDATE labels: %v", err)
-	}
-
-	rows, err := s.DB().QueryContext(ctx,
-		`SELECT label FROM node_labels WHERE node_id = ?`, id)
-	if err != nil {
-		t.Fatalf("query node_labels: %v", err)
-	}
-	defer func() { _ = rows.Close() }()
-
-	var labels []string
-	for rows.Next() {
-		var lbl string
-		if err := rows.Scan(&lbl); err != nil {
-			t.Fatalf("scan: %v", err)
-		}
-		labels = append(labels, lbl)
-	}
-	if len(labels) != 1 || labels[0] != "Person" {
-		t.Errorf("expected [Person] after label update, got %v", labels)
-	}
-}
-
 // TestNodeLabelsJunctionBackfill verifies that the Open-time backfill migration
 // correctly populates node_labels for pre-existing databases. This is simulated
 // by inserting rows into nodes directly (bypassing the trigger) and then

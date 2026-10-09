@@ -84,7 +84,7 @@ CREATE TABLE node_labels (
 ```
 
 WAL mode is enabled via `PRAGMA journal_mode=WAL` on every open.
-`node_labels` is kept in sync automatically by SQLite triggers on nodes INSERT/UPDATE; label lookups use EXISTS subquery or JOIN against node_labels rather than LIKE on nodes.labels.
+`node_labels` is written by the code that writes `nodes.labels` (`SQLiteStore.InsertNode`, `graph.createNode`/`persistLabels` in the interpreter) — NOT by triggers (they cost 2-3x the node insert itself and are dropped on open); any new writer of `nodes.labels` must also write `node_labels` (`TestNodeLabelsStayInSync`). Label lookups use EXISTS subquery or JOIN against node_labels rather than LIKE on nodes.labels.
 
 ## Gotchas and Learnings
 
@@ -127,8 +127,8 @@ WAL mode is enabled via `PRAGMA journal_mode=WAL` on every open.
 - `importJSON` uses `io.ReadAll(io.LimitReader(r, importMaxBytes+1))` for size detection. Do NOT replace this with a streaming decoder approach: `json.Decoder` scans bytes one at a time in a whitespace loop, causing `TestImport_TooLarge` (which sends 500MB of spaces via `io.Pipe`) to hang for 30+ seconds.
 - `decodeImportJSON` must handle `null` values for `"nodes"` and `"edges"` keys. When Go marshals a struct with nil slice fields, JSON produces `"nodes":null`; the decoder must treat this as an empty array (check `tok == nil` after `dec.Token()`).
 - `go test -race ./cypher/...` takes about a second now that parsing no longer goes through ANTLR; the whole-module race run is dominated by the SQLite tests in the root package.
-- `node_labels(node_id, label)` junction table is maintained by SQLite triggers (AFTER INSERT / AFTER UPDATE OF labels on nodes). All write paths — including raw SQL from the interpreter and importer — stay in sync automatically without Go-level changes.
-- SQLite triggers use a recursive CTE to split the comma-separated `labels` column because SQLite has no native STRING_SPLIT function.
+- `node_labels(node_id, label)` junction table is maintained in Go by the node writers (see Storage Schema); raw SQL that writes `nodes.labels` directly would leave it stale.
+- Bulk node import is ~36k rows/s with the old `node_labels` triggers and ~101k rows/s with labels written by Go (`BenchmarkImportCSVNodes`; relationships ~137k rows/s, `BenchmarkImportCSVEdges`). Measured and NOT worth it: `PRAGMA temp_store=MEMORY` (no gain once the triggers were gone), a bigger `cache_size`, per-transaction prepared INSERT statements.
 - `node_labels` has `UNIQUE(node_id, label)` so that `INSERT OR IGNORE` in `backfillMigrationSQL` truly prevents duplicate rows. Without a unique constraint, `INSERT OR IGNORE` is a no-op and does NOT deduplicate.
 - The backfill migration uses `WHERE NOT EXISTS (... WHERE node_id = n.id)` to skip nodes already populated by triggers (i.e., inserted after the schema upgrade). `INSERT OR IGNORE` handles the edge case where a node partially appears in node_labels.
 - The interpreter applies writes to SQLite immediately inside one transaction (rolled back on error), defers deletes to the end of the statement, and reports net counters. A null property is never stored (Cypher semantics). `collect()` returns a `[]any`, and a `WHERE` on `OPTIONAL MATCH` is part of the match (it never removes input rows).

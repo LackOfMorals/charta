@@ -29,3 +29,10 @@ Change 1 (cypher/interp/reverse.go): a plain chain pattern whose last node is a 
   Skipped for path variables, groups, WHERE/prop references to pattern variables, var-length rels with a variable.
   TestReversedPatternsAgree compares with forwards on random graphs (55 of 65 runs used it).
   3.1M-request graph, "requests to one instance, by status": 27.8 s -> 2.1 s. Other queries unchanged (they aggregate everything).
+
+Change 2 (node insert): profiling showed bulk node insert spent ~85% of its time in the node_labels triggers
+  (even a trigger that inserted one row cost 7 us/row; the recursive-CTE triggers cost more even when their WHEN was
+  false). Labels are now written in Go (store.InsertNode, interpreter createNode/persistLabels), triggers dropped.
+  Not helpful (measured): PRAGMA temp_store=MEMORY, larger cache_size, prepared INSERT statements.
+  BenchmarkImportCSVNodes 100k rows: 36k -> 101k rows/s. Full import: 3m36s -> 2m17s (92k nodes+rels/s).
+  Relationship import ~137k rows/s (1.5M-edge file: 11.8 s earlier run, 15.6 s in the second; likely noise/db size).

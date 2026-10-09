@@ -307,3 +307,63 @@ func BenchmarkShortestPath(b *testing.B) {
 		})
 	}
 }
+
+// BenchmarkImportCSVNodes measures bulk node import (rows per second).
+func BenchmarkImportCSVNodes(b *testing.B) {
+	const rows = 100_000
+	var sb strings.Builder
+	sb.WriteString(":ID,:LABEL,timestamp:string,status:int,protocol:string,method:string,url:string,outcome:string\n")
+	for i := 1; i <= rows; i++ {
+		fmt.Fprintf(&sb, "%d,Request,2026-09-11T16:08:08.%06dZ,%d,HTTP/1.1,GET,https://api.example.io/v1/instances/%08x,ACCEPT\n", i, i, 200+i%5, i)
+	}
+	data := sb.String()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		b.StopTimer()
+		ctx := context.Background()
+		db, err := charta.Open(filepath.Join(b.TempDir(), "g.db"))
+		if err != nil {
+			b.Fatal(err)
+		}
+		b.StartTimer()
+		if err := db.Import(ctx, strings.NewReader(data), charta.FormatCSVNodes); err != nil {
+			b.Fatal(err)
+		}
+		b.StopTimer()
+		db.Close(ctx)
+		b.StartTimer()
+	}
+	b.ReportMetric(float64(rows)*float64(b.N)/b.Elapsed().Seconds(), "rows/s")
+}
+
+// BenchmarkImportCSVEdges measures bulk relationship import (rows per second).
+func BenchmarkImportCSVEdges(b *testing.B) {
+	const nodes, edges = 20_000, 200_000
+	var nb, eb strings.Builder
+	nb.WriteString(":ID,:LABEL,k:int\n")
+	for i := 1; i <= nodes; i++ {
+		fmt.Fprintf(&nb, "%d,N,%d\n", i, i)
+	}
+	eb.WriteString(":START_ID,:END_ID,:TYPE\n")
+	for i := 0; i < edges; i++ {
+		fmt.Fprintf(&eb, "%d,%d,R\n", i%nodes+1, (i*7+3)%nodes+1)
+	}
+	for i := 0; i < b.N; i++ {
+		b.StopTimer()
+		ctx := context.Background()
+		db, err := charta.Open(filepath.Join(b.TempDir(), "g.db"))
+		if err != nil {
+			b.Fatal(err)
+		}
+		if err := db.Import(ctx, strings.NewReader(nb.String()), charta.FormatCSVNodes); err != nil {
+			b.Fatal(err)
+		}
+		b.StartTimer()
+		if err := db.Import(ctx, strings.NewReader(eb.String()), charta.FormatCSVEdges); err != nil {
+			b.Fatal(err)
+		}
+		b.StopTimer()
+		db.Close(ctx)
+	}
+	b.ReportMetric(float64(edges)*float64(b.N)/b.Elapsed().Seconds(), "rows/s")
+}
