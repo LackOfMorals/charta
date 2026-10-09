@@ -257,6 +257,13 @@ func (ex *exec) queryVectorNodes(ctx context.Context, args []any) ([]map[string]
 	if err != nil {
 		return nil, argErr("%v", err)
 	}
+	ids := make([]int64, len(hits))
+	for i, h := range hits {
+		ids[i] = h.ID
+	}
+	if err := ex.g.preloadNodes(ids); err != nil {
+		return nil, err
+	}
 	var out []map[string]any
 	for _, h := range hits {
 		n, err := ex.g.node(h.ID)

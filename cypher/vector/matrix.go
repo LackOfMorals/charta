@@ -122,9 +122,10 @@ func (m *Matrix) Remove(id int64) {
 	delete(m.pos, id)
 }
 
-// minRowsPerWorker keeps a small matrix on one goroutine: below this, starting
+// minRowsPerWorker keeps a small matrix on one goroutine: below this (about
+// 0.1 ms of scanning at dimension 384), starting
 // goroutines costs more than it saves.
-const minRowsPerWorker = 16384
+const minRowsPerWorker = 2048
 
 // Search returns the k most similar vectors to query, best first; ties are
 // broken by id so results are deterministic. The scan is split across

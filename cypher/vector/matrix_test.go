@@ -3,6 +3,7 @@ package vector
 import (
 	"context"
 	"math/rand"
+	"os"
 	"sort"
 	"testing"
 )
@@ -194,9 +195,8 @@ func TestConcurrentSearchAndUpdate(t *testing.T) {
 	}
 }
 
-func benchSearch(b *testing.B, n int, metric Metric) {
+func benchSearch(b *testing.B, n, dim int, metric Metric) {
 	r := rand.New(rand.NewSource(11))
-	const dim = 384
 	m := NewMatrix(dim, metric)
 	for id := int64(0); id < int64(n); id++ {
 		m.Upsert(id, randVec(r, dim))
@@ -211,5 +211,17 @@ func benchSearch(b *testing.B, n int, metric Metric) {
 	}
 }
 
-func BenchmarkSearchCosine10k(b *testing.B)  { benchSearch(b, 10000, Cosine) }
-func BenchmarkSearchCosine100k(b *testing.B) { benchSearch(b, 100000, Cosine) }
+func BenchmarkSearchCosine1k(b *testing.B)         { benchSearch(b, 1000, 384, Cosine) }
+func BenchmarkSearchCosine10k(b *testing.B)        { benchSearch(b, 10000, 384, Cosine) }
+func BenchmarkSearchCosine100k(b *testing.B)       { benchSearch(b, 100000, 384, Cosine) }
+func BenchmarkSearchCosine100kDim768(b *testing.B) { benchSearch(b, 100000, 768, Cosine) }
+func BenchmarkSearchEuclid100k(b *testing.B)       { benchSearch(b, 100000, 384, Euclidean) }
+
+// BenchmarkSearchCosine1M needs about 1.6 GB of memory, so it only runs when
+// GRAPHLITE_BIG is set.
+func BenchmarkSearchCosine1M(b *testing.B) {
+	if os.Getenv("GRAPHLITE_BIG") == "" {
+		b.Skip("set GRAPHLITE_BIG=1 to run (about 1.6 GB)")
+	}
+	benchSearch(b, 1000000, 384, Cosine)
+}
