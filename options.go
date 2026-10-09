@@ -26,6 +26,7 @@ type dbConfig struct {
 	importDir   string
 	readConns   int
 	vectorCache int64
+	noAutoIndex bool
 }
 
 // WithBusyTimeout sets the SQLite busy_timeout pragma. When a write operation
@@ -115,4 +116,13 @@ func WithMaxVectorCacheBytes(n int64) Option {
 			c.vectorCache = n
 		}
 	}
+}
+
+// WithoutAutomaticIndexes stops graphlite creating property indexes on its own.
+// By default, once equality filters on a property have narrowed a few scans of a
+// graph with at least 500 nodes, an index on that property is created in the
+// background; use this option if you want to control the schema yourself and
+// create indexes only with CREATE INDEX or [DB.CreatePropertyIndex].
+func WithoutAutomaticIndexes() Option {
+	return func(c *dbConfig) { c.noAutoIndex = true }
 }

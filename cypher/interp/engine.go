@@ -20,6 +20,8 @@ type Engine struct {
 	// pattern stops at this many hops and an explicit upper bound above it is
 	// an error. Zero means no cap.
 	MaxPathHops int
+	// NoAutoIndexes disables the automatic property indexes.
+	NoAutoIndexes bool
 	// ImportDir is the directory LOAD CSV reads from; empty disables LOAD CSV.
 	ImportDir string
 
@@ -95,7 +97,7 @@ func (e *Engine) ResetIndexState() {
 // index on it when the policy says so. Failures (a read-only database, say)
 // are ignored: an index only ever makes queries faster.
 func (e *Engine) noteScan(ctx context.Context, db DB, key string, readOnly bool) {
-	if e == nil {
+	if e == nil || e.NoAutoIndexes {
 		return
 	}
 	e.mu.Lock()

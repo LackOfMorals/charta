@@ -176,3 +176,69 @@ func BenchmarkVectorSearch(b *testing.B) {
 		})
 	}
 }
+
+// BenchmarkPropertyLookup compares an equality lookup with no index, a declared
+// index and the automatic index on 100,000 nodes and 100,000 relationships.
+func BenchmarkPropertyLookup(b *testing.B) {
+	const n = 100000
+	build := func(b *testing.B, opts ...graphlite.Option) *graphlite.DB {
+		ctx := context.Background()
+		db, err := graphlite.Open(filepath.Join(b.TempDir(), "g.db"), opts...)
+		if err != nil {
+			b.Fatal(err)
+		}
+		b.Cleanup(func() { db.Close(ctx) })
+		for lo := 0; lo < n; lo += 20000 {
+			q := fmt.Sprintf("UNWIND range(%d, %d) AS i CREATE (a:P {id: i, name: 'p' + toString(i)}) CREATE (a)-[:R {w: i}]->(a)", lo, lo+19999)
+			if _, err := db.RunQuery(ctx, q, nil); err != nil {
+				b.Fatal(err)
+			}
+		}
+		return db
+	}
+	lookup := func(b *testing.B, db *graphlite.DB, q string) {
+		ctx := context.Background()
+		var ctr atomic.Int64
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			res, err := db.RunQuery(ctx, q, map[string]any{"i": ctr.Add(7919) % n})
+			if err != nil {
+				b.Fatal(err)
+			}
+			if _, err := res.Collect(ctx); err != nil {
+				b.Fatal(err)
+			}
+		}
+	}
+	const nodeQ = "MATCH (p:P {id: $i}) RETURN p.name"
+	const relQ = "MATCH ()-[r:R {w: $i}]->() RETURN count(r)"
+	b.Run("node/no_index", func(b *testing.B) {
+		lookup(b, build(b, graphlite.WithoutAutomaticIndexes()), nodeQ)
+	})
+	b.Run("node/declared_index", func(b *testing.B) {
+		db := build(b, graphlite.WithoutAutomaticIndexes())
+		if err := db.CreatePropertyIndex(context.Background(), "P", "id"); err != nil {
+			b.Fatal(err)
+		}
+		lookup(b, db, nodeQ)
+	})
+	b.Run("node/automatic_index", func(b *testing.B) {
+		db := build(b)
+		for i := 0; i < 5; i++ { // let the advisor notice the pattern
+			res, _ := db.RunQuery(context.Background(), nodeQ, map[string]any{"i": int64(i)})
+			res.Collect(context.Background())
+		}
+		time.Sleep(2 * time.Second) // the index is built in the background
+		lookup(b, db, nodeQ)
+	})
+	b.Run("relationship/no_index", func(b *testing.B) {
+		lookup(b, build(b, graphlite.WithoutAutomaticIndexes()), relQ)
+	})
+	b.Run("relationship/declared_index", func(b *testing.B) {
+		db := build(b, graphlite.WithoutAutomaticIndexes())
+		if _, err := db.RunQuery(context.Background(), "CREATE INDEX FOR ()-[r:R]-() ON (r.w)", nil); err != nil {
+			b.Fatal(err)
+		}
+		lookup(b, db, relQ)
+	})
+}
