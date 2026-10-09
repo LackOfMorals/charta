@@ -11,3 +11,6 @@ Task 004: ANY k stops early with bound ends; SHORTEST k / GROUPS / ALL SHORTEST 
   Dense 14-node graph, SHORTEST 1 over {1,9}: 0.57 ms vs 1.12 s full enumeration.
   Oracle test coverage: 4,316 pairs compared, 4 skipped.
 Task 005: README + AGENTS.md updated; full verification run.
+Follow-up (batched level expansion): BFS/bidirectional levels prefetch adjacency and far nodes with
+  WHERE ... IN (SELECT value FROM json_each(?)) instead of a query per node. 100k grid far-corner undirected:
+  2.6 s -> 0.68 s (placeholder-list IN batches gave 0.77 s). Remaining time is SQLite fetch + props decode.
