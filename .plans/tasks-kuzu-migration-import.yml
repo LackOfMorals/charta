@@ -1,0 +1,125 @@
+# Rewritten 2026-10-09 for the current architecture: queries are parsed by
+# cypher/syntax, checked by cypher/analyze and executed by the Go interpreter
+# (cypher/interp) directly against SQLite; the SQL translator, planner and plan
+# cache no longer exist. Cypher schema commands (CREATE/DROP INDEX|CONSTRAINT,
+# SHOW ...), VECTOR/POINT/temporal values and quantified path patterns already
+# exist. Verification commands: CGO_ENABLED=0 go build ./... ; go vet ./... ;
+# CGO_ENABLED=0 go test -count=1 ./... ; CGO_ENABLED=0 go test -count=1
+# -tags=tck ./compat/... (TCK and Neo4j-extension suites must stay at 100%).
+feature: kuzu-migration-import
+prd: ./prd-kuzu-migration-import.md
+created_at: 2026-09-24T00:00:00Z
+updated_at: 2026-10-09T00:00:00Z
+
+tasks:
+  - id: task-001
+    title: "Validate real demand before implementation"
+    description: |
+      The PRD is opportunistic rather than driven by an internal gap. Check for concrete demand signals (issues,
+      discussions, direct requests), record the finding in the progress log and get an explicit go/no-go from the
+      maintainer before any code is written. If no-go, mark tasks 002-008 as cancelled.
+    status: pending
+    dependencies: []
+    acceptance_criteria:
+      - "A demand finding is recorded in the progress log"
+      - "An explicit maintainer go/no-go is recorded"
+
+  - id: task-002
+    title: "Import session and KuzuCSVMapping types"
+    description: |
+      A relationship file must resolve its FROM/TO keys against node files imported earlier, so a bare
+      (*DB) ImportKuzuCSV cannot work without state. Introduce an explicit session: db.NewKuzuImport() returning a
+      *KuzuImport that holds the table-qualified id maps, with ImportNodes(ctx, r, NodeMapping) and
+      ImportRelationships(ctx, r, RelMapping) methods. NodeMapping {Table/Label, PrimaryKey, ColumnTypes};
+      RelMapping {FromTable, ToTable, FromColumn, ToColumn, RelType, ColumnTypes}. Unsupported ColumnTypes strings
+      are rejected when the mapping is validated. Do not touch Import's signature; reuse the importer's size limit
+      (importMaxBytes / ErrImportTooLarge).
+    status: pending
+    dependencies:
+      - task-001
+    acceptance_criteria:
+      - "The session and mapping types exist with validation and doc comments"
+      - "ColumnTypes with an unknown type name fail validation with a clear error"
+
+  - id: task-003
+    title: "Import node tables with table-qualified ids"
+    description: |
+      Implement ImportNodes: plain header row, the designated primary-key column, every row gets the table's label,
+      values converted per ColumnTypes. Keys are stored in the session as "<Table>:<primary key value>" so two tables
+      with the same key do not collide. Insert through the interpreter-independent store path used by the existing
+      CSV importer, in one transaction per call, and honour schema constraints (see the property-index plan, task
+      006) once that exists.
+    status: pending
+    dependencies:
+      - task-002
+    acceptance_criteria:
+      - "A node-table CSV imports with the right label and typed properties"
+      - "Two tables reusing the same primary-key values import as distinct nodes"
+      - "The size limit matches the existing importer"
+
+  - id: task-004
+    title: "Import relationship tables"
+    description: |
+      ImportRelationships resolves FromColumn/ToColumn against the session's ids for FromTable/ToTable and inserts edges
+      of RelType with typed properties. A reference to a table not imported yet, or a key with no node, is an error
+      naming the row, and nothing from the call is applied (single transaction).
+    status: pending
+    dependencies:
+      - task-003
+    acceptance_criteria:
+      - "Edges connect the correct nodes"
+      - "Unknown table or missing key fails with a clear error and no partial import"
+
+  - id: task-005
+    title: "Column type mapping, now including temporal types"
+    description: |
+      Map Kuzu column types to graphlite values: INT8-INT64/UINT* -> integer (range checked), FLOAT/DOUBLE -> float,
+      STRING -> string, BOOL -> boolean, DATE -> date, TIMESTAMP -> localdatetime, TIMESTAMP_TZ -> datetime,
+      INTERVAL -> duration (parsed with cypher/temporal), FLOAT arrays -> list of floats or vector when a dimension is
+      mapped. LIST of scalars -> list. STRUCT, MAP, UNION, NODE, REL, RECURSIVE_REL: clear error naming column and type,
+      never a lossy conversion. Empty cells are absent properties.
+    status: pending
+    dependencies:
+      - task-002
+    acceptance_criteria:
+      - "Each supported type converts correctly (table-driven test)"
+      - "Unsupported types are rejected with an error naming the column and type"
+      - "Temporal columns round-trip through MATCH ... RETURN"
+
+  - id: task-006
+    title: "Multi-table integration fixture"
+    description: |
+      Add testdata fixtures: Person and Company node tables with overlapping primary keys and a WORKS_AT relationship
+      table, plus a date column and a float-array column. Integration test imports all three in order and asserts
+      counts, endpoints, the overlap case and property types.
+    status: pending
+    dependencies:
+      - task-004
+      - task-005
+    acceptance_criteria:
+      - "Fixtures exist and the integration test passes"
+      - "The overlapping-key case resolves without collision"
+
+  - id: task-007
+    title: "Migrating from Kuzu guide"
+    description: |
+      Write docs/migrating-from-kuzu.md (linked from the README): exporting tables with COPY ... TO CSV, building the
+      mappings, import order, the type table from task-005, and a worked example that is executed by a test so it cannot
+      rot. Mention that vector indexes must be re-created with CREATE VECTOR INDEX and Parquet is not supported.
+    status: pending
+    dependencies:
+      - task-006
+    acceptance_criteria:
+      - "The guide covers export to import end to end"
+      - "Its worked example is verified by a test"
+
+  - id: task-008
+    title: "Final verification"
+    description: |
+      Run the standard verification commands.
+    status: pending
+    dependencies:
+      - task-007
+    acceptance_criteria:
+      - "build, vet, tests and both compat suites pass"
+

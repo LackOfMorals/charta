@@ -1,0 +1,85 @@
+# Rewritten 2026-10-09 for the current architecture: queries are parsed by
+# cypher/syntax, checked by cypher/analyze and executed by the Go interpreter
+# (cypher/interp) directly against SQLite; the SQL translator, planner and plan
+# cache no longer exist. Cypher schema commands (CREATE/DROP INDEX|CONSTRAINT,
+# SHOW ...), VECTOR/POINT/temporal values and quantified path patterns already
+# exist. Verification commands: CGO_ENABLED=0 go build ./... ; go vet ./... ;
+# CGO_ENABLED=0 go test -count=1 ./... ; CGO_ENABLED=0 go test -count=1
+# -tags=tck ./compat/... (TCK and Neo4j-extension suites must stay at 100%).
+feature: shortest-path-traversal
+prd: ./prd-shortest-path-traversal.md
+created_at: 2026-09-24T00:00:00Z
+updated_at: 2026-10-09T00:00:00Z
+
+tasks:
+  - id: task-001
+    title: "shortestPath()/allShortestPaths(), Path values, length/nodes/relationships"
+    description: |
+      Superseded: the interpreter implements shortestPath() and allShortestPaths(), ANY SHORTEST / ALL SHORTEST /
+      SHORTEST k / SHORTEST k GROUPS / ANY k / ALL selectors, quantified path patterns, graphlite.Path results and
+      the path functions (length, nodes, relationships). The PRD's CTE-based tasks 001-009 do not apply: there is
+      no SQL translator any more.
+    status: completed
+    notes: "Done in the interpreter (match.go, group.go); original CTE tasks superseded."
+    dependencies: []
+    acceptance_criteria:
+      - "The TCK path and shortest-path scenarios pass"
+      - "compat/testdata/neo4j/PathSelectors.feature and QuantifiedPathPatterns.feature pass"
+
+  - id: task-002
+    title: "Make shortest-path search scale"
+    description: |
+      shortestPaths() in match.go copies the whole path for every frontier state (O(depth) per step) and rebuilds
+      a taken-relationship set per state. Replace it with parent pointers (predecessor map per node and depth) and
+      reconstruct paths only for the endpoints that are returned; keep allShortestPaths correct by recording every
+      equal-length predecessor. Honour WithMaxPathHops. Add a benchmark on a 100k-node graph (grid and
+      scale-free) for ANY SHORTEST between random pairs, before and after.
+    status: pending
+    dependencies:
+      - task-001
+    acceptance_criteria:
+      - "Results are identical to the current implementation on the TCK and extension suites"
+      - "Memory and time per search drop measurably on the 100k-node benchmark"
+      - "Numbers are recorded in .plans/progress-shortest-path-traversal.txt"
+
+  - id: task-003
+    title: "Bidirectional search for ANY SHORTEST between two bound nodes"
+    description: |
+      When both endpoints are bound (or resolved to single nodes by an index lookup) use bidirectional breadth-first
+      search, expanding the smaller frontier, for ANY SHORTEST and shortestPath(). Fall back to the current search
+      for unbound ends and for ALL SHORTEST / k-shortest forms. Relationship type and direction constraints must be
+      respected in both directions.
+    status: pending
+    dependencies:
+      - task-002
+    acceptance_criteria:
+      - "Bidirectional search returns paths of the same length as the unidirectional search on randomised graphs (property test)"
+      - "It is faster on the 100k-node benchmark for distant endpoints"
+
+  - id: task-004
+    title: "Guard against path explosion in matchSelected"
+    description: |
+      SHORTEST k and ALL over unbounded patterns enumerate every match before selecting. Add early termination where
+      the selector allows it (k shortest by increasing depth bound; ANY k stops after k per partition) and a clear
+      error or cap (WithMaxPathHops or a result limit) for ALL over unbounded cyclic patterns instead of running
+      away.
+    status: pending
+    dependencies:
+      - task-002
+    acceptance_criteria:
+      - "ANY k and SHORTEST k stop expanding once k paths per partition are found"
+      - "ALL over an unbounded pattern on a dense graph fails fast with a clear error or respects the cap"
+
+  - id: task-005
+    title: "Documentation and final verification"
+    description: |
+      Document the supported path features and limits (nested quantified path patterns are not supported) in the
+      README and AGENTS.md and run the standard verification commands.
+    status: pending
+    dependencies:
+      - task-003
+      - task-004
+    acceptance_criteria:
+      - "README lists shortest-path functions, selectors and limits"
+      - "build, vet, tests and both compat suites pass"
+

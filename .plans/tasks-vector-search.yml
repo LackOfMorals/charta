@@ -1,0 +1,117 @@
+# Rewritten 2026-10-09 for the current architecture: queries are parsed by
+# cypher/syntax, checked by cypher/analyze and executed by the Go interpreter
+# (cypher/interp) directly against SQLite; the SQL translator, planner and plan
+# cache no longer exist. Cypher schema commands (CREATE/DROP INDEX|CONSTRAINT,
+# SHOW ...), VECTOR/POINT/temporal values and quantified path patterns already
+# exist. Verification commands: CGO_ENABLED=0 go build ./... ; go vet ./... ;
+# CGO_ENABLED=0 go test -count=1 ./... ; CGO_ENABLED=0 go test -count=1
+# -tags=tck ./compat/... (TCK and Neo4j-extension suites must stay at 100%).
+feature: vector-search
+prd: ./prd-vector-search.md
+created_at: 2026-09-24T00:00:00Z
+updated_at: 2026-10-09T00:00:00Z
+
+tasks:
+  - id: task-001
+    title: "VECTOR values and similarity functions"
+    description: |
+      Superseded by the Cypher 25 vector support in the interpreter: the VECTOR value type
+      (cypher/vector), vector(), vector_dimension_count(), vector_norm(), vector_distance() with EUCLIDEAN,
+      EUCLIDEAN_SQUARED, MANHATTAN, COSINE, DOT and HAMMING, vector.similarity.cosine/euclidean, storage as
+      properties, IS :: VECTOR<FLOAT32>(n) type predicates and CREATE VECTOR INDEX recorded as metadata. The
+      naming question in the PRD is settled in favour of the Neo4j names.
+    status: completed
+    notes: "Done in commit 371bc30."
+    dependencies: []
+    acceptance_criteria:
+      - "compat/testdata/neo4j/Vector.feature passes"
+
+  - id: task-002
+    title: "Validate VECTOR index options at creation"
+    description: |
+      CREATE VECTOR INDEX name FOR (n:L) ON (n.p) OPTIONS {indexConfig: {`vector.dimensions`: 384,
+      `vector.similarity_function`: 'cosine'}} currently records any options. Validate: dimensions an integer in
+      [1, 4096] (required), similarity_function 'cosine' or 'euclidean' (default cosine), unknown keys rejected.
+      Store the parsed values in the schema definition so later tasks read them without re-parsing, and show them in
+      SHOW INDEXES (add an options column, as Neo4j does).
+    status: pending
+    dependencies:
+      - task-001
+    acceptance_criteria:
+      - "An index without dimensions or with an invalid value fails with a schema error"
+      - "SHOW INDEXES YIELD options returns the dimensions and similarity function"
+
+  - id: task-003
+    title: "Enforce dimension and element type on write"
+    description: |
+      In graph.finish() (next to checkConstraints) validate every created or changed node that has a label with a
+      vector index: the indexed property must be a VECTOR value or a list of numbers whose dimension equals the
+      declared one; null/absent is allowed. A violation is a ConstraintVerificationFailed-style error naming the
+      index and the expected dimension, and the statement rolls back.
+    status: pending
+    dependencies:
+      - task-002
+    acceptance_criteria:
+      - "A correctly dimensioned VECTOR or LIST<FLOAT> is accepted"
+      - "A wrong dimension or a non-numeric element is rejected and nothing is written"
+      - "Changing the property or adding the label to an existing node is checked too"
+
+  - id: task-004
+    title: "db.index.vector.queryNodes procedure (brute force)"
+    description: |
+      Add the Neo4j-compatible built-in procedure CALL db.index.vector.queryNodes(indexName, k, queryVector)
+      YIELD node, score. Implementation: look up the index definition, scan nodes with the label that have the
+      property (node_labels index), compute the similarity with cypher/vector (cosine -> (1+cos)/2,
+      euclidean -> 1/(1+d^2), the same normalisation as vector.similarity.*), keep the top k in a bounded heap and
+      return rows ordered by descending score. The procedure needs graph access, so register it as a built-in in
+      cypher/interp (call.go builtinProc) rather than through proc.Set. Validate k >= 1 and the query dimension;
+      accept a LIST<FLOAT> or VECTOR query value. Add it to SHOW PROCEDURES.
+    status: pending
+    dependencies:
+      - task-003
+    acceptance_criteria:
+      - "The k nearest nodes are returned ranked by score"
+      - "An empty label returns no rows, a wrong query dimension returns a clear error"
+      - "Works inside a larger query (MATCH after CALL, WHERE on score)"
+
+  - id: task-005
+    title: "Go API: DB.VectorSearch"
+    description: |
+      Add (*DB) VectorSearch(ctx, indexName string, query []float64, k int) ([]VectorMatch, error) as a thin wrapper
+      over the procedure for callers that do not use Cypher; VectorMatch carries *Node and Score.
+    status: pending
+    dependencies:
+      - task-004
+    acceptance_criteria:
+      - "VectorSearch returns the same matches and scores as the procedure"
+
+  - id: task-006
+    title: "Benchmark brute-force search and decide on an index"
+    description: |
+      Benchmark queryNodes at 1k, 10k, 100k and 1M vectors at dimension 384 (and 768 at 100k) and record queries
+      per second and allocations. Profile the hot path (JSON decode of the property, float conversion). If decoding
+      dominates, add a per-index in-memory vector cache keyed by node id and invalidated by writes in graph.finish();
+      if brute force is still too slow at the scales users hit, write up an approximate-index proposal (pure Go HNSW)
+      instead of adopting a dependency speculatively. Record the decision.
+    status: pending
+    dependencies:
+      - task-004
+    acceptance_criteria:
+      - "Benchmarks exist for all four scales at dimension 384"
+      - "Results and the cache/approximate-index decision are recorded in .plans/progress-vector-search.txt"
+
+  - id: task-007
+    title: "CGO-free check, documentation, final verification"
+    description: |
+      Verify go list -f '{{.CgoFiles}}' ./... across the dependency tree is empty. Document CREATE VECTOR INDEX,
+      db.index.vector.queryNodes, VectorSearch and the brute-force v1 scope with the benchmark numbers in the README
+      and AGENTS.md. Run the standard verification commands.
+    status: pending
+    dependencies:
+      - task-005
+      - task-006
+    acceptance_criteria:
+      - "No CGO files anywhere in the dependency tree"
+      - "README documents the vector index, procedure and Go API with benchmark numbers"
+      - "build, vet, tests and both compat suites pass"
+
