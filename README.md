@@ -98,6 +98,34 @@ A `*DB` is safe for concurrent use. On a file-backed database, statements withou
 
 More read connections are not always faster, because the pure-Go SQLite shares allocator and file-lock state between connections. On a 20,000-node graph, two readers run indexed lookups 1.8x faster than one but gain nothing from more, and run a full-label scan 1.3x faster, while four run it slower than one. Raise `WithMaxReadConns` only after measuring (`go test -bench ParallelReads`).
 
+### Indexes and constraints
+
+Declare them in Cypher or from Go:
+
+```cypher
+CREATE INDEX FOR (p:Person) ON (p.name)
+CREATE CONSTRAINT FOR (p:Person) REQUIRE p.email IS UNIQUE
+CREATE CONSTRAINT FOR (p:Person) REQUIRE (p.first, p.last) IS NODE KEY
+CREATE CONSTRAINT FOR (p:Person) REQUIRE p.name IS NOT NULL
+CREATE CONSTRAINT FOR (p:Person) REQUIRE p.age IS :: INTEGER
+SHOW INDEXES      SHOW CONSTRAINTS      DROP CONSTRAINT <name>
+```
+
+```go
+err := db.CreatePropertyIndex(ctx, "Person", "name")
+err = db.CreateUniqueConstraint(ctx, "Person", "email")
+schema, err := db.ListSchema(ctx) // []SchemaInfo; db.DropIndex / db.DropConstraint by name
+```
+
+Constraints are checked when a statement finishes, over the nodes and relationships it created or changed, and a violation rolls the whole statement back with a structured error:
+
+```go
+var cv *graphlite.ErrConstraintViolation
+if errors.As(err, &cv) && cv.Kind == "UNIQUENESS" { /* cv.Label, cv.Properties, cv.Name */ }
+```
+
+A constraint cannot be created over data that already breaks it. Uniqueness works for multi-label nodes. Indexes are SQLite expression indexes, so equality lookups on an indexed property stop scanning; graphlite also creates one automatically once a property has narrowed a few scans on a graph of 500 or more nodes.
+
 ### Vector search
 
 Store embeddings as `VECTOR` values (or lists of numbers), declare a vector index, and search it:

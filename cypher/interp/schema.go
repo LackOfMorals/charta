@@ -217,7 +217,7 @@ func (ex *exec) execCreateConstraint(cc *syntax.CreateConstraint) error {
 	if err != nil {
 		return err
 	}
-	def := schemaDef{Constraint: true, Entity: entity, Targets: []string{name}, Props: props, Options: opts}
+	def := schemaDef{Name: cc.Name, Constraint: true, Entity: entity, Targets: []string{name}, Props: props, Options: opts}
 	switch cc.Kind {
 	case syntax.ConstraintUnique:
 		def.Kind = "UNIQUENESS"
@@ -385,8 +385,13 @@ func describeEntity(entity string, id int64) string {
 	return fmt.Sprintf("Relationship(%d)", id)
 }
 
-func constraintViolation(format string, args ...any) error {
-	return errorf("ConstraintVerificationFailed", "ConstraintValidationFailed", format, args...)
+func constraintViolation(d schemaDef, format string, args ...any) error {
+	e := errorf("ConstraintVerificationFailed", "ConstraintValidationFailed", format, args...)
+	e.Schema = &SchemaRef{Name: d.Name, Kind: d.Kind, Entity: d.Entity, Properties: d.Props}
+	if len(d.Targets) > 0 {
+		e.Schema.Target = d.Targets[0]
+	}
+	return e
 }
 
 // checkOne verifies a single entity against one constraint (uniqueness is
@@ -398,13 +403,13 @@ func checkOne(d schemaDef, id int64, props map[string]any) error {
 	case "EXISTENCE", "KEY":
 		for _, p := range d.Props {
 			if props[p] == nil {
-				return constraintViolation("%s with %s `%s` must have the property `%s`", who, map[string]string{"NODE": "label", "RELATIONSHIP": "type"}[d.Entity], target, p)
+				return constraintViolation(d, "%s with %s `%s` must have the property `%s`", who, map[string]string{"NODE": "label", "RELATIONSHIP": "type"}[d.Entity], target, p)
 			}
 		}
 	case "TYPE":
 		p := d.Props[0]
 		if v := props[p]; v != nil && !matchesVTypes(v, parseVTypes(d.ValueType)) {
-			return constraintViolation("%s with %s `%s` requires the property `%s` to be of type %s, but it was %s",
+			return constraintViolation(d, "%s with %s `%s` requires the property `%s` to be of type %s, but it was %s",
 				who, map[string]string{"NODE": "label", "RELATIONSHIP": "type"}[d.Entity], target, p, d.ValueType, valueTypeName(v, true))
 		}
 	}
@@ -509,7 +514,7 @@ func (g *graph) checkConstraints() error {
 					for i, v := range tuple {
 						vals[i] = fmt.Sprintf("`%s` = %s", d.Props[i], renderForError(v))
 					}
-					return constraintViolation("%s already exists with %s `%s` and property %s",
+					return constraintViolation(d, "%s already exists with %s `%s` and property %s",
 						describeEntity(entity, other), map[string]string{"NODE": "label", "RELATIONSHIP": "type"}[entity], d.Targets[0], strings.Join(vals, ", "))
 				}
 			}
@@ -578,7 +583,7 @@ func (ex *exec) validateExisting(d schemaDef) error {
 			}
 			key := groupKey(tuple)
 			if other, dup := seen[key]; dup {
-				return constraintViolation("cannot create the constraint: %s and %s both have the same values for %s",
+				return constraintViolation(d, "cannot create the constraint: %s and %s both have the same values for %s",
 					describeEntity(d.Entity, other), describeEntity(d.Entity, id), strings.Join(d.Props, ", "))
 			}
 			seen[key] = id
@@ -730,7 +735,7 @@ func (g *graph) checkVectorIndexes() error {
 				continue
 			}
 			if v := props[d.Props[0]]; v != nil && !vectorValue(v, d.VectorDims) {
-				return constraintViolation("%s with %s `%s`: property `%s` must be a vector of dimension %d (vector index `%s`), got %s",
+				return constraintViolation(d, "%s with %s `%s`: property `%s` must be a vector of dimension %d (vector index `%s`), got %s",
 					describeEntity(entity, id), map[string]string{"NODE": "label", "RELATIONSHIP": "type"}[entity],
 					d.Targets[0], d.Props[0], d.VectorDims, d.Name, valueTypeName(v, true))
 			}
