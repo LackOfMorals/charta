@@ -23,3 +23,9 @@ Queries on the full graph (3.1M requests), first run, no extra indexes:
   whole-run peak RSS 15.3 GB (the interpreter caches every node/relationship it touches; no eviction).
 Findings: (1) node import speed, (2) MATCH starts at the leftmost node, not the selective one,
   (3) aggregations over millions of nodes cost ~7 us/node and hold everything in memory (RSS).
+
+Change 1 (cypher/interp/reverse.go): a plain chain pattern whose last node is a better start than its first
+  (bound variable > property equality > label > nothing) is walked from the last node with directions flipped.
+  Skipped for path variables, groups, WHERE/prop references to pattern variables, var-length rels with a variable.
+  TestReversedPatternsAgree compares with forwards on random graphs (55 of 65 runs used it).
+  3.1M-request graph, "requests to one instance, by status": 27.8 s -> 2.1 s. Other queries unchanged (they aggregate everything).

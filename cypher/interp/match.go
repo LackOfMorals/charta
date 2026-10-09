@@ -80,6 +80,12 @@ func (ex *exec) matchPart(part *syntax.PatternPart, r row, used map[int64]bool, 
 	if handled, err := ex.matchRelFirst(part, r, used, finish); handled || err != nil {
 		return err
 	}
+	if elems, ok := ex.reversed(part, r); ok {
+		reverseUsed.Add(1)
+		return ex.forEachStart(elems[0].(*syntax.NodePattern), r, func(n *Node, r2 row) error {
+			return ex.walk(elems, 1, n, r2, &pathState{nodes: []*Node{n}}, used, finish)
+		})
+	}
 	first := part.Elems[0].(*syntax.NodePattern)
 	return ex.forEachStart(first, r, func(n *Node, r2 row) error {
 		return ex.walk(part.Elems, 1, n, r2, &pathState{nodes: []*Node{n}}, used, finish)

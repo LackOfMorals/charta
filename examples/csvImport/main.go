@@ -63,10 +63,11 @@ func main() {
 	dbPath := flag.String("db", "", "database file (default: a temporary file, removed afterwards; \":memory:\" for in-memory)")
 	prepare := flag.Bool("prepare", false, "convert -in into node/relationship files in -out")
 	load := flag.Bool("load", false, "import the files in -out and run the queries")
+	queryOnly := flag.Bool("query", false, "run only the queries, on the existing database -db (from an earlier -load -db <file>)")
 	rows := flag.Int("rows", 0, "limit to the first N data rows (0 = all)")
 	chunk := flag.Int("chunk", 500_000, "requests per node file (the importer reads a whole file into memory and accepts at most 500 MiB)")
 	flag.Parse()
-	if !*prepare && !*load {
+	if !*prepare && !*load && !*queryOnly {
 		flag.Usage()
 		os.Exit(2)
 	}
@@ -77,6 +78,14 @@ func main() {
 	}
 	if *load {
 		if err := loadFiles(*out, *dbPath); err != nil {
+			log.Fatal(err)
+		}
+	}
+	if *queryOnly {
+		if *dbPath == "" {
+			log.Fatal("-query needs -db")
+		}
+		if err := queryOnlyRun(*dbPath); err != nil {
 			log.Fatal(err)
 		}
 	}
@@ -391,6 +400,41 @@ func loadFiles(dir, dbPath string) error {
 		nodes, rels, float64(totalBytes)/(1<<20), elapsed.Round(time.Millisecond),
 		float64(nodes+rels)/elapsed.Seconds(), peak.Load()>>20)
 
+	runQueries(ctx, db)
+	if st, err := os.Stat(dbPath); err == nil {
+		fmt.Printf("\ndatabase file: %d MiB\n", st.Size()>>20)
+	}
+	return nil
+}
+
+// scalar returns the single integer a one-row query yields.
+func scalar(ctx context.Context, db *charta.DB, q string) int64 {
+	res, err := db.RunQuery(ctx, q, nil)
+	if err != nil {
+		return -1
+	}
+	rec, err := res.Single(ctx)
+	if err != nil {
+		return -1
+	}
+	n, _ := rec.Values()[0].(int64)
+	return n
+}
+
+// queryOnlyRun opens an existing database and runs the queries.
+func queryOnlyRun(dbPath string) error {
+	ctx := context.Background()
+	db, err := charta.Open(dbPath)
+	if err != nil {
+		return err
+	}
+	defer db.Close(ctx)
+	runQueries(ctx, db)
+	return nil
+}
+
+// runQueries times a few representative queries.
+func runQueries(ctx context.Context, db *charta.DB) {
 	fmt.Printf("%-52s %10s  %s\n", "query", "time", "first row")
 	for _, q := range []struct{ name, cypher string }{
 		{"count requests by status", `MATCH (r:Request) RETURN r.status AS status, count(*) AS n ORDER BY n DESC LIMIT 5`},
@@ -415,22 +459,4 @@ func loadFiles(dir, dbPath string) error {
 		}
 		fmt.Printf("%-52s %10s  %s\n", q.name, time.Since(t).Round(time.Millisecond), first)
 	}
-	if st, err := os.Stat(dbPath); err == nil {
-		fmt.Printf("\ndatabase file: %d MiB\n", st.Size()>>20)
-	}
-	return nil
-}
-
-// scalar returns the single integer a one-row query yields.
-func scalar(ctx context.Context, db *charta.DB, q string) int64 {
-	res, err := db.RunQuery(ctx, q, nil)
-	if err != nil {
-		return -1
-	}
-	rec, err := res.Single(ctx)
-	if err != nil {
-		return -1
-	}
-	n, _ := rec.Values()[0].(int64)
-	return n
 }
