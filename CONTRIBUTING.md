@@ -6,7 +6,7 @@ Thank you for your interest in contributing to graphlite. This document covers p
 
 ## Prerequisites
 
-- Go 1.24 or newer (matches the `go` directive in `go.mod`)
+- Go 1.26 or newer (matches the `go` directive in `go.mod`)
 - No CGO required — graphlite uses `modernc.org/sqlite`, a pure-Go SQLite driver
 - `git` for version control
 

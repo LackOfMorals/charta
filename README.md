@@ -60,7 +60,7 @@ Unsupported features return `ErrUnsupportedCypher` — they never silently produ
 go get github.com/LackOfMorals/graphlite
 ```
 
-Requires Go 1.24+. No CGO required. Works on Linux (amd64/arm64), macOS (arm64), and Windows (amd64).
+Requires Go 1.26+. No CGO required. Works on Linux (amd64/arm64), macOS (arm64), and Windows (amd64).
 
 ---
 

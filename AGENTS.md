@@ -5,7 +5,7 @@
 graphlite is an embedded property graph database for Go, backed by SQLite and queryable via a subset of openCypher. The primary entry point is `graphlite.Open`; queries are executed with `db.RunQuery` or via explicit transactions started with `db.BeginTx`.
 
 - Module path: `github.com/LackOfMorals/graphlite`
-- Go minimum version: 1.24
+- Go minimum version: 1.26
 - SQLite driver: `modernc.org/sqlite` (CGO-free, no mattn/go-sqlite3)
 
 ## Feedback Instructions
@@ -93,7 +93,7 @@ WAL mode is enabled via `PRAGMA journal_mode=WAL` on every open.
 - `NewRecord` panics on key/value length mismatch (programmer error).
 - Labels are stored as comma-separated text in the `labels` column.
 - `json_extract(props, '$.key')` is used for property access in SQLite queries.
-- `go.mod` `go` directive is 1.24; `modernc.org/sqlite v1.35.0` builds at go 1.24.
+- `go.mod` `go` directive is 1.26.5 (raised from 1.24 so govulncheck is clean: `golang.org/x/text` >= 0.39 and the net/url fix need Go 1.25+); `modernc.org/sqlite v1.35.0` builds fine at it.
 - `testdata/` package is excluded from `./...` by Go design. Run explicitly: `CGO_ENABLED=0 go test github.com/LackOfMorals/graphlite/testdata`.
 - Only one file per package should have a `// Package foo ...` doc comment.
 - When deleting files that export methods used in `example_test.go`, also remove the corresponding `Example*` functions — otherwise `go build ./...` fails even if core tests pass.
@@ -122,7 +122,6 @@ WAL mode is enabled via `PRAGMA journal_mode=WAL` on every open.
 - `analyze.Check` reports only what it can prove (unknown types are accepted) and must have ZERO false positives: `cypher/analyze` `TestTCK_ValidScenariosPass` checks every valid TCK query and `TestTCK_CompileTimeErrors` requires the exact class and code for all 586 compile-time-error cases. Rules worth knowing: a path variable is bound AFTER its elements (so `p = (p)-->()` is "already bound" while a later node `r` after path `r` is a type conflict); in an aggregating item every variable/property leaf outside an aggregate must equal a projected non-aggregating item (so `me.age + you.age + count(*)` is ambiguous even if `me.age + you.age` is projected); `NoExpressionAlias` is reported after the other projection checks; `WITH *` with no variables is legal but `RETURN *` is `NoVariablesInScope`.
 - The TCK harness (`compat`) requires class AND code to match for "should be raised at compile time"; runtime and any-time expectations still accept any error. Property access on a path is a `SyntaxError`, on a non-map value a `TypeError` (both `InvalidArgumentType`).
 - `cypher/syntax` operator precedence is the one the TCK pins down (Precedence1-4), loosest to tightest: OR, XOR, AND, NOT, comparison (`= <> < >` …), predicates (`IN`, `STARTS WITH`, `CONTAINS`, `=~`, `IS NULL`, `:: TYPE`), `+ - ||`, `* / %`, `^` (left-associative), unary `-`/`+`, then postfix. So `[1]+2 IN [3]+4` is `([1]+2) IN ([3]+4)` and `false = true IN l` is `false = (true IN l)`. Operator and clause words (`NOT`, `AND`, `IN`, `WHEN`, …) cannot start an expression; other keywords are valid variable, label and function names.
-- `golang.org/x/sys` is pinned at v0.41.0 (not v0.44.0): v0.44.0 fixes GO-2026-5024 but requires Go 1.25. Revisit when minimum Go version is raised to 1.25.
 - SQLite FOREIGN KEY constraint errors are detected via `strings.Contains(err.Error(), "FOREIGN KEY constraint failed")` — modernc.org/sqlite surfaces the constraint name verbatim in the error string. Catch this in `InsertEdge` callers and return a domain-appropriate error rather than exposing the raw SQLite message.
 - CSV node `:ID` values are file-local labels only — the actual SQLite primary keys are AUTOINCREMENT-assigned by `InsertNode`. In a fresh empty DB, sequential inserts give IDs 1, 2, 3, … matching the CSV row order, which benchmarks rely on.
 - `Result.rawVals`, `ptrs`, and `vals` are pre-allocated in `newResultFromRows` and reused across all `Next` calls. `ptrs[i] = &rawVals[i]` is stable because `rawVals` is never appended to. `newRecord` copies both keys and values internally, so reusing `vals` is safe.
