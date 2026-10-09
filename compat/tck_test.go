@@ -9,24 +9,31 @@
 //
 //	CGO_ENABLED=0 go test -tags=tck ./compat/... -v
 //
-// The harness loads all .feature files from testdata/tck/ and reports a TCK
-// pass rate at the end of the run. Scenarios that use unsupported features are
-// skipped via a Before hook; each skip reason is documented in skipScenario().
+// The harness loads all .feature files from testdata/tck/ (the full openCypher
+// TCK, see testdata/tck/README.md) and reports a TCK pass rate at the end of the
+// run. Nothing is skipped: scenarios that need syntax Cypher 25 removed are
+// listed in testdata/excluded.txt, everything else must pass.
+//
+// Set TCK_REPORT=path to also write a per-area / per-feature markdown report.
 package compat
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
+	"sort"
 	"strconv"
 	"strings"
-	"sync/atomic"
+	"sync"
 	"testing"
 
 	"github.com/cucumber/godog"
 
 	graphlite "github.com/LackOfMorals/graphlite/v2"
+	"github.com/LackOfMorals/graphlite/v2/cypher/analyze"
 )
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -53,14 +60,13 @@ type tckState struct {
 	db         *graphlite.DB
 	lastResult *eagerResult
 	lastError  error
-	// counters accumulated across setup and query steps
-	nodesCreated int
-	nodesDeleted int
-	relsCreated  int
-	relsDeleted  int
-	propsSet     int
-	skipped      bool           // set by Before hook; steps become no-ops
-	params       map[string]any // query parameters set by "And parameters are:" step
+	// effects are the side effects of the last "executing query" step (setup
+	// and control queries are not counted).
+	effects sideEffects
+	feature string         // feature file, relative to testdata/tck
+	name    string         // scenario name
+	skipped bool           // set by Before hook; steps become no-ops
+	params  map[string]any // query parameters set by "And parameters are:" step
 }
 
 func newTCKState() *tckState { return &tckState{} }
@@ -72,120 +78,9 @@ func (s *tckState) reset() {
 	}
 	s.lastResult = nil
 	s.lastError = nil
-	s.nodesCreated = 0
-	s.nodesDeleted = 0
-	s.relsCreated = 0
-	s.relsDeleted = 0
-	s.propsSet = 0
+	s.effects = sideEffects{}
 	s.skipped = false
 	s.params = nil
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Skip logic
-//
-// Scenarios are skipped when their Cypher uses features graphlite does not
-// support. The skip check runs in a Before hook by inspecting scenario step text.
-// ─────────────────────────────────────────────────────────────────────────────
-
-// unsupportedPatterns lists substrings in Cypher text that trigger a skip.
-// Each entry has a reason that is logged with the skip.
-var unsupportedPatterns = []struct {
-	pattern string
-	reason  string
-}{
-	// Unsupported clauses
-	{"CALL {", "CALL subquery not supported"},
-	{"FOREACH", "FOREACH not supported"},
-	{"UNWIND", "UNWIND not supported"},
-	{"UNION", "UNION not supported"},
-	{"RETURN *", "RETURN * not supported"},
-
-	// Unsupported path assignment syntax
-	{"= ()-", "named path variables not supported"},
-	{"= ()<-", "named path variables not supported"},
-	{"= ()--", "named path variables not supported"},
-
-	// Unsupported functions
-	{"toLower(", "string function toLower not supported"},
-	{"toUpper(", "string function toUpper not supported"},
-	{"trim(", "string function trim not supported"},
-	{"split(", "string function split not supported"},
-	{"size(", "size() function not supported"},
-	{"length(", "length() function not supported"},
-	{"abs(", "math function abs not supported"},
-	{"ceil(", "math function ceil not supported"},
-	{"floor(", "math function floor not supported"},
-	{"round(", "math function round not supported"},
-	{"type(", "type() function not supported"},
-	{"labels(", "labels() function not supported"},
-	{"keys(", "keys() function not supported"},
-	{"id(", "id() function not supported"},
-	{"nodes(", "nodes() function not supported"},
-	{"relationships(", "relationships() function not supported"},
-	{"head(", "head() function not supported"},
-	{"tail(", "tail() function not supported"},
-	{"last(", "last() function not supported"},
-	{"toString(", "toString() function not supported"},
-	{"toInteger(", "toInteger() function not supported"},
-	{"toFloat(", "toFloat() function not supported"},
-	{"toBoolean(", "toBoolean() function not supported"},
-	{"range(", "range() function not supported"},
-	{"coalesce(", "coalesce() function not supported"},
-	{"shortestPath(", "shortestPath() not supported"},
-	{"allShortestPaths(", "allShortestPaths() not supported"},
-
-	// Unsupported expression forms
-	{"[x IN", "list comprehensions not supported"},
-	{"[n IN", "list comprehensions not supported"},
-	{"[r IN", "list comprehensions not supported"},
-	{"[e IN", "list comprehensions not supported"},
-	{"[i IN", "list comprehensions not supported"},
-	{"any(", "any() predicate not supported"},
-	{"all(", "all() predicate not supported"},
-	{"none(", "none() predicate not supported"},
-	{"single(", "single() predicate not supported"},
-	{"extract(", "extract() not supported"},
-	{"filter(", "filter() not supported"},
-	{"reduce(", "reduce() not supported"},
-
-	// Pattern predicates in WHERE (e.g. WHERE (a)-[:R]->())
-	// Detected by the presence of WHERE followed by pattern syntax
-	// We use a different approach: skip scenarios with WHERE that contains
-	// a pattern predicate — but this is hard to detect textually.
-	// Instead we rely on the query failing and skip the result comparison.
-}
-
-// containsUnsupported returns a reason string if cypher uses unsupported features,
-// or empty string if it appears supported.
-func containsUnsupported(cypher string) string {
-	for _, up := range unsupportedPatterns {
-		if strings.Contains(cypher, up.pattern) {
-			return up.reason
-		}
-	}
-	return ""
-}
-
-// shouldSkipScenario returns a non-empty skip reason if the scenario should be
-// skipped based on its step text.
-// godog.Scenario is an alias for messages.Pickle; Steps are []*messages.PickleStep
-// which carry DocString in step.Argument.DocString (not step.DocString directly).
-func shouldSkipScenario(scenario *godog.Scenario) string {
-	for _, step := range scenario.Steps {
-		// Check DocString content (multiline Cypher blocks)
-		if step.Argument != nil && step.Argument.DocString != nil {
-			cypher := step.Argument.DocString.Content
-			if reason := containsUnsupported(cypher); reason != "" {
-				return reason
-			}
-		}
-		// Also check step text itself for hints
-		if reason := containsUnsupported(step.Text); reason != "" {
-			return reason
-		}
-	}
-	return ""
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -210,6 +105,30 @@ func (s *tckState) givenAnEmptyGraph(ctx context.Context) error {
 		return fmt.Errorf("open in-memory db: %w", err)
 	}
 	s.db = db
+	return nil
+}
+
+// givenNamedGraph handles "Given the binary-tree-N graph" by running the
+// graph's CREATE script from testdata/graphs.
+func (s *tckState) givenNamedGraph(ctx context.Context, name string) error {
+	if s.skipped {
+		return nil
+	}
+	if err := s.givenAnEmptyGraph(ctx); err != nil {
+		return err
+	}
+	file := filepath.Join("testdata", "graphs", name, name+".cypher")
+	script, err := os.ReadFile(file)
+	if err != nil {
+		return fmt.Errorf("named graph %q: %w", name, err)
+	}
+	qr, err := s.db.RunQuery(ctx, strings.TrimSpace(string(script)), nil)
+	if err != nil {
+		return fmt.Errorf("named graph %q: %w", name, err)
+	}
+	if _, err := collectResult(ctx, qr); err != nil {
+		return fmt.Errorf("named graph %q: %w", name, err)
+	}
 	return nil
 }
 
@@ -292,16 +211,23 @@ func (s *tckState) whenExecutingQueryDocString(ctx context.Context, doc *godog.D
 	}
 	s.lastResult = eager
 	s.lastError = nil
+	s.effects = sideEffects{}
 	if eager.Summary != nil {
 		c := eager.Summary.Counters()
-		s.nodesCreated += c.NodesCreated()
-		s.nodesDeleted += c.NodesDeleted()
-		s.relsCreated += c.RelationshipsCreated()
-		s.relsDeleted += c.RelationshipsDeleted()
-		s.propsSet += c.PropertiesSet()
+		s.effects = sideEffects{
+			"+nodes": c.NodesCreated(), "-nodes": c.NodesDeleted(),
+			"+relationships": c.RelationshipsCreated(), "-relationships": c.RelationshipsDeleted(),
+			"+properties": c.PropertiesSet(), "-properties": c.PropertiesRemoved(),
+			"+labels": c.LabelsAdded(), "-labels": c.LabelsRemoved(),
+			"+indexes": c.IndexesAdded(), "-indexes": c.IndexesRemoved(),
+			"+constraints": c.ConstraintsAdded(), "-constraints": c.ConstraintsRemoved(),
+		}
 	}
 	return nil
 }
+
+// sideEffects maps a TCK side-effect name ("+nodes", "-labels", …) to its count.
+type sideEffects map[string]int
 
 // ─── Result assertion steps ───────────────────────────────────────────────────
 
@@ -325,8 +251,25 @@ func (s *tckState) noSideEffects() error {
 	if s.skipped {
 		return nil
 	}
-	// No-op: graphlite does not track setup-step side effects separately from
-	// query side effects; accepting this step without checking is intentional.
+	return s.checkEffects(sideEffects{})
+}
+
+// checkEffects requires the last query's side effects to be exactly want
+// (names not listed must be zero).
+func (s *tckState) checkEffects(want sideEffects) error {
+	if s.lastError != nil {
+		return nil // the result assertion reports the failure
+	}
+	var diffs []string
+	for _, key := range []string{"+nodes", "-nodes", "+relationships", "-relationships", "+properties", "-properties",
+		"+labels", "-labels", "+indexes", "-indexes", "+constraints", "-constraints"} {
+		if got := s.effects[key]; got != want[key] {
+			diffs = append(diffs, fmt.Sprintf("%s: expected %d, got %d", key, want[key], got))
+		}
+	}
+	if len(diffs) > 0 {
+		return fmt.Errorf("side effects differ: %s", strings.Join(diffs, "; "))
+	}
 	return nil
 }
 
@@ -334,6 +277,16 @@ func (s *tckState) noSideEffects() error {
 // The table has a header row of column names and data rows of values.
 // We compare record count and — for simple scalar values — cell values.
 func (s *tckState) theResultShouldBeInAnyOrder(table *godog.Table) error {
+	return s.compareResult(table, false, false)
+}
+
+// theResultShouldBeInOrder handles "Then the result should be, in order:".
+func (s *tckState) theResultShouldBeInOrder(table *godog.Table) error {
+	return s.compareResult(table, true, false)
+}
+
+// compareResult compares the last result with an expected table structurally.
+func (s *tckState) compareResult(table *godog.Table, ordered, ignoreListOrder bool) error {
 	if s.skipped {
 		return nil
 	}
@@ -346,53 +299,59 @@ func (s *tckState) theResultShouldBeInAnyOrder(table *godog.Table) error {
 	if len(table.Rows) == 0 {
 		return nil
 	}
-
-	// The first row is the header.
-	headers := table.Rows[0].Cells
-	dataRows := table.Rows[1:]
-
-	// If dataRows is empty, the expected result is empty.
-	if len(dataRows) == 0 {
-		if len(s.lastResult.Records) != 0 {
-			return fmt.Errorf("expected empty result (table has no data rows), got %d row(s)", len(s.lastResult.Records))
-		}
-		return nil
+	headers := make([]string, len(table.Rows[0].Cells))
+	for i, c := range table.Rows[0].Cells {
+		headers[i] = c.Value
 	}
-
-	// Check row count.
+	dataRows := table.Rows[1:]
 	if len(s.lastResult.Records) != len(dataRows) {
 		return fmt.Errorf("expected %d row(s), got %d", len(dataRows), len(s.lastResult.Records))
 	}
+	const lenient = false // values must match exactly, including int vs float
 
-	// For single-column scalar results, do a value comparison (unordered).
-	if len(headers) == 1 {
-		colName := headers[0].Value
-		// Collect expected values.
-		expected := make([]any, 0, len(dataRows))
-		for _, row := range dataRows {
-			if len(row.Cells) > 0 {
-				expected = append(expected, parseTCKValue(row.Cells[0].Value))
+	expected := make([]string, len(dataRows))
+	for i, row := range dataRows {
+		vals := make([]any, len(headers))
+		for j := range headers {
+			v, err := parseTV(row.Cells[j].Value)
+			if err != nil {
+				return fmt.Errorf("cannot parse expected value %q: %w", row.Cells[j].Value, err)
+			}
+			vals[j] = v
+		}
+		expected[i] = tvKey(vals, ignoreListOrder)
+	}
+	actual := make([]string, len(s.lastResult.Records))
+	for i, rec := range s.lastResult.Records {
+		vals := make([]any, len(headers))
+		for j, h := range headers {
+			v, ok := rec.Get(h)
+			if !ok {
+				return fmt.Errorf("result has no column %q", h)
+			}
+			vals[j] = fromActual(v, lenient)
+		}
+		actual[i] = tvKey(vals, ignoreListOrder)
+	}
+	if ordered {
+		for i := range expected {
+			if expected[i] != actual[i] {
+				return fmt.Errorf("row %d: expected %s, got %s", i, expected[i], actual[i])
 			}
 		}
-		// Collect actual values.
-		actual := make([]any, 0, len(s.lastResult.Records))
-		for _, rec := range s.lastResult.Records {
-			v, _ := rec.Get(colName)
-			actual = append(actual, normaliseValue(v))
-		}
-		return compareUnordered(expected, actual, colName)
+		return nil
 	}
-
-	// For multi-column results: check row count only (column values may be
-	// complex node/rel representations that we cannot easily compare).
-	// A more precise comparison would require a full TCK value parser.
+	freq := map[string]int{}
+	for _, k := range expected {
+		freq[k]++
+	}
+	for _, k := range actual {
+		if freq[k] <= 0 {
+			return fmt.Errorf("unexpected row %s (expected one of %v)", k, expected)
+		}
+		freq[k]--
+	}
 	return nil
-}
-
-// theResultShouldBeInOrder handles "Then the result should be, in order:" —
-// same as in any order but we just check count for now.
-func (s *tckState) theResultShouldBeInOrder(table *godog.Table) error {
-	return s.theResultShouldBeInAnyOrder(table)
 }
 
 // theSideEffectsShouldBe handles "And the side effects should be:" (table).
@@ -401,42 +360,18 @@ func (s *tckState) theSideEffectsShouldBe(table *godog.Table) error {
 	if s.skipped {
 		return nil
 	}
+	want := sideEffects{}
 	for _, row := range table.Rows {
 		if len(row.Cells) < 2 {
 			continue
 		}
-		key := strings.TrimSpace(row.Cells[0].Value)
-		valStr := strings.TrimSpace(row.Cells[1].Value)
-		expected, err := strconv.Atoi(valStr)
+		n, err := strconv.Atoi(strings.TrimSpace(row.Cells[1].Value))
 		if err != nil {
-			continue // skip unparseable rows
+			return fmt.Errorf("bad side effect count %q", row.Cells[1].Value)
 		}
-		var actual int
-		switch key {
-		case "+nodes":
-			actual = s.nodesCreated
-		case "-nodes":
-			actual = s.nodesDeleted
-		case "+relationships":
-			actual = s.relsCreated
-		case "-relationships":
-			actual = s.relsDeleted
-		case "+properties":
-			actual = s.propsSet
-		case "-properties":
-			// graphlite does not track property removals in counters; skip
-			continue
-		case "+labels", "-labels":
-			// graphlite Counters interface does not expose label add/remove counts; skip
-			continue
-		default:
-			continue // unknown side-effect key; skip
-		}
-		if actual != expected {
-			return fmt.Errorf("side effect %q: expected %d, got %d", key, expected, actual)
-		}
+		want[strings.TrimSpace(row.Cells[0].Value)] = n
 	}
-	return nil
+	return s.checkEffects(want)
 }
 
 // errorShouldBeRaised handles "Then a SyntaxError should be raised at compile time: ..."
@@ -448,7 +383,20 @@ func (s *tckState) errorShouldBeRaised(ctx context.Context, errorType, phase, co
 	if s.lastError == nil {
 		return fmt.Errorf("expected %s error (%s) but query succeeded", errorType, code)
 	}
-	return nil // any error satisfies this expectation
+	// Compile-time expectations must match exactly: the error has to come from
+	// parsing or semantic analysis and carry the expected class and code.
+	// Runtime and any-time expectations accept any error until the execution
+	// iterations raise typed runtime errors.
+	if phase == "compile time" && code != "" {
+		class, got, ok := analyze.Describe(s.lastError)
+		switch {
+		case !ok:
+			return fmt.Errorf("expected compile-time %s %s, got a different kind of error: %v", errorType, code, s.lastError)
+		case class != errorType || got != code:
+			return fmt.Errorf("expected compile-time %s %s, got %s %s: %v", errorType, code, class, got, s.lastError)
+		}
+	}
+	return nil
 }
 
 // ─── Value parsing ─────────────────────────────────────────────────────────────
@@ -485,89 +433,217 @@ func parseTCKValue(s string) any {
 	return s
 }
 
-// normaliseValue normalises actual query result values for comparison against
-// parsed TCK values. graphlite returns numbers as float64 (JSON-decoded).
-func normaliseValue(v any) any {
-	switch val := v.(type) {
-	case float64:
-		// If it's an integer-valued float64, return int64 for easier comparison.
-		if val == float64(int64(val)) {
-			return int64(val)
-		}
-		return val
-	case bool:
-		return val
-	case nil:
-		return nil
-	default:
-		return val
-	}
-}
-
-// compareUnordered checks that two slices have the same elements (in any order).
-// Only works for comparable types (string, int64, float64, nil). Complex values
-// (node/rel patterns) are skipped.
-func compareUnordered(expected, actual []any, col string) error {
-	if len(expected) != len(actual) {
-		return fmt.Errorf("column %q: expected %d value(s), got %d", col, len(expected), len(actual))
-	}
-	// For complex patterns (starting with ( or [) just check count — we cannot compare.
-	if len(expected) > 0 {
-		first := fmt.Sprintf("%v", expected[0])
-		if strings.HasPrefix(first, "(") || strings.HasPrefix(first, "[") {
-			return nil // count already matches; skip value check
-		}
-	}
-
-	// Build frequency map for expected.
-	freq := make(map[string]int)
-	for _, v := range expected {
-		freq[fmt.Sprintf("%v", v)]++
-	}
-	for _, v := range actual {
-		key := fmt.Sprintf("%v", v)
-		if freq[key] <= 0 {
-			// SQLite returns int64 for boolean expressions (0/1); try bool equivalents.
-			switch key {
-			case "0":
-				if freq["false"] > 0 {
-					freq["false"]--
-					continue
-				}
-			case "1":
-				if freq["true"] > 0 {
-					freq["true"]--
-					continue
-				}
-			}
-			return fmt.Errorf("column %q: unexpected value %q in actual results", col, key)
-		}
-		freq[key]--
-	}
-	return nil
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
-// Suite-level pass-rate counters (atomic for goroutine safety)
+// Suite-level outcome collector
 // ─────────────────────────────────────────────────────────────────────────────
+
+// Scenario outcomes.
+const (
+	statusPassed   = "passed"
+	statusFailed   = "failed"
+	statusSkipped  = "skipped"  // uses a feature graphlite does not support yet
+	statusExcluded = "excluded" // needs syntax removed in Cypher 25 (testdata/excluded.txt)
+)
+
+type tckOutcome struct {
+	Feature string
+	Name    string
+	Status  string
+	Reason  string // skip/exclusion reason, or the first line of the failure
+}
 
 type tckCounters struct {
-	total   int64
-	passed  int64
-	failed  int64
-	skipped int64
+	mu       sync.Mutex
+	outcomes []tckOutcome
+}
+
+func (c *tckCounters) add(o tckOutcome) {
+	c.mu.Lock()
+	c.outcomes = append(c.outcomes, o)
+	c.mu.Unlock()
+}
+
+func (c *tckCounters) count(status string) int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	n := 0
+	for _, o := range c.outcomes {
+		if o.Status == status {
+			n++
+		}
+	}
+	return n
+}
+
+// loadExclusions reads testdata/excluded.txt. Each non-comment line is
+// "feature/path.feature :: scenario name :: reason".
+func loadExclusions(path string) map[string]string {
+	out := map[string]string{}
+	f, err := os.Open(path)
+	if err != nil {
+		return out
+	}
+	defer f.Close()
+	sc := bufio.NewScanner(f)
+	for sc.Scan() {
+		line := strings.TrimSpace(sc.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		parts := strings.SplitN(line, "::", 3)
+		if len(parts) < 3 {
+			continue
+		}
+		out[strings.TrimSpace(parts[0])+"::"+strings.TrimSpace(parts[1])] = strings.TrimSpace(parts[2])
+	}
+	return out
+}
+
+var (
+	reQuoted = regexp.MustCompile(`"[^"]*"|'[^']*'`)
+	reNumber = regexp.MustCompile(`\d+`)
+)
+
+// normaliseReason collapses literals so that similar failures group together.
+func normaliseReason(s string) string {
+	if i := strings.IndexByte(s, '\n'); i >= 0 {
+		s = s[:i]
+	}
+	s = reQuoted.ReplaceAllString(s, `"…"`)
+	s = reNumber.ReplaceAllString(s, "N")
+	if len(s) > 140 {
+		s = s[:140] + "…"
+	}
+	return s
+}
+
+// area returns the first two path segments, e.g. "clauses/match".
+func area(feature string) string {
+	parts := strings.Split(feature, "/")
+	if len(parts) > 2 {
+		parts = parts[:2]
+	}
+	return strings.Join(parts, "/")
+}
+
+type tally struct{ passed, failed, skipped, excluded int }
+
+func (t tally) executed() int { return t.passed + t.failed }
+
+func (t tally) rate() float64 {
+	if t.executed() == 0 {
+		return 0
+	}
+	return float64(t.passed) / float64(t.executed()) * 100
+}
+
+// writeReport writes a markdown summary of all outcomes.
+func writeReport(w *os.File, outcomes []tckOutcome) {
+	var total tally
+	byArea, byFeature := map[string]*tally{}, map[string]*tally{}
+	skipReasons, failReasons := map[string]int{}, map[string]int{}
+	bump := func(t *tally, status string) {
+		switch status {
+		case statusPassed:
+			t.passed++
+		case statusFailed:
+			t.failed++
+		case statusSkipped:
+			t.skipped++
+		case statusExcluded:
+			t.excluded++
+		}
+	}
+	for _, o := range outcomes {
+		for _, m := range []struct {
+			m map[string]*tally
+			k string
+		}{{byArea, area(o.Feature)}, {byFeature, o.Feature}} {
+			if m.m[m.k] == nil {
+				m.m[m.k] = &tally{}
+			}
+			bump(m.m[m.k], o.Status)
+		}
+		bump(&total, o.Status)
+		switch o.Status {
+		case statusSkipped, statusExcluded:
+			skipReasons[o.Status+": "+o.Reason]++
+		case statusFailed:
+			failReasons[normaliseReason(o.Reason)]++
+		}
+	}
+	fmt.Fprintf(w, "# openCypher TCK results\n\n")
+	fmt.Fprintf(w, "Scenarios: %d total - **%d passed**, %d failed, %d skipped (feature not supported yet), %d excluded (Cypher 25 removed syntax).\n\n",
+		len(outcomes), total.passed, total.failed, total.skipped, total.excluded)
+	fmt.Fprintf(w, "Pass rate over executed scenarios: **%d/%d (%.1f%%)**\n\n", total.passed, total.executed(), total.rate())
+	table := func(title string, m map[string]*tally) {
+		keys := make([]string, 0, len(m))
+		for k := range m {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		fmt.Fprintf(w, "## %s\n\n| | passed | failed | skipped | excluded | pass rate |\n|---|---:|---:|---:|---:|---:|\n", title)
+		for _, k := range keys {
+			t := m[k]
+			fmt.Fprintf(w, "| %s | %d | %d | %d | %d | %.0f%% |\n", k, t.passed, t.failed, t.skipped, t.excluded, t.rate())
+		}
+		fmt.Fprintln(w)
+	}
+	table("By area", byArea)
+	table("By feature file", byFeature)
+	top := func(title string, m map[string]int, n int) {
+		type kv struct {
+			k string
+			v int
+		}
+		var rows []kv
+		for k, v := range m {
+			rows = append(rows, kv{k, v})
+		}
+		sort.Slice(rows, func(i, j int) bool {
+			if rows[i].v != rows[j].v {
+				return rows[i].v > rows[j].v
+			}
+			return rows[i].k < rows[j].k
+		})
+		if len(rows) > n {
+			rows = rows[:n]
+		}
+		fmt.Fprintf(w, "## %s\n\n| count | reason |\n|---:|---|\n", title)
+		for _, r := range rows {
+			fmt.Fprintf(w, "| %d | %s |\n", r.v, strings.ReplaceAll(r.k, "|", "\\|"))
+		}
+		fmt.Fprintln(w)
+	}
+	top("Top failure reasons", failReasons, 25)
+	top("Skip and exclusion reasons", skipReasons, 60)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TestTCK — the main test entry point (compiled only with -tags=tck)
 // ─────────────────────────────────────────────────────────────────────────────
 
+// TestTCK runs the full openCypher TCK; every scenario not listed in
+// testdata/excluded.txt must pass.
 func TestTCK(t *testing.T) {
-	ctrs := &tckCounters{}
+	runFeatureSuite(t, "TCK", "testdata/tck", filepath.Join("testdata", "excluded.txt"))
+}
 
-	// Collect all .feature file paths from testdata/tck/
+// TestNeo4jExtensions runs graphlite's own scenarios for Neo4j's extensions to
+// openCypher (label expressions, subqueries, quantified path patterns, …),
+// written in the TCK's Gherkin dialect. Scenarios for constructs that are not
+// executed yet are listed in testdata/neo4j-deferred.txt with a reason.
+func TestNeo4jExtensions(t *testing.T) {
+	runFeatureSuite(t, "Neo4j extensions", "testdata/neo4j", filepath.Join("testdata", "neo4j-deferred.txt"))
+}
+
+func runFeatureSuite(t *testing.T, label, dir, exclusionFile string) {
+	ctrs := &tckCounters{}
+	excluded := loadExclusions(exclusionFile)
+
+	// Collect all .feature file paths from dir.
 	var featurePaths []string
-	err := filepath.Walk("testdata/tck", func(path string, info os.FileInfo, err error) error {
+	err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
@@ -577,7 +653,7 @@ func TestTCK(t *testing.T) {
 		return nil
 	})
 	if err != nil || len(featurePaths) == 0 {
-		t.Fatalf("no .feature files found in testdata/tck/ (err=%v)", err)
+		t.Fatalf("no .feature files found in %s (err=%v)", dir, err)
 	}
 	t.Logf("Found %d feature file(s): %v", len(featurePaths), featurePaths)
 
@@ -589,7 +665,7 @@ func TestTCK(t *testing.T) {
 	}
 
 	suite := godog.TestSuite{
-		Name: "graphlite-tck",
+		Name: "graphlite-" + label,
 		TestSuiteInitializer: func(tsc *godog.TestSuiteContext) {
 			tsc.AfterSuite(func() {})
 		},
@@ -599,11 +675,11 @@ func TestTCK(t *testing.T) {
 			// Before: check if this scenario uses unsupported features.
 			sc.Before(func(ctx context.Context, scenario *godog.Scenario) (context.Context, error) {
 				state.reset()
-				if reason := shouldSkipScenario(scenario); reason != "" {
+				state.feature = strings.TrimPrefix(filepath.ToSlash(scenario.Uri), dir+"/")
+				state.name = scenario.Name
+				if reason, ok := excluded[state.feature+"::"+state.name]; ok {
 					state.skipped = true
-					atomic.AddInt64(&ctrs.skipped, 1)
-					// Godog has no native skip mechanism; mark state and return nil.
-					// All step functions check s.skipped and no-op.
+					ctrs.add(tckOutcome{state.feature, state.name, statusExcluded, reason})
 					return ctx, nil
 				}
 				return ctx, nil
@@ -615,11 +691,10 @@ func TestTCK(t *testing.T) {
 					// Already counted in Before.
 					return ctx, nil
 				}
-				atomic.AddInt64(&ctrs.total, 1)
 				if err != nil {
-					atomic.AddInt64(&ctrs.failed, 1)
+					ctrs.add(tckOutcome{state.feature, state.name, statusFailed, err.Error()})
 				} else {
-					atomic.AddInt64(&ctrs.passed, 1)
+					ctrs.add(tckOutcome{state.feature, state.name, statusPassed, ""})
 				}
 				return ctx, nil
 			})
@@ -627,6 +702,8 @@ func TestTCK(t *testing.T) {
 			// ── Given steps ──────────────────────────────────────────────────
 			sc.Given(`^any graph$`, state.givenAnyGraph)
 			sc.Given(`^an empty graph$`, state.givenAnEmptyGraph)
+			sc.Given(`^the (binary-tree-\d+) graph$`, state.givenNamedGraph)
+			sc.Step(`^there exists a procedure (.+)$`, state.givenProcedure)
 
 			// ── And having executed (DocString multiline Cypher) ─────────────
 			sc.Step(`^having executed:$`, state.havingExecutedDocString)
@@ -649,17 +726,8 @@ func TestTCK(t *testing.T) {
 			// "Then a SyntaxError should be raised at compile time: ErrorCode"
 			// "Then a TypeError should be raised at runtime: ErrorCode"
 			// "Then an Error should be raised at runtime: ErrorCode"
-			sc.Then(`^a (SyntaxError|TypeError|SemanticError|Error) should be raised at (compile time|runtime): (.+)$`,
+			sc.Then(`^an? (\w+) should be raised at (compile time|runtime|any time)(?:: (.+))?$`,
 				state.errorShouldBeRaised)
-			// Specific error variants not matched by the generic pattern above.
-			sc.Then(`^a ConstraintValidationFailed should be raised at runtime: (.+)$`,
-				func(ctx context.Context, code string) error {
-					return state.errorShouldBeRaised(ctx, "ConstraintValidationFailed", "runtime", code)
-				})
-			sc.Then(`^an ArgumentError should be raised at runtime: (.+)$`,
-				func(ctx context.Context, code string) error {
-					return state.errorShouldBeRaised(ctx, "ArgumentError", "runtime", code)
-				})
 
 			// ── Control query (verification step after main query) ────────────
 			// Runs a Cypher query and updates lastResult/lastError so the
@@ -681,8 +749,11 @@ func TestTCK(t *testing.T) {
 						continue
 					}
 					name := strings.TrimSpace(row.Cells[0].Value)
-					val := parseTCKValue(strings.TrimSpace(row.Cells[1].Value))
-					state.params[name] = val
+					v, err := parseTV(row.Cells[1].Value)
+					if err != nil {
+						return fmt.Errorf("cannot parse parameter %s = %q: %w", name, row.Cells[1].Value, err)
+					}
+					state.params[name] = v
 				}
 				return nil
 			})
@@ -693,38 +764,66 @@ func TestTCK(t *testing.T) {
 			//   "the result should be (ignoring element order for lists):"
 			// Both are treated as "in any order".
 			sc.Then(`^the result should be, ignoring element order for lists:$`,
-				state.theResultShouldBeInAnyOrder)
+				func(t *godog.Table) error { return state.compareResult(t, false, true) })
 			sc.Then(`^the result should be \(ignoring element order for lists\):$`,
-				state.theResultShouldBeInAnyOrder)
+				func(t *godog.Table) error { return state.compareResult(t, false, true) })
+			sc.Then(`^the result should be, in order \(ignoring element order for lists\):$`,
+				func(t *godog.Table) error { return state.compareResult(t, true, true) })
 		},
 		Options: &opts,
 	}
 
 	exitCode := suite.Run()
 
-	executed := int(atomic.LoadInt64(&ctrs.total))
-	passed := int(atomic.LoadInt64(&ctrs.passed))
-	failed := int(atomic.LoadInt64(&ctrs.failed))
-	skipped := int(atomic.LoadInt64(&ctrs.skipped))
+	passed := ctrs.count(statusPassed)
+	failed := ctrs.count(statusFailed)
+	skipped := ctrs.count(statusSkipped) + ctrs.count(statusExcluded)
+	executed := passed + failed
 
 	passRate := 0.0
 	if executed > 0 {
 		passRate = float64(passed) / float64(executed) * 100.0
 	}
 
+	// TCK_OUTCOMES=path writes one "status<TAB>feature::scenario#n" line per
+	// executed case, for diffing two runs scenario by scenario.
+	if path := os.Getenv("TCK_OUTCOMES"); path != "" {
+		seen := map[string]int{}
+		var lines []string
+		for _, o := range ctrs.outcomes {
+			key := o.Feature + "::" + o.Name
+			seen[key]++
+			lines = append(lines, fmt.Sprintf("%s\t%s#%d", o.Status, key, seen[key]))
+		}
+		sort.Strings(lines)
+		if err := os.WriteFile(path, []byte(strings.Join(lines, "\n")+"\n"), 0o644); err != nil {
+			t.Errorf("TCK_OUTCOMES: %v", err)
+		}
+	}
+
+	if path := os.Getenv("TCK_REPORT"); path != "" {
+		if f, err := os.Create(path); err == nil {
+			writeReport(f, ctrs.outcomes)
+			f.Close()
+			t.Logf("wrote TCK report to %s", path)
+		} else {
+			t.Errorf("TCK_REPORT: %v", err)
+		}
+	}
+
 	// Prominent pass-rate banner.
 	fmt.Printf("\n================================================================================\n")
-	fmt.Printf("TCK pass rate: %d/%d (%.1f%%)  [skipped: %d, failed: %d]\n",
-		passed, executed, passRate, skipped, failed)
+	fmt.Printf("%s pass rate: %d/%d (%.1f%%)  [skipped: %d, failed: %d]\n",
+		label, passed, executed, passRate, skipped, failed)
 	fmt.Printf("================================================================================\n\n")
 
-	t.Logf("TCK pass rate: %d/%d (%.1f%%)  [skipped: %d, failed: %d]",
-		passed, executed, passRate, skipped, failed)
+	t.Logf("%s pass rate: %d/%d (%.1f%%)  [skipped: %d, failed: %d]",
+		label, passed, executed, passRate, skipped, failed)
 
 	_ = exitCode // don't fail on non-zero Godog exit; we enforce threshold below
 
-	if executed > 0 && passRate < 50.0 {
-		t.Errorf("TCK pass rate %.1f%% is below the required 50%% threshold (%d/%d scenarios passed)",
-			passRate, passed, executed)
+	if executed > 0 && passRate < 100.0 {
+		t.Errorf("%s pass rate %.1f%% is below the required 100%% (every scenario not in %s must pass) (%d/%d scenarios passed)",
+			label, passRate, exclusionFile, passed, executed)
 	}
 }

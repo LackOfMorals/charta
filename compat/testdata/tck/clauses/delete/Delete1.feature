@@ -1,6 +1,6 @@
 #
-# Copyright (c) 2015-2024 "Neo Technology,"
-# Network Engine for Objects in Lund AB [http://neotechnology.com]
+# Copyright (c) "Neo4j"
+# Neo4j Sweden AB [https://neo4j.com]
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -127,7 +127,7 @@ Feature: Delete1 - Deleting nodes
       MATCH (n:X)
       DELETE n
       """
-    Then a ConstraintValidationFailed should be raised at runtime: DeleteConnectedNode
+    Then a ConstraintVerificationFailed should be raised at runtime: DeleteConnectedNode
 
   Scenario: [8] Failing when deleting a label
     Given any graph

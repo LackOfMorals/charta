@@ -27,33 +27,28 @@ graphlite is intentionally embedded-only. It does not implement the Bolt wire pr
 
 ## Cypher Compatibility
 
-graphlite achieves **100% pass rate on the openCypher Technology Compatibility Kit** (235/235 executed scenarios). The table below lists supported features.
+graphlite passes **every scenario of the openCypher Technology Compatibility Kit** that applies to Cypher 25 (3,895 scenarios; the few that rely on syntax Cypher 25 removed are listed with reasons in `compat/testdata/excluded.txt`). Queries are parsed by a hand-written Cypher 25 parser, checked by a semantic analysis pass that reports the standard error classes and codes, and run by a Go interpreter over SQLite.
 
 | Feature | Supported |
 |---|:---:|
-| `MATCH` — node by label, property, or bare | ✅ |
-| `MATCH` — single-hop directed and undirected relationships | ✅ |
-| `MATCH` — multi-hop (fixed depth) | ✅ |
-| `MATCH` — variable-length paths `[*]`, `[*2..5]`, `[*..3]` | ✅ |
-| `OPTIONAL MATCH` | ✅ |
-| `WHERE` — comparisons, `AND`, `OR`, `NOT`, `IS NULL`, `IS NOT NULL` | ✅ |
-| `WHERE` — `exists()`, string predicates (`CONTAINS`, `STARTS WITH`, `ENDS WITH`) | ✅ |
-| `WHERE` — `hasLabel(n, 'Label')` | ✅ |
-| `RETURN` with aliases, `ORDER BY`, `LIMIT`, `SKIP` | ✅ |
-| `RETURN DISTINCT` | ✅ |
-| `WITH` pipeline | ✅ |
-| Aggregation — `count()`, `sum()`, `avg()`, `min()`, `max()` | ✅ |
-| `collect()` | ✅ |
-| `CASE` expressions (simple and generic) | ✅ |
+| `MATCH` / `OPTIONAL MATCH` — labels, properties, directed and undirected relationships, variable-length paths, named paths | ✅ |
+| `shortestPath()` / `allShortestPaths()`, pattern predicates, `EXISTS`/`COUNT`/`COLLECT` subqueries | ✅ |
+| `WHERE`, `RETURN`, `WITH`, `ORDER BY`, `SKIP`/`LIMIT`, `DISTINCT`, `UNWIND`, `UNION [ALL]`, `RETURN *` | ✅ |
+| Aggregation — `count`, `sum`, `avg`, `min`, `max`, `collect`, `percentile*`, `stDev*` | ✅ |
+| `CASE`, list/pattern comprehensions, quantifiers (`all`/`any`/`none`/`single`), `reduce` | ✅ |
+| Scalar, string, math, list, conversion and entity functions | ✅ |
+| Temporal types — `date`, `time`, `localtime`, `datetime`, `localdatetime`, `duration` (constructors, accessors, truncation, arithmetic, `duration.between`) | ✅ |
+| `CREATE`, `MERGE` (`ON CREATE`/`ON MATCH`), `SET`, `REMOVE`, `DELETE`/`DETACH DELETE`, `FOREACH` | ✅ |
+| `CALL` procedures — built-in `db.labels()`, `db.relationshipTypes()`, `db.propertyKeys()` and your own via `DB.RegisterProcedure` | ✅ |
+| `CALL { … }` subqueries, `FILTER`, `LET`, `FINISH` | ✅ |
 | Named query parameters (`$param`) | ✅ |
-| `CREATE` node and relationship | ✅ |
-| `SET` property, `SET n += {map}` | ✅ |
-| `REMOVE` property, `REMOVE` label | ✅ |
-| `DELETE` / `DETACH DELETE` | ✅ |
-| `MERGE` with `ON CREATE SET` / `ON MATCH SET` | ✅ |
-| Bulk import — JSON, CSV (Neo4j format) | ✅ |
-| Bulk export — JSON | ✅ |
-| `shortestPath()` | ❌ |
+| Bulk import — JSON, CSV (Neo4j format); bulk export — JSON | ✅ |
+| Neo4j extensions — label/type expressions, dynamic labels and properties, map projections, `EXISTS`/`COUNT`/`COLLECT` and `CALL {}` subqueries, `FILTER`/`LET`/`FINISH`, `OFFSET`, `IS :: TYPE` predicates, `EXPLAIN`/`PROFILE` | ✅ |
+| Quantified path patterns (`((a)-[:R]->(b)){1,3}`, `-[:R]->+`) and path selectors (`ANY`, `ALL`, `SHORTEST k`, `SHORTEST k GROUPS`) | ✅ |
+| `POINT` (cartesian, WGS-84; `point.distance`, `point.withinBBox`) and `VECTOR` (`vector()`, `vector_distance`, `vector_norm`, `vector.similarity.*`) values | ✅ |
+| Schema — `CREATE`/`DROP INDEX` and `CONSTRAINT` (unique, node/relationship key, existence, type), `SHOW INDEXES`/`CONSTRAINTS`/`PROCEDURES` | ✅ |
+| `LOAD CSV` (opt-in: `WithImportDirectory`) | ✅ |
+| Nested quantified path patterns, `SHOW FUNCTIONS`, `USE` and user/role/database management commands | ❌ (parsed; execution returns `ErrUnsupportedCypher`) |
 
 Unsupported features return `ErrUnsupportedCypher` — they never silently produce wrong results.
 
@@ -65,7 +60,7 @@ Unsupported features return `ErrUnsupportedCypher` — they never silently produ
 go get github.com/LackOfMorals/graphlite
 ```
 
-Requires Go 1.24+. No CGO required. Works on Linux (amd64/arm64), macOS (arm64), and Windows (amd64).
+Requires Go 1.26+. No CGO required. Works on Linux (amd64/arm64), macOS (arm64), and Windows (amd64).
 
 ---
 
@@ -298,21 +293,18 @@ Run any example with `go run .` from its directory. See the comment block at the
 ```
 graphlite/
 ├── types.go          ← Node, Relationship, Record, error types
-├── driver.go         ← graphlite.Open, DB, RunQuery, BeginTx, execution engine
+├── driver.go         ← graphlite.Open, DB, RunQuery, BeginTx
 ├── tx.go             ← Tx type (Run, Commit, Rollback, Close)
 ├── result.go         ← Result cursor (Next, Record, Err, Keys, Collect, Single, Consume)
 ├── helpers.go        ← generic helpers (GetProperty, GetRecordValue, CollectT, SingleT)
 ├── importer.go       ← Import / Export (JSON, CSV)
 ├── options.go        ← functional options (WithBusyTimeout, WithReadOnly)
+├── engine.go         ← parse → analyze → interpret pipeline
 ├── cypher/
-│   ├── ast.go        ← Clause and expression AST types
-│   ├── parser.go     ← ANTLR/opencypher CST → AST
-│   ├── plan.go       ← LogicalPlan types
-│   ├── planner.go    ← AST → LogicalPlan
-│   └── scope.go      ← BindingScope: Cypher vars → SQL aliases
-├── sql/
-│   ├── translator.go ← LogicalPlan → SQL + params
-│   └── dialect.go    ← SQL dialect interface (SQLite implementation)
+│   ├── syntax/       ← hand-written Cypher 25 lexer + parser + typed AST
+│   ├── analyze/      ← semantic analysis (variables, aggregation, types)
+│   ├── interp/       ← Go interpreter: executes a statement against SQLite
+│   └── proc/         ← procedure signatures and registry (CALL)
 ├── store/
 │   ├── store.go      ← Store interface
 │   ├── sqlite.go     ← modernc.org/sqlite implementation
@@ -327,7 +319,7 @@ graphlite/
     └── *.go          ← benchmark suite
 ```
 
-Storage uses two tables in SQLite WAL mode. Variable-length path queries use `WITH RECURSIVE` CTEs generated at query time.
+Storage uses two tables in SQLite WAL mode. Queries are executed by a Go interpreter that reads nodes and relationships from SQLite (narrowing scans with property equalities and automatic expression indexes) and applies writes in one transaction per statement.
 
 ```sql
 CREATE TABLE nodes (

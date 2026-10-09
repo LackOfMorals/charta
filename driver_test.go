@@ -599,3 +599,233 @@ func TestPlanCache_ConcurrentReadsAreSafe(t *testing.T) {
 		}
 	}
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Write clause + RETURN-level aggregate
+// ─────────────────────────────────────────────────────────────────────────────
+
+// TestRunQuery_WriteThenAggregate_MatchForWrite verifies that a write clause
+// following a MATCH (which drives per-matched-row write execution via
+// KindMatchForWrite) still produces a single aggregated row when the RETURN
+// aggregates, rather than one row per matched node each aggregating over
+// just itself.
+func TestRunQuery_WriteThenAggregate_MatchForWrite(t *testing.T) {
+	ctx := context.Background()
+	db := openMemDB(t)
+	_, err := db.RunQuery(ctx, `CREATE (), (), ()`, nil)
+	if err != nil {
+		t.Fatalf("CREATE: %v", err)
+	}
+
+	for _, tc := range []struct {
+		name  string
+		query string
+	}{
+		{"REMOVE", `MATCH (n) REMOVE n.num RETURN count(n) AS c`},
+		{"SET", `MATCH (n) SET n.touched = true RETURN count(n) AS c`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			qr, err := db.RunQuery(ctx, tc.query, nil)
+			if err != nil {
+				t.Fatalf("RunQuery: %v", err)
+			}
+			recs, err := qr.Collect(ctx)
+			if err != nil {
+				t.Fatalf("Collect: %v", err)
+			}
+			if len(recs) != 1 {
+				t.Fatalf("expected exactly 1 aggregated record, got %d", len(recs))
+			}
+			c, _ := recs[0].Get("c")
+			if c != int64(3) {
+				t.Errorf("count(n) = %v, want 3", c)
+			}
+		})
+	}
+}
+
+// TestRunQuery_WriteThenAggregate_PureCreate verifies the no-MATCH write path
+// (CREATE with no preceding MATCH) is unaffected by the aggregate fix — each
+// created variable is trivially bound to exactly one id either way.
+func TestRunQuery_WriteThenAggregate_PureCreate(t *testing.T) {
+	ctx := context.Background()
+	db := openMemDB(t)
+	qr, err := db.RunQuery(ctx, `CREATE (n) RETURN count(n) AS c`, nil)
+	if err != nil {
+		t.Fatalf("RunQuery: %v", err)
+	}
+	recs, err := qr.Collect(ctx)
+	if err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+	if len(recs) != 1 {
+		t.Fatalf("expected 1 record, got %d", len(recs))
+	}
+	c, _ := recs[0].Get("c")
+	if c != int64(1) {
+		t.Errorf("count(n) = %v, want 1", c)
+	}
+}
+
+// TestRunQuery_WriteThenNonAggregate_StillOnePerRow guards against the fix
+// regressing the common case: a write clause following MATCH with a
+// non-aggregating RETURN must still produce one row per matched node.
+func TestRunQuery_WriteThenNonAggregate_StillOnePerRow(t *testing.T) {
+	ctx := context.Background()
+	db := openMemDB(t)
+	_, err := db.RunQuery(ctx, `CREATE (:P {name: "a"}), (:P {name: "b"})`, nil)
+	if err != nil {
+		t.Fatalf("CREATE: %v", err)
+	}
+	qr, err := db.RunQuery(ctx, `MATCH (n:P) SET n.x = 1 RETURN n.name AS name`, nil)
+	if err != nil {
+		t.Fatalf("RunQuery: %v", err)
+	}
+	recs, err := qr.Collect(ctx)
+	if err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+	if len(recs) != 2 {
+		t.Fatalf("expected 2 records, got %d", len(recs))
+	}
+	seen := map[string]bool{}
+	for _, r := range recs {
+		name, _ := r.Get("name")
+		seen[name.(string)] = true
+	}
+	if !seen["a"] || !seen["b"] {
+		t.Errorf("expected names {a, b}, got %v", seen)
+	}
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Bare RETURN with implicit GROUP BY
+// ─────────────────────────────────────────────────────────────────────────────
+
+// TestRunQuery_BareReturnImplicitGroupBy verifies that a RETURN clause with
+// no preceding WITH still groups by its non-aggregate columns when mixed
+// with an aggregate, matching openCypher's implicit grouping rule (the same
+// rule a WITH stage already implements).
+func TestRunQuery_BareReturnImplicitGroupBy(t *testing.T) {
+	ctx := context.Background()
+	db := openMemDB(t)
+	for _, q := range []string{
+		`CREATE ({name: 'a', num: 33})`,
+		`CREATE ({name: 'a'})`,
+		`CREATE ({name: 'b', num: 42})`,
+	} {
+		if _, err := db.RunQuery(ctx, q, nil); err != nil {
+			t.Fatalf("CREATE: %v", err)
+		}
+	}
+
+	qr, err := db.RunQuery(ctx, `MATCH (n) RETURN n.name AS name, count(n.num) AS c ORDER BY name`, nil)
+	if err != nil {
+		t.Fatalf("RunQuery: %v", err)
+	}
+	recs, err := qr.Collect(ctx)
+	if err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+	if len(recs) != 2 {
+		t.Fatalf("expected 2 grouped records, got %d", len(recs))
+	}
+	wantName := []string{"a", "b"}
+	wantCount := []int64{1, 1}
+	for i := range recs {
+		name, _ := recs[i].Get("name")
+		c, _ := recs[i].Get("c")
+		if name != wantName[i] || c != wantCount[i] {
+			t.Errorf("record[%d] = {name:%v c:%v}, want {name:%v c:%v}", i, name, c, wantName[i], wantCount[i])
+		}
+	}
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Un-aliased aggregate column naming
+// ─────────────────────────────────────────────────────────────────────────────
+
+// TestRunQuery_UnaliasedAggregateColumnName verifies that an aggregate
+// projection with no explicit alias is named after its original Cypher call
+// text (e.g. "count(r)"), matching openCypher's convention, rather than the
+// compiled SQL expression (e.g. "COUNT(r0.id)"). The TCK compares result
+// column headers exactly, so this previously failed scenarios with a
+// correct VALUE but a wrong column NAME.
+func TestRunQuery_UnaliasedAggregateColumnName(t *testing.T) {
+	ctx := context.Background()
+	db := openMemDB(t)
+	_, err := db.RunQuery(ctx, `CREATE (a), (a)-[:R]->(a)`, nil)
+	if err != nil {
+		t.Fatalf("CREATE: %v", err)
+	}
+
+	for _, tc := range []struct {
+		query   string
+		wantKey string
+		wantVal any
+	}{
+		{`MATCH ()-[r]-() RETURN count(r)`, "count(r)", int64(1)},
+		{`MATCH (n) RETURN count(*)`, "count(*)", int64(1)},
+		{`MATCH (n) RETURN count(DISTINCT n.x)`, "count(DISTINCT n.x)", int64(0)},
+	} {
+		t.Run(tc.query, func(t *testing.T) {
+			qr, err := db.RunQuery(ctx, tc.query, nil)
+			if err != nil {
+				t.Fatalf("RunQuery: %v", err)
+			}
+			keys := qr.Keys()
+			if len(keys) != 1 || keys[0] != tc.wantKey {
+				t.Fatalf("Keys() = %v, want [%q]", keys, tc.wantKey)
+			}
+			recs, err := qr.Collect(ctx)
+			if err != nil {
+				t.Fatalf("Collect: %v", err)
+			}
+			v, _ := recs[0].Get(tc.wantKey)
+			if v != tc.wantVal {
+				t.Errorf("value = %v, want %v", v, tc.wantVal)
+			}
+		})
+	}
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Fresh relationship chain after a WITH boundary
+// ─────────────────────────────────────────────────────────────────────────────
+
+// TestRunQuery_FreshRelationshipChainAfterWith verifies that a MATCH clause
+// starting a brand new relationship chain (from a node not otherwise
+// connected to anything earlier in the query) after a WITH boundary
+// correctly joins its own start node's table. This previously produced
+// "no such column: nX.id" because buildFromClauseForSequence only
+// cross-joined a step's own FROM table when that step contributed no JOINs
+// of its own — true for a lone unconnected node (MATCH (a), (b)), but false
+// for a relationship hop, which always contributes both its own FROM
+// (the start node) and its own JOINs (the edge and end node).
+func TestRunQuery_FreshRelationshipChainAfterWith(t *testing.T) {
+	ctx := context.Background()
+	db := openMemDB(t)
+	_, err := db.RunQuery(ctx, `CREATE (:A {n: 1}), (:B)-[:X]->(:C)`, nil)
+	if err != nil {
+		t.Fatalf("CREATE: %v", err)
+	}
+
+	qr, err := db.RunQuery(ctx,
+		`MATCH (a:A) WITH a MATCH (b:B)-[:X]->(c:C) RETURN a.n AS n, b.name AS bn`,
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("RunQuery: %v", err)
+	}
+	recs, err := qr.Collect(ctx)
+	if err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+	if len(recs) != 1 {
+		t.Fatalf("expected 1 record, got %d", len(recs))
+	}
+	n, _ := recs[0].Get("n")
+	if n != int64(1) {
+		t.Errorf("n = %v, want 1", n)
+	}
+}

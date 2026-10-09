@@ -1,0 +1,2 @@
+go test fuzz v1
+string("MATCH (n:Person) RETURN n.name AS name, n.age AS age ORDER BY age DESC SKIP 5 LIMIT 10")

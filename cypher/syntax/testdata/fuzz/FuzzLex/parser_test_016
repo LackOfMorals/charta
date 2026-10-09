@@ -1,0 +1,2 @@
+go test fuzz v1
+string("MATCH (n:Person) WHERE n.name = $name AND n.age > $minAge RETURN n")

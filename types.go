@@ -1,6 +1,12 @@
 package graphlite
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/LackOfMorals/graphlite/v2/cypher/spatial"
+	"github.com/LackOfMorals/graphlite/v2/cypher/temporal"
+	"github.com/LackOfMorals/graphlite/v2/cypher/vector"
+)
 
 // Node represents a graph node with a unique element ID, a set of labels, and
 // a map of properties.
@@ -32,6 +38,14 @@ type Relationship struct {
 
 	// Props holds the relationship's property values, keyed by property name.
 	Props map[string]any
+}
+
+// Path is an alternating sequence of nodes and relationships, as returned by a
+// named path or shortestPath(): len(Nodes) == len(Relationships)+1, and
+// Relationships[i] connects Nodes[i] and Nodes[i+1].
+type Path struct {
+	Nodes         []Node
+	Relationships []Relationship
 }
 
 // Record is an ordered collection of key-value pairs returned by a query. Keys
@@ -90,9 +104,9 @@ func (r *Record) Values() []any {
 	return out
 }
 
-// ErrUnsupportedCypher is returned when the planner or translator encounters a
-// Cypher construct that graphlite does not support. Use errors.As to inspect the
-// Clause and Position fields.
+// ErrUnsupportedCypher is returned when a query uses a Cypher construct that
+// graphlite does not support. Use errors.As to inspect the Clause and Position
+// fields.
 type ErrUnsupportedCypher struct {
 	// Clause is the Cypher clause or construct that is not supported
 	// (e.g. "CALL", "UNION", "variable-length path").
@@ -165,3 +179,21 @@ var ErrNoRecords = fmt.Errorf("graphlite: result contains no records")
 // ErrMultipleRecords is returned by Result.Single when the result set contains
 // more than one record. It is a sentinel value and can be checked with errors.Is.
 var ErrMultipleRecords = fmt.Errorf("graphlite: result contains multiple records")
+
+// Temporal value types returned for Cypher DATE, LOCAL TIME, TIME, LOCAL
+// DATETIME, DATETIME and DURATION results. Each renders as its canonical
+// Cypher string with String().
+type (
+	Date          = temporal.Date
+	LocalTime     = temporal.LocalTime
+	Time          = temporal.Time
+	LocalDateTime = temporal.LocalDateTime
+	DateTime      = temporal.DateTime
+	Duration      = temporal.Duration
+)
+
+// Point is the value of a Cypher POINT; see [spatial.Point].
+type Point = spatial.Point
+
+// Vector is the value of a Cypher VECTOR; see [vector.Vector].
+type Vector = vector.Vector

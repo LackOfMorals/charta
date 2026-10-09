@@ -1,6 +1,6 @@
 #
-# Copyright (c) 2015-2024 "Neo Technology,"
-# Network Engine for Objects in Lund AB [http://neotechnology.com]
+# Copyright (c) "Neo4j"
+# Neo4j Sweden AB [https://neo4j.com]
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -134,7 +134,7 @@ Feature: ReturnSkipLimit1 - Skip
       RETURN p.name AS name
       SKIP $_skip
       """
-    Then an ArgumentError should be raised at runtime: NegativeIntegerArgument
+    Then a SyntaxError should be raised at runtime: NegativeIntegerArgument
 
   Scenario: [7] Negative SKIP should fail
     Given any graph
@@ -166,7 +166,7 @@ Feature: ReturnSkipLimit1 - Skip
       RETURN p.name AS name
       SKIP $_limit
       """
-    Then an ArgumentError should be raised at runtime: InvalidArgumentType
+    Then a SyntaxError should be raised at runtime: InvalidArgumentType
 
   Scenario: [9] Floating point SKIP should fail
     Given any graph

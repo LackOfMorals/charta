@@ -1,0 +1,2 @@
+go test fuzz v1
+string("MATCH (a)-[:KNOWS]->(b)-[:LIKES]->(c)-[:OWNS]->(d) RETURN d")

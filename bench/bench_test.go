@@ -546,8 +546,7 @@ func BenchmarkBuildSQLResult_CacheHit(b *testing.B) {
 
 // BenchmarkMatchByLabel measures MATCH (n:Person) RETURN n on a 10,000-node
 // in-memory graph where exactly 50% of nodes carry the "Person" label. This
-// benchmark isolates the label-scan path in the SQL translator and SQLite
-// executor — the expected result count is 5,000 records.
+// benchmark isolates the label-scan path in the interpreter and SQLite — the expected result count is 5,000 records.
 func BenchmarkMatchByLabel(b *testing.B) {
 	db := get10KDB(b)
 	ctx := context.Background()

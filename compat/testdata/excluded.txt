@@ -1,0 +1,15 @@
+# Scenarios excluded from the TCK run because they need syntax that Cypher 25
+# removed. Format: feature/path.feature :: scenario name :: reason
+#
+# Source: the "Removals" list in the Neo4j Cypher Manual
+# (deprecations-additions-removals-compatibility): Cypher 25 no longer allows a
+# node or relationship on the right-hand side of SET (`SET n = r`; use
+# `SET n = properties(r)`), MERGE patterns that reference another entity's
+# property in the same pattern, or `$` and control characters in unescaped
+# identifiers. The TCK predates these removals.
+#
+# Every entry must name the removed construct. Keep this list short: anything
+# that is merely unsupported by graphlite belongs in unsupportedPatterns
+# (tck_test.go), not here.
+clauses/merge/Merge6.feature :: [6] Copying properties from node with ON CREATE :: SET with a relationship/node on the right-hand side is removed in Cypher 25 (use properties())
+clauses/merge/Merge7.feature :: [4] Copying properties from node with ON MATCH :: SET with a relationship/node on the right-hand side is removed in Cypher 25 (use properties())

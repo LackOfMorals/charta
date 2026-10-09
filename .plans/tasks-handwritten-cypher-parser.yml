@@ -1,0 +1,565 @@
+feature: handwritten-cypher-parser
+prd: ./prd-handwritten-cypher-parser.md
+created_at: 2026-10-08T00:00:00Z
+updated_at: 2026-10-08T00:00:00Z
+
+tasks:
+  # ───────────── Iteration 1: lexer + errors ─────────────
+  - id: task-001
+    title: "Create cypher/syntax package: tokens, positions, SyntaxError"
+    description: |
+      Add cypher/syntax/{token.go,errors.go}. Define Pos{Offset,Line,Col},
+      Token kinds (punctuation, operators, literals, identifiers, parameters)
+      and a case-insensitive keyword table covering every openCypher 9
+      reserved word. Define *SyntaxError{Pos, Found, Expected []string, Msg}
+      with a readable Error(). Only one file carries the package doc comment.
+      Stdlib imports only.
+    status: completed
+    dependencies: []
+    acceptance_criteria:
+      - "cypher/syntax compiles with CGO_ENABLED=0 and imports only the standard library"
+      - "Keyword lookup is case-insensitive and covers the full openCypher 9 keyword list"
+      - "SyntaxError.Error() includes line:col and the offending token"
+
+  - id: task-002
+    title: "Hand-written lexer"
+    description: |
+      Implement lexer.go: single pass over the input string, no regexp.
+      Cover whitespace/comments (// and /* */), identifiers (unicode, backtick
+      quoting with `` escape), $param and ${...}-free parameter forms
+      ($name and $0), integer (decimal, hex 0x, octal 0o/leading 0), float
+      (exponent), string literals ('' and "" with all escapes incl. \uXXXX,
+      \UXXXXXXXX), operators (<> != <= >= =~ += .. ^ etc.). `1..3` must lex
+      as INT DOTDOT INT, not a float. Unterminated strings/comments and bad
+      escapes produce positioned SyntaxErrors.
+    status: completed
+    dependencies: [task-001]
+    acceptance_criteria:
+      - "Table tests cover every token kind plus each error case"
+      - "`[*1..3]`, `1.5`, `1.`, `.5`, `1e3`, `0x1F`, `0o17` lex per the openCypher spec"
+      - "Token positions are exact for multi-line input and multi-byte runes"
+
+  - id: task-003
+    title: "Lexer fuzz test and benchmark"
+    description: |
+      Add FuzzLex asserting no panic, no infinite loop, tokens cover the
+      input in order, and EOF is always returned. Add a lexer benchmark.
+    status: completed
+    dependencies: [task-002]
+    acceptance_criteria:
+      - "go test -fuzz=FuzzLex -fuzztime=60s finds no failures"
+      - "Seed corpus includes all queries from cypher/parser_test.go"
+
+  # ───────────── Iteration 2: AST + expressions ─────────────
+  - id: task-004
+    title: "Define the typed AST"
+    description: |
+      Add ast.go with sealed interfaces Node/Expr/Clause/PatternElem and a
+      Pos on every node. Expressions: Literal kinds, ListLit, MapLit, Param,
+      Ident, Property, Subscript, Slice, Unary, Binary, Comparison chain,
+      IsNull, In, StringPred, HasLabels, FuncCall (namespace, DISTINCT,
+      star), Case, ListComp, PatternComp, Quantifier, Reduce, Exists,
+      PatternExpr. Clauses/patterns are declared here too (parsed in later
+      tasks). No ExprText/RawExpr string fields anywhere.
+    status: completed
+    dependencies: [task-001]
+    acceptance_criteria:
+      - "Every openCypher 9 grammar production has a corresponding AST node (checklist table in ast.go package comment)"
+      - "No AST field holds unparsed source text, except ProjectionItem.Source (verbatim text used only to name un-aliased columns)"
+
+  - id: task-005
+    title: "Precedence-climbing expression parser (core operators)"
+    description: |
+      expr.go: OR < XOR < AND < NOT < comparison (chained) < + - < * / % <
+      ^ (right-assoc) < unary +/- < postfix (IN, STARTS/ENDS/CONTAINS WITH,
+      =~, IS [NOT] NULL, [i], [a..b], .prop, :Label) < atoms. Literals,
+      parameters, identifiers, parenthesised, list and map literals.
+    status: completed
+    dependencies: [task-002, task-004]
+    acceptance_criteria:
+      - "Golden-AST tests for precedence/associativity incl. `a < b < c`, `2^3^2`, `-x^2`, `NOT a = b`"
+      - "Precedence follows the openCypher grammar (string/list/null operators bind tighter than +; unary minus tighter than ^; ^ left-associative). Re-verify against TCK Precedence features in task-017 and adjust expr.go if they disagree"
+      - "Errors report expected tokens with position"
+
+  - id: task-006
+    title: "Function calls, CASE, count(*), namespaces"
+    description: |
+      FuncCall with dotted namespace, DISTINCT, count(*); simple and generic
+      CASE with ELSE; EXISTS(...) function form.
+    status: completed
+    dependencies: [task-005]
+    acceptance_criteria:
+      - "Tests for `count(*)`, `count(DISTINCT x)`, `a.b.f(x)`, nested CASE"
+
+  - id: task-007
+    title: "List/pattern comprehensions, quantifiers, reduce"
+    description: |
+      `[x IN list WHERE p | e]`, pattern comprehension `[(a)-->(b) WHERE p | e]`,
+      all/any/none/single(x IN l WHERE p), reduce(acc = init, x IN l | e),
+      Cypher 25 has dropped legacy filter()/extract(); do not implement them
+      (confirm against the manual). Pattern comprehension and pattern predicates
+      depend on the pattern parser (task-009); stub the call and wire it in
+      task-009's acceptance.
+    status: completed
+    dependencies: [task-006]
+    acceptance_criteria:
+      - "List comprehension, quantifier and reduce forms parse into dedicated AST nodes with golden tests"
+      - "Disambiguation of `[` list literal vs comprehension is covered by tests"
+
+  # ───────────── Iteration 3: patterns ─────────────
+  - id: task-008
+    title: "Node and relationship patterns"
+    description: |
+      pattern.go: node `(v:L1:L2 {map|$param})`, relationship
+      `-[v:T1|T2 *min..max {props}]->` in all directions, label/type
+      disjunction (`:A|B`, `:A|:B`), variable-length forms (`*`, `*2`, `*..3`,
+      `*1..`, `*1..3`), property maps with full expressions.
+    status: completed
+    dependencies: [task-005]
+    acceptance_criteria:
+      - "Golden tests for all direction/length/type forms"
+      - "Property map values are typed Exprs, not text"
+
+  - id: task-009
+    title: "Pattern chains, named paths, shortestPath, pattern predicates"
+    description: |
+      Multi-hop chains, `p = (a)-[]->(b)`, shortestPath()/allShortestPaths(),
+      comma-separated pattern parts, pattern predicates in expressions
+      (`WHERE (a)-[:R]->()`), and finish the pattern comprehension wiring from
+      task-007. Disambiguate parenthesised expression vs node pattern with
+      bounded lookahead/backtracking.
+    status: completed
+    dependencies: [task-007, task-008]
+    acceptance_criteria:
+      - "`(a)` is parsed as pattern predicate only where a pattern is valid, as a parenthesised expr otherwise"
+      - "Named path and shortestPath golden tests"
+
+  # ───────────── Iteration 4: clauses ─────────────
+  - id: task-010
+    title: "Reading clauses and projection body"
+    description: |
+      MATCH/OPTIONAL MATCH [WHERE], UNWIND, WITH and RETURN (DISTINCT, `*`,
+      `*, expr`, aliases, ORDER BY, SKIP, LIMIT in either order, WHERE on
+      WITH).
+    status: completed
+    dependencies: [task-009]
+    acceptance_criteria:
+      - "Golden tests for each clause form including SKIP/LIMIT order variants"
+
+  - id: task-011
+    title: "Updating clauses"
+    description: |
+      CREATE, MERGE [ON CREATE SET…][ON MATCH SET…], SET (prop =, += map,
+      variable = map, label), REMOVE (prop, labels), [DETACH] DELETE, FOREACH
+      (v IN list | updating clauses).
+    status: completed
+    dependencies: [task-010]
+    acceptance_criteria:
+      - "Golden tests for every SET/REMOVE item form and nested FOREACH"
+
+  - id: task-012
+    title: "CALL, UNION, and full statement composition"
+    description: |
+      Standalone CALL ns.proc(args) [YIELD …], in-query CALL … YIELD … WHERE,
+      UNION / UNION ALL, multi-part queries, and the grammar-level rules for
+      clause ordering (reading* updating* return, WITH separation).
+      Entry point Parse(string) (*Statement, error); reject trailing garbage.
+    status: completed
+    dependencies: [task-011]
+    acceptance_criteria:
+      - "Every openCypher 9 grammar production in the ast.go checklist is parsed"
+      - "Invalid clause orderings produce SyntaxErrors, not panics"
+
+  - id: task-013
+    title: "Parser fuzz, benchmark and corpus test"
+    description: |
+      FuzzParse (no panic/hang). Parse every query string extracted from
+      compat/testdata/tck, cypher/*_test.go, sql/translator_test.go and
+      testdata/rapid. Benchmark the reference query against the ANTLR
+      baseline (9.5ms / 135k allocs).
+    status: completed   # closed: bench 3.1us/47 allocs, 1,917-query TCK corpus, fuzz clean
+    dependencies: [task-012, task-033]
+    acceptance_criteria:
+      - "go test -fuzz=FuzzParse -fuzztime=5m finds no failures"
+      - "Benchmark shows >=100x speed-up and >=100x fewer allocs than ANTLR"
+      - "Every query in the corpus either parses or is a documented negative test"
+
+  # ───────────── Iteration 4b: Neo4j extensions (parser) ─────────────
+  - id: task-028
+    title: "Label expressions and relationship type expressions"
+    description: |
+      `:A&B`, `:A|B`, `:!A`, `:%`, parenthesised combinations in node and
+      relationship patterns and in WHERE label predicates. Replace plain
+      label/type lists in the AST with LabelExpr/RelTypeExpr (a plain list
+      remains the simple case). Update openCypher `:A|:B` legacy form.
+    status: completed
+    dependencies: [task-009]
+    acceptance_criteria:
+      - "Golden tests for every operator and precedence (! > & > |)"
+      - "Examples from the Neo4j Cypher Manual 'Label expressions' section parse"
+
+  - id: task-029
+    title: "Subquery expressions and CALL subqueries"
+    description: |
+      EXISTS { ... } (pattern shorthand and full subquery), COUNT { ... },
+      COLLECT { ... }, CALL { ... } with importing WITH / scoped variable
+      clause, OPTIONAL CALL, and `IN TRANSACTIONS [OF n ROWS] [ON ERROR …]`
+      (parsed; execution is a non-goal).
+    status: completed
+    dependencies: [task-012]
+    acceptance_criteria:
+      - "Nested subqueries and subqueries inside WHERE/RETURN parse with golden tests"
+      - "Variable-scope clause forms of CALL parse"
+
+  - id: task-030
+    title: "Quantified path patterns and path selectors"
+    description: |
+      `((a)-[:R]->(b) WHERE …){m,n}`, `+`/`*` quantified relationships,
+      ANY / ALL SHORTEST / ANY SHORTEST / SHORTEST k [GROUPS] selectors,
+      WHERE inside parenthesised and relationship patterns. Handle
+      `(` disambiguation (node vs parenthesised expr vs quantified path)
+      with bounded lookahead.
+    status: completed
+    dependencies: [task-028]
+    acceptance_criteria:
+      - "Manual examples for QPPs and selectors parse; ambiguity tests included"
+      - "Pre-existing var-length `[*1..3]` still parses identically"
+
+  - id: task-031
+    title: "Map projections, dynamic labels/types/properties, type predicates"
+    description: |
+      `n{.name, .age, k: expr, .*, v}`, `$(expr)` in labels/types, `n[$prop]`
+      dynamic property access, SET/REMOVE with dynamic labels,
+      `IS [NOT] :: TYPE`, `IS [NOT] NORMALIZED`.
+    status: completed
+    dependencies: [task-006]
+    acceptance_criteria:
+      - "Golden tests for each form; error positions are exact for malformed projections"
+
+  - id: task-032
+    title: "Statement prefixes, schema commands, and server-only commands"
+    description: |
+      EXPLAIN / PROFILE, `CYPHER 25` / `CYPHER runtime=…` prefix (other
+      versions rejected in task-033), USING hints (parsed, ignored), LOAD CSV [WITH HEADERS] FROM …
+      [FIELDTERMINATOR]. Schema: CREATE|DROP INDEX / CONSTRAINT [IF [NOT]
+      EXISTS], SHOW INDEXES / CONSTRAINTS / PROCEDURES / FUNCTIONS (types
+      per prd-property-indexes-constraints.md and prd-vector-search.md).
+      Server-only commands (USE, user/role/database management, GRANT/DENY)
+      parse to a ServerOnlyCommand node so the planner can return a clear
+      'not supported in graphlite' error.
+    status: completed
+    dependencies: [task-012]
+    acceptance_criteria:
+      - "Each statement kind parses into a typed node; server-only commands produce ServerOnlyCommand"
+      - "Index/constraint node shapes agree with the property-indexes and vector-search PRDs"
+
+  - id: task-033
+    title: "Cypher 25 clauses and removed-syntax rejection"
+    description: |
+      Always-on Cypher 25 grammar (no dialect option), verified against the
+      Cypher Manual: FILTER [WHERE] expr, LET v = e [, v = e], FINISH (must be
+      last), OFFSET (alias of SKIP), WHEN … THEN { } [ELSE { }] bodies inside
+      CALL / COLLECT (done in task-029), `CYPHER 25 [key=value]` prefix;
+      `CYPHER 5` / other versions are rejected with "graphlite implements
+      Cypher 25". The removed list functions extract(x IN …) / filter(x IN …)
+      are rejected with a pointer to list comprehensions.
+      DEFERRED (not found in the manual, so not guessed): NEXT, INSERT and a
+      standalone ORDER BY/SKIP/LIMIT statement. Their placeholder AST nodes
+      were removed; add them when the manual documents the syntax.
+    status: completed
+    dependencies: [task-029, task-031]
+    acceptance_criteria:
+      - "FILTER, LET, FINISH, OFFSET and conditional bodies parse; CYPHER 5 and extract()/filter() return errors that say what to use instead"
+      - "NEXT / INSERT / standalone ORDER BY are explicitly deferred in this file and the PRD"
+
+  - id: task-034
+    title: "Neo4j-extension scenario suite (Gherkin) — blocked on execution support (iteration 10)"
+    description: |
+      Create compat/testdata/neo4j/*.feature in the TCK Gherkin format,
+      derived from Neo4j Cypher Manual examples, covering every Tier A
+      construct (expected results, not just parse success). Wire into the
+      tck harness behind its own skip/executed counters so progress is
+      reported separately from openCypher TCK.
+    status: completed
+    notes: "Done: compat/testdata/neo4j (222 scenarios) run by TestNeo4jExtensions; 100% pass."
+    dependencies: [task-030, task-031, task-032]
+    acceptance_criteria:
+      - "Suite runs under -tags=tck; initial pass rate recorded; failures are tracked per construct"
+
+  # ───────────── Iteration 5: adapter + differential ─────────────
+  - id: task-014
+    title: "Lower syntax AST to existing cypher.Query"
+    description: |
+      Add cypher/lower.go (and test) converting *syntax.Statement to the
+      current *cypher.Query/Clause/Expr types, so planner and translator are
+      unchanged. Anything the old AST cannot represent returns the same
+      ErrUnsupportedCypher/messages as today. Property map values lower to
+      the existing ExprText encoding for now (retired in task-018).
+    status: completed
+    dependencies: [task-012]
+    acceptance_criteria:
+      - "cypher.ParseNew(input) returns the same *Query as Parse for all of cypher/parser_test.go inputs"
+      - "cypher/ imports cypher/syntax; cypher/syntax does not import cypher/"
+
+  - id: task-015
+    title: "Differential test harness vs ANTLR"
+    description: |
+      Test parsing a large corpus (TCK queries, existing tests, rapid
+      generators, fuzz-generated valid queries) with both parsers; assert
+      equal accept/reject and equal lowered ASTs. Record and triage every
+      divergence (new parser wrong vs ANTLR wrong); fix or document.
+    status: completed
+    dependencies: [task-013, task-014]
+    acceptance_criteria:
+      - "Zero unexplained divergences; documented ones listed in the test file"
+      - "Differential test runs under -tags=unit"
+
+  # ───────────── Iteration 6: cut-over ─────────────
+  - id: task-016
+    title: "Cut over cypher.Parse and remove ANTLR"
+    description: |
+      Point cypher.Parse at the new parser; delete the ANTLR-based
+      cypher/parser.go and the differential harness's ANTLR side; remove
+      github.com/antlr/antlr4/runtime/Go/antlr and
+      github.com/cloudprivacylabs/opencypher from go.mod; run BOTH
+      `go mod tidy` and `go mod vendor`. Update AGENTS.md (ANTLR pin note,
+      slow -race note, package layout) and cypher/ast.go package comment
+      (grammar-quirk section).
+    status: completed
+    dependencies: [task-015]
+    acceptance_criteria:
+      - "grep -r antlr go.mod vendor/modules.txt returns nothing"
+      - "CGO_ENABLED=0 go build ./... && go vet ./... && go test -tags=unit -count=1 ./... pass"
+      - "go test -tags=tck ./compat/... pass rate >= pre-change value"
+      - "AGENTS.md no longer mentions ANTLR"
+
+  # ───────────── Iteration 7: semantic analysis ─────────────
+  - id: task-017
+    title: "Import full openCypher TCK and baseline pass rate"
+    description: |
+      Replace the 15 vendored .feature files with the full TCK for the
+      pinned openCypher version. Record per-feature pass/skip/fail counts as
+      a baseline artifact in .plans/ so progress is measurable.
+    status: completed
+    dependencies: [task-016]
+    acceptance_criteria:
+      - "Full TCK vendored; harness runs end to end"
+      - "Scenarios needing syntax removed in Cypher 25 are identified and listed in compat/testdata/excluded.txt with reasons"
+      - "Baseline report committed"
+
+  - id: task-018
+    title: "Semantic analysis pass (compile-time errors with TCK codes)"
+    description: |
+      DONE. New package cypher/analyze (imports cypher/syntax only) with a typed
+      Error{Class, Code, Pos, Msg}, Check(), and Describe(); lexer/parser errors
+      carry a TCK Code (syntax.SyntaxError.Code / ErrorCode()). cypher.Parse runs
+      syntax.Parse -> analyze.Check -> lowering. The TCK harness now requires class
+      and code to match for compile-time expectations.
+      Sub-steps delivered:
+        A. error type, plumbing, strict harness
+        B. scope analysis (UndefinedVariable, VariableAlreadyBound,
+           VariableTypeConflict, ColumnNameConflict, NoExpressionAlias,
+           NoVariablesInScope, ORDER BY scoping, pattern-predicate variables)
+        C. aggregation (InvalidAggregation, AmbiguousAggregationExpression,
+           NestedAggregation, NonConstantExpression)
+        D. literal/lexical codes (IntegerOverflow, FloatingPointOverflow,
+           InvalidNumberLiteral, InvalidUnicodeLiteral/Character, UnexpectedSyntax)
+        E. clause/pattern rules (NoSingleRelationshipType,
+           RequiresDirectedRelationship, CreatingVarLength, InvalidParameterUse,
+           InvalidRelationshipPattern, RelationshipUniquenessViolation,
+           InvalidDelete, InvalidClauseComposition, DifferentColumnsInUnion,
+           NegativeIntegerArgument, SKIP/LIMIT argument types)
+        F. static type inference (InvalidArgumentType incl. TypeError for
+           non-map property access) and UnknownFunction (function registry);
+           ProcedureNotFound for names outside db.*/dbms.*/tx.*
+      Not covered (belong elsewhere): procedure signatures/arguments
+      (InvalidNumberOfArguments, InvalidArgumentPassingMode, MissingParameter ->
+      task-026) and every runtime error expectation.
+    status: completed
+    dependencies: [task-017]
+    acceptance_criteria:
+      - "A typed *analyze.Error (class + TCK code + position) reaches the caller through graphlite's error wrapping: done (analyze.Describe, used by the harness)"
+      - "The harness requires class and code to match for 'at compile time' expectations: done"
+      - "Every TCK scenario expecting a compile-time error passes with the right code: 586/586 cases (cypher/analyze TestTCK_CompileTimeErrors), 0 of 4,176 valid queries wrongly rejected (TestTCK_ValidScenariosPass)"
+      - "TCK pass rate over executed scenarios: 816/2,631 (31.0%) -> 911/2,631 (34.6%)"
+
+  - id: task-039
+    title: "Retire ExprText: planner consumes typed property-map expressions"
+    description: |
+      DONE. Property-map values, SET values (n.p = v and n += {map}), ORDER BY
+      keys and DELETE targets are typed Exprs in the Query AST, lowered from the
+      syntax tree; the planner's expression-text parser (parseExprText) and the
+      "__list__:" / verbatim-text encodings are gone. The verbatim-source fields
+      were removed from cypher/syntax (MapEntry.Source, ListLit.Sources,
+      SetItem.ValueSource, Delete.Sources, SortItem.Source) EXCEPT
+      ProjectionItem.Source, which un-aliased result columns need.
+      Negative numeric literals now lower to plain LiteralExprs (the text path
+      handled -1; the typed path must too); planValue keeps a bare unbound
+      variable (ORDER BY alias) as a RawExpr identifier, as before.
+    status: completed
+    dependencies: [task-018]
+    acceptance_criteria:
+      - "NodePattern.Props, SetItem values, SortItem and DeleteClause.Exprs are typed expressions: done"
+      - "No Source/ValueSource/Sources fields remain in cypher/syntax except ProjectionItem.Source (documented: column naming)"
+      - "TCK pass rate not lower, compared scenario by scenario: 911 -> 950 passed, 0 regressions, 39 improvements"
+
+  # ───────────── Iteration 8: planner/SQL catch-up (A) ─────────────
+  - id: task-019
+    title: "UNWIND and RETURN *"
+    description: |
+      Plan and translate UNWIND (recursive CTE / json_each over list values)
+      and RETURN * / WITH *. Remove their entries from unsupportedPatterns.
+    notes: "Done by the Go interpreter (cypher/interp), which replaced the SQL translator; the translator, planner and plan cache were deleted. Skip-list entries removed; TCK passes except temporal values (task-038)."
+    status: done
+    dependencies: [task-018]
+    acceptance_criteria:
+      - "TCK UNWIND and RETURN * scenarios pass; entries removed from skip list"
+
+  - id: task-020
+    title: "UNION / UNION ALL"
+    description: "Plan and translate UNION [ALL] with column-compatibility checks."
+    notes: "Done by the Go interpreter (cypher/interp), which replaced the SQL translator; the translator, planner and plan cache were deleted. Skip-list entries removed; TCK passes except temporal values (task-038)."
+    status: done
+    dependencies: [task-018]
+    acceptance_criteria:
+      - "TCK union scenarios pass; skip entry removed"
+
+  - id: task-021
+    title: "Scalar, string, math and conversion functions"
+    description: |
+      toLower/toUpper/trim/ltrim/rtrim/split/replace/substring/left/right/
+      reverse, abs/ceil/floor/round/sign/sqrt/rand/log/e/pi…, toString/
+      toInteger/toFloat/toBoolean, coalesce, type/id/labels/keys/properties,
+      timestamp. Table-driven mapping to SQLite functions where possible,
+      Go-registered SQL functions (modernc) where not.
+    notes: "Done by the Go interpreter (cypher/interp), which replaced the SQL translator; the translator, planner and plan cache were deleted. Skip-list entries removed; TCK passes except temporal values (task-038)."
+    status: done
+    dependencies: [task-018]
+    acceptance_criteria:
+      - "Each function has translator unit tests and TCK scenarios passing; entries removed from skip list"
+
+  - id: task-022
+    title: "List functions and expressions"
+    description: |
+      size/length, head/tail/last, range, list slicing/subscript, `+` list
+      concatenation, IN on lists, nodes()/relationships() once path values
+      exist (see task-025).
+    notes: "Done by the Go interpreter (cypher/interp), which replaced the SQL translator; the translator, planner and plan cache were deleted. Skip-list entries removed; TCK passes except temporal values (task-038)."
+    status: done
+    dependencies: [task-019, task-021]
+    acceptance_criteria:
+      - "Entries removed from skip list; TCK list scenarios pass"
+
+  # ───────────── Iteration 9: planner/SQL catch-up (B) ─────────────
+  - id: task-023
+    title: "List/pattern comprehensions, quantifiers, reduce"
+    description: |
+      Implement via json_each/CTE translation where expressible, otherwise
+      Go-side evaluation of the row set (decision recorded in the PRD open
+      question). Covers [x IN l WHERE p | e], any/all/none/single, reduce,
+      extract/filter, pattern comprehensions.
+    notes: "Done by the Go interpreter (cypher/interp), which replaced the SQL translator; the translator, planner and plan cache were deleted. Skip-list entries removed; TCK passes except temporal values (task-038)."
+    status: done
+    dependencies: [task-022]
+    acceptance_criteria:
+      - "Corresponding skip-list entries removed; TCK scenarios pass"
+
+  - id: task-024
+    title: "Pattern predicates and EXISTS"
+    description: "Pattern predicates in WHERE and exists(pattern) via EXISTS subqueries."
+    notes: "Done by the Go interpreter (cypher/interp), which replaced the SQL translator; the translator, planner and plan cache were deleted. Skip-list entries removed; TCK passes except temporal values (task-038)."
+    status: done
+    dependencies: [task-018]
+    acceptance_criteria:
+      - "Pattern-predicate skip entry removed; TCK scenarios pass"
+
+  - id: task-025
+    title: "Named paths and shortestPath/allShortestPaths"
+    description: |
+      Path values (graphlite.Path), named path variables, nodes()/
+      relationships()/length(path), shortestPath/allShortestPaths. Coordinate
+      with prd-shortest-path-traversal.md (reuse its tasks rather than
+      duplicating).
+    notes: "Done by the Go interpreter (cypher/interp), which replaced the SQL translator; the translator, planner and plan cache were deleted. Skip-list entries removed; TCK passes except temporal values (task-038)."
+    status: done
+    dependencies: [task-022]
+    acceptance_criteria:
+      - "Named-path and shortestPath skip entries removed; TCK scenarios pass"
+
+  - id: task-026
+    title: "FOREACH and CALL"
+    description: |
+      FOREACH with nested updating clauses; in-query and standalone CALL for
+      the built-in procedures TCK uses (test procedure registry in the
+      harness) plus a Go-side procedure registration hook.
+    notes: "Done by the Go interpreter (cypher/interp), which replaced the SQL translator; the translator, planner and plan cache were deleted. Skip-list entries removed; TCK passes except temporal values (task-038)."
+    status: done
+    dependencies: [task-018]
+    acceptance_criteria:
+      - "FOREACH and CALL skip entries removed; TCK scenarios pass"
+
+  - id: task-027
+    title: "Empty the skip list; full TCK green"
+    description: |
+      Remove the remaining unsupportedPatterns and any scenario-level skips.
+      Fix remaining failures. Update AGENTS.md and the README feature matrix.
+    status: done
+    dependencies: [task-023, task-024, task-025, task-026, task-020]
+    acceptance_criteria:
+      - "unsupportedPatterns is empty and shouldSkipScenario skips only scenarios on the documented Cypher-25-removed-syntax exclusion list (compat/testdata/excluded.txt, each with a reason)"
+      - "go test -tags=tck ./compat/... reports 100% of non-excluded scenarios passing"
+      - "build, vet, unit and full test suites pass"
+
+  # ───────────── Iteration 10: Neo4j extension execution ─────────────
+  - id: task-035
+    title: "Execute label/type expressions and map projections"
+    description: |
+      Plan/translate LabelExpr (AND/OR/NOT/wildcard via node_labels EXISTS
+      logic), RelTypeExpr, map projections, dynamic labels/properties. Use
+      the node_labels junction table (see AGENTS.md); parameterised SQL only.
+    status: completed
+    notes: "Done: label/type expressions, dynamic labels/properties/types and map projections execute (interpreter)."
+    dependencies: [task-027, task-034]
+    acceptance_criteria:
+      - "Neo4j-extension scenarios for these constructs pass"
+
+  - id: task-036
+    title: "Execute EXISTS/COUNT/COLLECT subqueries and CALL {}"
+    description: |
+      Translate subquery expressions to correlated SQL subqueries; CALL {}
+      with importing WITH as a lateral/correlated subquery (Go-side per-row
+      evaluation fallback permitted). IN TRANSACTIONS executes as a single
+      transaction or errors clearly.
+    status: completed
+    notes: "Done: EXISTS/COUNT/COLLECT and CALL {} (incl. scoped, OPTIONAL, IN TRANSACTIONS as one transaction) execute."
+    dependencies: [task-035]
+    acceptance_criteria:
+      - "Scenarios pass for each subquery form, incl. nested and correlated cases"
+
+  - id: task-037
+    title: "Execute shortest-path selectors and quantified path patterns"
+    description: |
+      Map ANY/ALL SHORTEST/SHORTEST k onto the path-CTE work in
+      prd-shortest-path-traversal.md; implement QPPs by expansion to bounded
+      recursive CTEs (honouring maxPathHops) with group-variable (list)
+      semantics.
+    status: completed
+    notes: "Done: quantified path patterns and all path selectors (group.go)."
+    dependencies: [task-025, task-036]
+    acceptance_criteria:
+      - "Manual-derived scenarios for selectors and QPPs pass; unbounded quantifiers respect maxPathHops"
+
+  - id: task-038
+    title: "Temporal/spatial values, schema commands, remaining Tier A items"
+    description: |
+      date/datetime/duration/point constructors and arithmetic, schema
+      commands executing against the work in the index/constraint and vector
+      PRDs, EXPLAIN/PROFILE behaviour, type predicates. Anything deferred is
+      listed with a clear ErrUnsupportedCypher message and a tracking note
+      in the PRD.
+    status: completed
+    notes: "Done: temporal, POINT, VECTOR, schema commands and constraints, LOAD CSV (opt-in), type predicates, EXPLAIN/PROFILE. Deferred (return ErrUnsupportedCypher): nested quantified path patterns, SHOW FUNCTIONS, server-only commands (USE, users/roles/databases)."
+    dependencies: [task-037]
+    acceptance_criteria:
+      - "Neo4j-extension suite is green except for items explicitly listed as deferred in the PRD"
+      - "AGENTS.md and README feature matrix document supported Neo4j extensions"

@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/LackOfMorals/graphlite/v2/cypher/interp"
+
 	"github.com/LackOfMorals/graphlite/v2/store"
 )
 
@@ -20,10 +22,9 @@ import (
 //	if err := doWork(tx); err != nil { return err }
 //	return tx.Commit()
 type Tx struct {
-	rawTx       store.TxExecer
-	done        bool
-	maxPathHops int
-	cache       *planCache // shared plan cache from the parent DB
+	rawTx store.TxExecer
+	done  bool
+	eng   *interp.Engine // interpreter state of the parent DB
 }
 
 // Run executes cypherStr within the transaction and returns a lazy *Result.
@@ -36,7 +37,7 @@ func (t *Tx) Run(ctx context.Context, cypherStr string, params map[string]any) (
 	if t.done {
 		return nil, fmt.Errorf("graphlite: transaction already closed")
 	}
-	return runQueryTx(ctx, t.rawTx, cypherStr, params, t.maxPathHops, t.cache)
+	return runInterp(ctx, t.rawTx, cypherStr, params, nil, false, t.eng)
 }
 
 // Commit commits the transaction.
@@ -67,6 +68,7 @@ func (t *Tx) Rollback() error {
 		return nil
 	}
 	t.done = true
+	t.eng.ResetIndexState() // the rollback may have undone an automatic index
 	if err := t.rawTx.Rollback(); err != nil {
 		return fmt.Errorf("graphlite: rollback: %w", err)
 	}

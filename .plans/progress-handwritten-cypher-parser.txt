@@ -1,0 +1,101 @@
+================================================================================
+PROGRESS: handwritten-cypher-parser            (last updated 2026-10-09)
+Plan: prd-handwritten-cypher-parser.md   Tasks: tasks-handwritten-cypher-parser.yml
+Branch: feat/handwritten-cypher-parser
+================================================================================
+
+DONE (24 of 39 tasks)
+  001-003  lexer, tokens, positioned errors, FuzzLex
+  004-009  typed AST, expressions, patterns, comprehensions
+  010-012  clauses, projections, UNION, clause-order checks, Parse()
+  013      (still pending: see decision 3 below)
+  014-016  adapter, differential test vs ANTLR (since deleted), cut-over; ANTLR and
+           cloudprivacylabs/opencypher removed from go.mod/vendor
+  017      full openCypher TCK imported + baseline
+  018      semantic analysis with TCK error codes
+  039      ExprText retired: the Query AST is typed (TCK 911 -> 950, 0 regressions)
+  028-033  Neo4j / Cypher 25 syntax: label expressions, subqueries, QPP and
+           selectors, map projections, type predicates, schema commands, etc.
+
+Commits so far on the branch (newest first)
+  <task-018 commit>   semantic analysis (cypher/analyze), strict TCK harness
+  c8b7adf             full TCK import, harness upgrade, baseline
+  9d91e51             cut-over + Neo4j extension syntax
+  4e111aa             ParseNew adapter + differential test
+  7b2f099             statements/clauses
+  328cdba             lexer + expressions + patterns
+Nothing has been pushed since 328cdba.
+
+TASK-017 RESULT (details in tck-baseline.md)
+  * compat/testdata/tck = official TCK, commit 677cbaf (2026-03-20): 220 feature
+    files, 1,615 scenarios, 3,897 executed cases. README.md records provenance.
+  * compat/testdata/graphs = binary-tree-1/2 named graphs (new step added).
+  * compat/testdata/excluded.txt = scenarios needing syntax Cypher 25 removed.
+    Only two so far (Merge6 [6], Merge7 [4]: SET r = a). Source: the manual's
+    "Removals" list.
+  * Harness now records per-scenario outcomes and writes a markdown report with
+    TCK_REPORT=path (areas, feature files, top failure and skip reasons).
+  * Baseline: 816 / 2,631 executed (31.0%); 1,815 failed; 1,264 skipped; 2 excluded.
+    The rate is OPTIMISTIC: "should be raised at compile time" passes on ANY error.
+  * Failure groups: temporal 975 (belongs to task-038), translator "complex
+    expression" ~1,100 (tasks 019-027 / task-039), ~85 "expected SyntaxError but
+    query succeeded" (= task-018).
+
+TASK-018 (semantic analysis) - DONE
+  * cypher/analyze: typed Error{Class, Code, Pos, Msg}; Check(); Describe().
+    Lexer/parser errors carry TCK codes (syntax.SyntaxError.Code / ErrorCode()).
+    cypher.Parse = syntax.Parse -> analyze.Check -> lowering.
+  * Results: all 586 compile-time-error cases in the TCK produce the exact expected
+    class and code; 0 of 4,176 valid queries are wrongly rejected; strict harness
+    pass rate 816/2,631 (31.0%) -> 911/2,631 (34.6%). FuzzCheck: 23M executions,
+    no panics.
+  * Design notes (also in AGENTS.md): zero false positives is a hard requirement
+    (TestTCK_ValidScenariosPass); path variables are bound after their elements;
+    the aggregation grouping rule is leaf-by-leaf; NoExpressionAlias is reported
+    after the other projection checks; type inference only reports proven
+    mismatches (unknown stays unknown).
+  * Not covered: procedure signatures/arguments (task-026) and every runtime error
+    expectation (those still accept any error in the harness).
+
+DECISIONS / OPEN QUESTIONS
+  1. The original 018 acceptance "property map values no longer ExprText" was split
+     out as task-039 (planner/translator refactor, not analysis).
+  2. Strict harness will LOWER the reported pass rate at first (scenarios that passed
+     only because any error was accepted). Plan: report old and new rate side by side
+     in tck-baseline.md when step A lands.
+  3. Task-013 (full-corpus fuzz/benchmark task) is still marked pending; its
+     intent has been met in pieces: FuzzParse / FuzzParseExpr (~54M executions, no
+     failures), a benchmark (~3.5us/query vs ~9.5ms for ANTLR), and the corpus test,
+     which now parses ALL 1,917 valid queries of the full TCK (scenarios that expect
+     an error are only required not to panic). Confirm and close.
+  4. Not parsed on purpose (not in the Cypher Manual): NEXT, INSERT, standalone
+     ORDER BY. IS NORMALIZED is implemented but unverified.
+
+NOT DONE / NEXT
+  * Iterations 8-10 (planner/SQL catch-up: UNWIND, UNION, functions, ...).
+  * Iteration 8-10: UNWIND/UNION/functions in the planner and SQL, comprehension
+    and subquery execution, Neo4j extension execution, temporal/spatial values.
+  * Push the branch / open a draft PR when wanted (not pushed since 328cdba).
+
+ITERATIONS 8-10 (hybrid engine decision -> interpreter only)
+  * Added cypher/interp (Go interpreter over SQLite), cypher/proc (procedures) and
+    engine.go. The interpreter passes 2,831/3,895 TCK scenarios; ~1,000 of the
+    remaining failures are temporal values/functions (task-038).
+  * Measured the SQL translator: 26% of the TCK, wrong results on some queries it
+    accepted, silently created no relationships for multi-pattern MATCH..CREATE.
+    Interpreter with property pushdown + automatic expression indexes beats it on
+    lookups and traversals (19us vs 580us lookup). Translator, planner, Query AST,
+    plan cache and the rows-backed Result were deleted.
+  * Tasks 019-026 are done by the interpreter; task-027 (full TCK green) is waiting
+    on temporal types (task-038).
+  * Temporal types/functions implemented (cypher/temporal): TCK now 3,895/3,895 of the
+    non-excluded scenarios; the harness requires 100%. Task-027 done. Task-038 keeps
+    spatial/vector values, schema commands, EXPLAIN/PROFILE, type predicates, LOAD CSV
+    and quantified path patterns.
+  * Task-013 closed: 5-minute FuzzParse run clean (172M executions).
+  * Tasks 034-038 done: Neo4j-extension suite (222 scenarios, 100%), quantified path
+    patterns + selectors, POINT, VECTOR, schema commands/constraints, LOAD CSV
+    (opt-in), IS :: TYPE, EXPLAIN. The TCK harness now checks side effects strictly
+    (found and fixed label/property counter bugs). Deferred: nested QPPs, SHOW
+    FUNCTIONS, server-only commands.
+================================================================================
