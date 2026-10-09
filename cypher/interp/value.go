@@ -17,6 +17,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/LackOfMorals/graphlite/v2/cypher/spatial"
 	"github.com/LackOfMorals/graphlite/v2/cypher/temporal"
 )
 
@@ -83,6 +84,8 @@ func typeName(v any) string {
 		return "Path"
 	case temporal.Value:
 		return temporalTypeName(x)
+	case spatial.Point:
+		return "Point"
 	}
 	return fmt.Sprintf("%T", v)
 }
@@ -91,7 +94,7 @@ func typeName(v any) string {
 // canonical run-time representation.
 func normalize(v any) any {
 	switch x := v.(type) {
-	case nil, bool, int64, float64, string, *Node, *Rel, *Path, temporal.Value:
+	case nil, bool, int64, float64, string, *Node, *Rel, *Path, temporal.Value, spatial.Point:
 		return v
 	case int:
 		return int64(x)
@@ -273,6 +276,9 @@ func equals(a, b any) tri {
 	case temporal.Value:
 		y, ok := b.(temporal.Value)
 		return triOf(ok && temporal.Equal(x, y))
+	case spatial.Point:
+		y, ok := b.(spatial.Point)
+		return triOf(ok && x == y)
 	case *Path:
 		y, ok := b.(*Path)
 		if !ok || len(x.Nodes) != len(y.Nodes) || len(x.Rels) != len(y.Rels) {
@@ -400,36 +406,38 @@ func orderRank(v any) int {
 		return 3
 	case *Path:
 		return 4
+	case spatial.Point:
+		return 5
 	case temporal.Value:
 		// ZONED DATETIME < LOCAL DATETIME < DATE < ZONED TIME < LOCAL TIME < DURATION
 		switch x.Kind() {
 		case temporal.KindDateTime:
-			return 5
-		case temporal.KindLocalDateTime:
 			return 6
-		case temporal.KindDate:
+		case temporal.KindLocalDateTime:
 			return 7
-		case temporal.KindTime:
+		case temporal.KindDate:
 			return 8
-		case temporal.KindLocalTime:
+		case temporal.KindTime:
 			return 9
+		case temporal.KindLocalTime:
+			return 10
 		}
-		return 10
-	case string:
 		return 11
-	case bool:
+	case string:
 		return 12
-	case int64:
+	case bool:
 		return 13
+	case int64:
+		return 14
 	case float64:
 		if math.IsNaN(x) {
-			return 14
+			return 15
 		}
-		return 13
+		return 14
 	case nil:
-		return 15
+		return 16
 	}
-	return 16
+	return 17
 }
 
 // orderCompare is a total order over all values (null sorts last ascending).
@@ -476,6 +484,8 @@ func orderCompare(a, b any) int {
 			}
 		}
 		return cmpInt(int64(len(x.Nodes)), int64(len(y.Nodes)))
+	case spatial.Point:
+		return spatial.Compare(x, b.(spatial.Point))
 	case temporal.Value:
 		if c, ok := temporal.Compare(x, b.(temporal.Value)); ok {
 			return c
@@ -580,6 +590,8 @@ func writeKey(sb *strings.Builder, v any) {
 		sb.WriteString("R" + strconv.FormatInt(x.ID, 10) + ";")
 	case temporal.Value:
 		sb.WriteString("T" + strconv.Itoa(int(x.Kind())) + x.String() + ";")
+	case spatial.Point:
+		sb.WriteString("S" + x.String() + ";")
 	case *Path:
 		sb.WriteString("P[")
 		for i, n := range x.Nodes {

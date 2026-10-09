@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/LackOfMorals/graphlite/v2/cypher/spatial"
 	"github.com/LackOfMorals/graphlite/v2/cypher/temporal"
 )
 
@@ -85,7 +86,7 @@ func newGraph(ctx context.Context, db DB) *graph {
 // number or string, or a list of one such type.
 func checkPropValue(key string, v any) error {
 	switch x := v.(type) {
-	case nil, bool, int64, string, temporal.Value:
+	case nil, bool, int64, string, temporal.Value, spatial.Point:
 		return nil
 	case float64:
 		if math.IsInf(x, 0) || math.IsNaN(x) {
@@ -96,7 +97,7 @@ func checkPropValue(key string, v any) error {
 		var first any
 		for i, e := range x {
 			switch e.(type) {
-			case bool, int64, float64, string, temporal.Value:
+			case bool, int64, float64, string, temporal.Value, spatial.Point:
 			default:
 				return errorf("TypeError", "InvalidPropertyType", "property `%s`: collections containing %s cannot be stored as properties", key, typeName(e))
 			}
@@ -174,6 +175,10 @@ func encodeValue(sb *strings.Builder, v any) error {
 		sb.WriteString(`{"$t":` + strconv.Itoa(int(x.Kind())) + `,"v":`)
 		sb.Write(b)
 		sb.WriteByte('}')
+	case spatial.Point:
+		sb.WriteString(`{"$p":` + strconv.Itoa(x.SRID) + `,"c":[` +
+			strconv.FormatFloat(x.X, 'g', -1, 64) + `,` + strconv.FormatFloat(x.Y, 'g', -1, 64) + `,` +
+			strconv.FormatFloat(x.Z, 'g', -1, 64) + `]}`)
 	default:
 		return errorf("TypeError", "InvalidPropertyType", "%s values cannot be stored as properties", typeName(v))
 	}
@@ -203,6 +208,20 @@ func decodeProps(s string) (map[string]any, error) {
 func reviveTemporal(v any) any {
 	switch x := v.(type) {
 	case map[string]any:
+		if srid, ok := x["$p"].(int64); ok {
+			if c, ok := x["c"].([]any); ok && len(c) == 3 {
+				f := func(i int) float64 {
+					switch n := c[i].(type) {
+					case float64:
+						return n
+					case int64:
+						return float64(n)
+					}
+					return 0
+				}
+				return spatial.Point{SRID: int(srid), X: f(0), Y: f(1), Z: f(2)}
+			}
+		}
 		kind, hasKind := x["$t"].(int64)
 		text, hasText := x["v"].(string)
 		if hasKind && hasText {

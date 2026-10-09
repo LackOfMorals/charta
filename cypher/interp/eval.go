@@ -2,6 +2,7 @@ package interp
 
 import (
 	"github.com/LackOfMorals/graphlite/v2/cypher/proc"
+	"github.com/LackOfMorals/graphlite/v2/cypher/spatial"
 	"github.com/LackOfMorals/graphlite/v2/cypher/temporal"
 	"math"
 	"regexp"
@@ -205,6 +206,11 @@ func (ex *exec) property(subject any, key string) (any, error) {
 			return v, nil
 		}
 		return nil, argErr("%s has no component `%s`", temporalTypeName(x), key)
+	case spatial.Point:
+		if v, ok := x.Property(key); ok {
+			return v, nil
+		}
+		return nil, argErr("a point has no component `%s`", key)
 	}
 	return nil, typeErr("cannot access property `%s` of %s", key, typeName(subject))
 }

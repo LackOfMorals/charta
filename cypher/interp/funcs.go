@@ -7,6 +7,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/LackOfMorals/graphlite/v2/cypher/spatial"
 	"github.com/LackOfMorals/graphlite/v2/cypher/syntax"
 	"github.com/LackOfMorals/graphlite/v2/cypher/temporal"
 )
@@ -41,6 +42,9 @@ func (ex *exec) call(e *syntax.FuncCall, r row) (any, error) {
 				return v, err
 			}
 		}
+		if v, ok, err := spatialFunction(e.Namespace, e.Name, args); ok {
+			return v, err
+		}
 		return nil, unsupported("function %s.%s", strings.Join(e.Namespace, "."), e.Name)
 	}
 	// exists() accepts a property or a pattern; evaluate its argument specially.
@@ -62,6 +66,9 @@ func (ex *exec) call(e *syntax.FuncCall, r row) (any, error) {
 		return nil, err
 	}
 	if v, ok, err := ex.temporalFunction(name, args); ok {
+		return v, err
+	}
+	if v, ok, err := spatialFunction(nil, name, args); ok {
 		return v, err
 	}
 	return ex.builtin(name, args)
@@ -780,6 +787,8 @@ func toStringFn(v any, orNull bool) (any, error) {
 	case bool:
 		return strconv.FormatBool(x), nil
 	case temporal.Value:
+		return x.String(), nil
+	case spatial.Point:
 		return x.String(), nil
 	}
 	if orNull {

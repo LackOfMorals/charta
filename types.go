@@ -3,6 +3,7 @@ package graphlite
 import (
 	"fmt"
 
+	"github.com/LackOfMorals/graphlite/v2/cypher/spatial"
 	"github.com/LackOfMorals/graphlite/v2/cypher/temporal"
 )
 
@@ -189,3 +190,6 @@ type (
 	DateTime      = temporal.DateTime
 	Duration      = temporal.Duration
 )
+
+// Point is the value of a Cypher POINT; see [spatial.Point].
+type Point = spatial.Point

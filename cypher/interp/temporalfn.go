@@ -4,8 +4,86 @@ import (
 	"strings"
 	"time"
 
+	"github.com/LackOfMorals/graphlite/v2/cypher/spatial"
 	"github.com/LackOfMorals/graphlite/v2/cypher/temporal"
 )
+
+// spatialFunction evaluates point() and the point.* functions.
+func spatialFunction(ns []string, name string, args []any) (any, bool, error) {
+	if len(ns) == 0 {
+		switch name {
+		case "point":
+			if err := argc("point", args, 1, 1); err != nil {
+				return nil, true, err
+			}
+			if args[0] == nil {
+				return nil, true, nil
+			}
+			m, ok := args[0].(map[string]any)
+			if !ok {
+				return nil, true, typeErr("point() expects a map, got %s", typeName(args[0]))
+			}
+			for _, v := range m {
+				if v == nil {
+					return nil, true, nil // a null coordinate makes the point null
+				}
+			}
+			p, err := spatial.FromMap(m)
+			if err != nil {
+				return nil, true, argErr("%v", err)
+			}
+			return p, true, nil
+		}
+		return nil, false, nil
+	}
+	if len(ns) != 1 || ns[0] != "point" {
+		return nil, false, nil
+	}
+	switch strings.ToLower(name) {
+	case "distance":
+		return spatialDistance("point.distance", args)
+	case "withinbbox":
+		if err := argc("point.withinBBox", args, 3, 3); err != nil {
+			return nil, true, err
+		}
+		var ps [3]spatial.Point
+		for i, a := range args {
+			if a == nil {
+				return nil, true, nil
+			}
+			p, ok := a.(spatial.Point)
+			if !ok {
+				return nil, true, typeErr("point.withinBBox() expects points, got %s", typeName(a))
+			}
+			ps[i] = p
+		}
+		within, ok := spatial.WithinBBox(ps[0], ps[1], ps[2])
+		if !ok {
+			return nil, true, nil
+		}
+		return within, true, nil
+	}
+	return nil, false, nil
+}
+
+func spatialDistance(fn string, args []any) (any, bool, error) {
+	if err := argc(fn, args, 2, 2); err != nil {
+		return nil, true, err
+	}
+	if args[0] == nil || args[1] == nil {
+		return nil, true, nil
+	}
+	a, ok1 := args[0].(spatial.Point)
+	b, ok2 := args[1].(spatial.Point)
+	if !ok1 || !ok2 {
+		return nil, true, typeErr("%s() expects points, got %s and %s", fn, typeName(args[0]), typeName(args[1]))
+	}
+	d, ok := spatial.Distance(a, b)
+	if !ok {
+		return nil, true, nil
+	}
+	return d, true, nil
+}
 
 // isTemporal reports whether v is a temporal value.
 func isTemporal(v any) bool {

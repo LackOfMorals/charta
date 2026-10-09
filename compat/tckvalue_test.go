@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	graphlite "github.com/LackOfMorals/graphlite/v2"
+	"github.com/LackOfMorals/graphlite/v2/cypher/spatial"
 	"github.com/LackOfMorals/graphlite/v2/cypher/temporal"
 )
 
@@ -338,6 +339,8 @@ func fromActual(v any, lenient bool) any {
 		return x
 	case temporal.Value:
 		return x.String() // the TCK writes temporal values as their string form
+	case spatial.Point:
+		return x.String()
 	case int:
 		return int64(x)
 	case float64:
