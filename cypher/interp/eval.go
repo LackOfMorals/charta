@@ -15,6 +15,17 @@ import (
 // row is the set of variables visible to an expression.
 type row map[string]any
 
+// without returns a copy of r lacking name.
+func (r row) without(name string) row {
+	out := make(row, len(r))
+	for k, v := range r {
+		if k != name {
+			out[k] = v
+		}
+	}
+	return out
+}
+
 func (r row) with(name string, v any) row {
 	out := make(row, len(r)+1)
 	for k, x := range r {

@@ -19,6 +19,20 @@ func (ex *exec) matchParts(parts []*syntax.PatternPart, base row, emit func(row)
 	return rec(0, base)
 }
 
+// rangeOf returns a relationship pattern's hop range: its explicit *min..max
+// range or the equivalent of a quantifier suffix (->+, ->{1,3}); nil for a
+// single hop.
+func rangeOf(rp *syntax.RelPattern) *syntax.Range {
+	if rp.Range != nil {
+		return rp.Range
+	}
+	if rp.Quant != nil {
+		min := rp.Quant.Min
+		return &syntax.Range{Min: &min, Max: rp.Quant.Max}
+	}
+	return nil
+}
+
 // pathState accumulates a path while a pattern is walked.
 type pathState struct {
 	nodes []*Node
@@ -27,12 +41,10 @@ type pathState struct {
 
 func (ex *exec) matchPart(part *syntax.PatternPart, r row, used map[int64]bool, cont func(row) error) error {
 	if part.Func != syntax.FuncNone || part.Selector != nil {
-		return ex.matchShortest(part, r, used, cont)
-	}
-	for _, el := range part.Elems {
-		if _, ok := el.(*syntax.GroupPattern); ok {
-			return unsupported("quantified path patterns")
+		if ex.bfsSelectable(part) {
+			return ex.matchShortest(part, r, used, cont)
 		}
+		return ex.matchSelected(part, r, used, cont)
 	}
 	finish := func(r2 row, ps *pathState) error {
 		if part.Var != "" {
@@ -41,10 +53,36 @@ func (ex *exec) matchPart(part *syntax.PatternPart, r row, used map[int64]bool, 
 		}
 		return cont(r2)
 	}
+	if g, ok := part.Elems[0].(*syntax.GroupPattern); ok {
+		// The pattern starts with a quantified group: any node may begin it, and
+		// the group's own first node pattern decides.
+		var label string
+		if np, ok := firstNode(g).(*syntax.NodePattern); ok {
+			label = scanLabel(np.Labels)
+		}
+		cands, err := ex.g.scanNodes(label, nil)
+		if err != nil {
+			return err
+		}
+		for _, n := range cands {
+			if err := ex.walkGroup(part.Elems, 0, g, n, r, &pathState{nodes: []*Node{n}}, used, finish); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
 	first := part.Elems[0].(*syntax.NodePattern)
 	return ex.forEachStart(first, r, func(n *Node, r2 row) error {
 		return ex.walk(part.Elems, 1, n, r2, &pathState{nodes: []*Node{n}}, used, finish)
 	})
+}
+
+// firstNode is the first element of a group pattern.
+func firstNode(g *syntax.GroupPattern) syntax.PatternElem {
+	if len(g.Elems) == 0 {
+		return nil
+	}
+	return g.Elems[0]
 }
 
 // forEachStart calls fn for every node that can start the pattern.
@@ -159,9 +197,33 @@ func (ex *exec) walk(elems []syntax.PatternElem, i int, cur *Node, r row, ps *pa
 	if i >= len(elems) {
 		return done(r, ps)
 	}
+	if g, ok := elems[i].(*syntax.GroupPattern); ok {
+		return ex.walkGroup(elems, i, g, cur, r, ps, used, done)
+	}
 	rp := elems[i].(*syntax.RelPattern)
+	if g, ok := elems[i+1].(*syntax.GroupPattern); ok {
+		// A relationship leading into a quantified group: the node it reaches
+		// is the group's first node.
+		if rangeOf(rp) != nil {
+			return unsupported("a variable-length relationship directly before a quantified path pattern")
+		}
+		return ex.expand(rp, cur, r, used, func(rel *Rel, other *Node) error {
+			r2, ok, err := ex.bindStep(rp, rel, &syntax.NodePattern{}, other, r)
+			if err != nil || !ok {
+				return err
+			}
+			used[rel.ID] = true
+			ps.nodes = append(ps.nodes, other)
+			ps.rels = append(ps.rels, rel)
+			err = ex.walkGroup(elems, i+1, g, other, r2, ps, used, done)
+			ps.nodes = ps.nodes[:len(ps.nodes)-1]
+			ps.rels = ps.rels[:len(ps.rels)-1]
+			delete(used, rel.ID)
+			return err
+		})
+	}
 	next := elems[i+1].(*syntax.NodePattern)
-	if rp.Range != nil {
+	if rangeOf(rp) != nil {
 		return ex.walkVarLength(elems, i, rp, next, cur, r, ps, used, done)
 	}
 	return ex.expand(rp, cur, r, used, func(rel *Rel, other *Node) error {
@@ -289,11 +351,12 @@ func (ex *exec) bindStep(rp *syntax.RelPattern, rel *Rel, np *syntax.NodePattern
 func (ex *exec) walkVarLength(elems []syntax.PatternElem, i int, rp *syntax.RelPattern, np *syntax.NodePattern, cur *Node, r row, ps *pathState, used map[int64]bool, done func(row, *pathState) error) error {
 	min := int64(1)
 	max := int64(-1) // unbounded
-	if rp.Range.Min != nil {
-		min = *rp.Range.Min
+	rng := rangeOf(rp)
+	if rng.Min != nil {
+		min = *rng.Min
 	}
-	if rp.Range.Max != nil {
-		max = *rp.Range.Max
+	if rng.Max != nil {
+		max = *rng.Max
 	}
 	if hops := int64(0); ex.g.eng != nil {
 		if hops = int64(ex.g.eng.MaxPathHops); hops > 0 {
@@ -400,22 +463,17 @@ func (ex *exec) matchShortest(part *syntax.PatternPart, r row, used map[int64]bo
 		return unsupported("shortest path pattern")
 	}
 	all := part.Func == syntax.FuncAllShortestPaths
-	if part.Selector != nil {
-		switch part.Selector.Kind {
-		case syntax.SelectorAllShortest:
-			all = true
-		case syntax.SelectorAnyShortest:
-		default:
-			return unsupported("path selector")
-		}
+	if part.Selector != nil && part.Selector.Kind == syntax.SelectorAllShortest {
+		all = true
 	}
-	min, max := int64(1), int64(-1)
-	if rp.Range != nil {
-		if rp.Range.Min != nil {
-			min = *rp.Range.Min
+	min, max := int64(1), int64(1) // a plain relationship pattern is one hop
+	if rng := rangeOf(rp); rng != nil {
+		min, max = 1, -1
+		if rng.Min != nil {
+			min = *rng.Min
 		}
-		if rp.Range.Max != nil {
-			max = *rp.Range.Max
+		if rng.Max != nil {
+			max = *rng.Max
 		}
 	}
 	return ex.forEachStart(start, r, func(s *Node, r2 row) error {

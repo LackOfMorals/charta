@@ -44,6 +44,21 @@ func (c *checker) declareElems(elems []syntax.PatternElem, sc *scope, st *patSta
 			// Variables inside a quantified group are group variables (lists).
 			inner := &patState{mode: modeLenient, rels: map[string]bool{}}
 			c.declareElems(el.Elems, sc, inner, false)
+			if el.Quant != nil {
+				for _, inner := range el.Elems {
+					name := ""
+					switch ie := inner.(type) {
+					case *syntax.NodePattern:
+						name = ie.Var
+					case *syntax.RelPattern:
+						name = ie.Var
+					}
+					if name != "" {
+						t, _ := sc.lookup(name)
+						sc.declare(name, listOf(t))
+					}
+				}
+			}
 			if el.Var != "" {
 				sc.declare(el.Var, tAny)
 			}
@@ -121,6 +136,7 @@ func singleType(le syntax.LabelExpr) bool {
 // WHERE) once all of the clause's variables are bound.
 func (c *checker) evalPatterns(parts []*syntax.PatternPart, sc *scope, st *patState) {
 	var walk func(elems []syntax.PatternElem)
+	cur := sc // the scope expressions are checked in
 	props := func(e syntax.Expr) {
 		switch p := e.(type) {
 		case nil:
@@ -129,7 +145,7 @@ func (c *checker) evalPatterns(parts []*syntax.PatternPart, sc *scope, st *patSt
 				c.fail(CodeInvalidParameterUse, p.Pos(), "parameter maps cannot be used in MATCH or MERGE patterns")
 			}
 		default:
-			c.expr(e, env{sc: sc})
+			c.expr(e, env{sc: cur})
 		}
 	}
 	walk = func(elems []syntax.PatternElem) {
@@ -138,24 +154,44 @@ func (c *checker) evalPatterns(parts []*syntax.PatternPart, sc *scope, st *patSt
 			case *syntax.NodePattern:
 				props(el.Props)
 				if el.Where != nil {
-					c.predicate(el.Where, env{sc: sc, boolCtx: true})
+					c.predicate(el.Where, env{sc: cur, boolCtx: true})
 				}
 				if el.Labels != nil {
-					c.labelExpr(el.Labels, sc)
+					c.labelExpr(el.Labels, cur)
 				}
 			case *syntax.RelPattern:
 				props(el.Props)
 				if el.Where != nil {
-					c.predicate(el.Where, env{sc: sc, boolCtx: true})
+					c.predicate(el.Where, env{sc: cur, boolCtx: true})
 				}
 				if el.Types != nil {
-					c.labelExpr(el.Types, sc)
+					c.labelExpr(el.Types, cur)
 				}
 			case *syntax.GroupPattern:
+				// Inside a quantified group each variable is the single value of
+				// one iteration, although outside it is a list of them.
+				saved := cur
+				if el.Quant != nil {
+					cur = newScope(sc)
+					for _, inner := range el.Elems {
+						name := ""
+						switch ie := inner.(type) {
+						case *syntax.NodePattern:
+							name = ie.Var
+						case *syntax.RelPattern:
+							name = ie.Var
+						}
+						if name != "" {
+							t, _ := sc.lookup(name)
+							cur.declare(name, t.elemType())
+						}
+					}
+				}
 				walk(el.Elems)
 				if el.Where != nil {
-					c.predicate(el.Where, env{sc: sc, boolCtx: true})
+					c.predicate(el.Where, env{sc: cur, boolCtx: true})
 				}
+				cur = saved
 			}
 		}
 	}
