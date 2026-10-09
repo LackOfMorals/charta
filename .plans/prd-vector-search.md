@@ -1,6 +1,6 @@
 # PRD: Pure-Go Vector Similarity Search (Exploratory)
 
-> **Status update (2026-10-09):** The VECTOR value, similarity/distance functions and CREATE VECTOR INDEX metadata exist (Neo4j naming). Remaining: validate index options, enforce dimension on write, brute-force db.index.vector.queryNodes and DB.VectorSearch, benchmarks. See tasks-vector-search.yml.
+> **Status update (2026-10-09):** The VECTOR value, similarity/distance functions and CREATE VECTOR INDEX metadata exist (Neo4j naming). Remaining: validate index options, enforce dimension on write, an in-memory float32 matrix per index with unrolled kernels and a parallel top-k scan (decoding JSON per query would cost about 1 s per 100k vectors, so the cache comes first), db.index.vector.queryNodes, DB.VectorSearch, benchmarks. See tasks-vector-search.yml.
 
 ## Overview
 
