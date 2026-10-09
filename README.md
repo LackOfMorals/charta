@@ -52,6 +52,8 @@ graphlite passes **every scenario of the openCypher Technology Compatibility Kit
 
 Unsupported features return `ErrUnsupportedCypher` — they never silently produce wrong results.
 
+**Shortest paths and limits.** `shortestPath()`, `allShortestPaths()`, `ANY SHORTEST` and `ALL SHORTEST` over a single relationship pattern use a breadth-first search (bidirectional when both ends are bound; `allShortestPaths` returns at most 100,000 paths). `SHORTEST k`, `SHORTEST k GROUPS`, `ANY k` and `ALL`, and selectors over longer patterns, enumerate matches per (start, end) pair: with both ends bound they stop as soon as the selector is satisfied, otherwise they fail with an error beyond 1,000,000 matches. `WithMaxPathHops(n)` caps unbounded variable-length patterns and rejects larger explicit bounds. Nested quantified path patterns are not supported.
+
 ---
 
 ## Install

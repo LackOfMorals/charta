@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/LackOfMorals/graphlite/v2/cypher/syntax"
 	"github.com/LackOfMorals/graphlite/v2/store"
@@ -49,6 +50,7 @@ func randomGraph(t *testing.T, seed int64, nodes, rels int) *store.SQLiteStore {
 
 func TestShortestPathStrategiesAgree(t *testing.T) {
 	ctx := context.Background()
+	skipped, compared := 0, 0
 	for seed := int64(1); seed <= 6; seed++ {
 		db := randomGraph(t, seed, 18, 36)
 		g := newGraph(ctx, db.DB())
@@ -71,8 +73,10 @@ func TestShortestPathStrategiesAgree(t *testing.T) {
 
 						slowAll, err := ex.shortestPathsSlow(rp, s, e, 1, max, true, row{}, used)
 						if err != nil {
+							skipped++
 							continue // the old algorithm's state cap: no oracle for this pair
 						}
+						compared++
 						bfsAll, err := ex.shortestPaths(rp, s, e, 1, max, true, row{}, used)
 						if err != nil {
 							t.Fatal(err)
@@ -108,6 +112,10 @@ func TestShortestPathStrategiesAgree(t *testing.T) {
 				}
 			}
 		}
+	}
+	t.Logf("compared %d pairs, skipped %d", compared, skipped)
+	if compared < 5*skipped {
+		t.Fatalf("the oracle skipped too many pairs: compared %d, skipped %d", compared, skipped)
 	}
 }
 
@@ -171,5 +179,55 @@ func TestSelectedMatchCap(t *testing.T) {
 	defer tx.Rollback()
 	if _, err := RunWith(ctx, tx, st, nil, nil); err == nil || !strings.Contains(err.Error(), "more than 50 matches") {
 		t.Fatalf("want a match-cap error, got %v", err)
+	}
+}
+
+func TestSelectedIterativeDeepeningAgrees(t *testing.T) {
+	patterns := []string{
+		"(a)-[:R|S]->{1,6}(b)",
+		"(a)-[:R|S*1..3]-(m)-[:R|S*1..3]-(b)",
+		"(a)-[:R]->(m)-[:S|R*1..4]->(b)",
+	}
+	before := selectedDeepenRuns.Load()
+	selectors := []string{"SHORTEST 1", "SHORTEST 3", "SHORTEST 2 GROUPS", "SHORTEST 1 GROUP", "ALL SHORTEST", "ANY SHORTEST"}
+	for seed := int64(1); seed <= 4; seed++ {
+		db := randomGraph(t, seed, 10, 24)
+		for _, pat := range patterns {
+			for _, sel := range selectors {
+				for _, ends := range [][2]int{{1, 5}, {2, 9}, {3, 3}} {
+					q := fmt.Sprintf("MATCH (a:N {i: %d}), (b:N {i: %d}), p = %s %s RETURN length(p) AS l", ends[0], ends[1], sel, pat)
+					deepened := runInternal(t, db, q, nil)
+					selectedEarlyStopDisabled = true
+					full := runInternal(t, db, q, nil)
+					selectedEarlyStopDisabled = false
+					if strings.Join(deepened, ",") != strings.Join(full, ",") {
+						t.Fatalf("seed %d %q\n deepened %v\n full     %v", seed, q, deepened, full)
+					}
+				}
+			}
+		}
+	}
+	if selectedDeepenRuns.Load() == before {
+		t.Fatal("iterative deepening never ran")
+	}
+}
+
+func TestSelectedDeepeningIsFasterOnDenseGraphs(t *testing.T) {
+	db := randomGraph(t, 5, 14, 90)
+	const q = "MATCH (a:N {i: 1}), (b:N {i: 9}), p = SHORTEST 1 (a)-[:R|S]->{1,9}(b) RETURN length(p) AS l"
+	start := time.Now()
+	fast := runInternal(t, db, q, nil)
+	fastT := time.Since(start)
+	selectedEarlyStopDisabled = true
+	start = time.Now()
+	slow := runInternal(t, db, q, nil)
+	slowT := time.Since(start)
+	selectedEarlyStopDisabled = false
+	t.Logf("deepening %v, full enumeration %v", fastT, slowT)
+	if strings.Join(fast, ",") != strings.Join(slow, ",") {
+		t.Fatalf("%v vs %v", fast, slow)
+	}
+	if fastT*3 > slowT {
+		t.Errorf("deepening (%v) is not clearly faster than enumerating everything (%v)", fastT, slowT)
 	}
 }

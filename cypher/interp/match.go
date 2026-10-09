@@ -8,6 +8,12 @@ import (
 // graph, extending base. Within one call a relationship is matched at most once
 // (Cypher's relationship isomorphism); bound variables must match their values.
 func (ex *exec) matchParts(parts []*syntax.PatternPart, base row, emit func(row) error) error {
+	// A nested pattern (WHERE EXISTS {...}) is not subject to an enclosing selector's length limit.
+	if ex.relLimit > 0 {
+		saved, pruned := ex.relLimit, ex.relPruned
+		ex.relLimit = 0
+		defer func() { ex.relLimit, ex.relPruned = saved, pruned }()
+	}
 	used := map[int64]bool{}
 	var rec func(i int, r row) error
 	rec = func(i int, r row) error {
@@ -204,6 +210,9 @@ func (ex *exec) walk(elems []syntax.PatternElem, i int, cur *Node, r row, ps *pa
 		return ex.walkGroup(elems, i, g, cur, r, ps, used, done)
 	}
 	rp := elems[i].(*syntax.RelPattern)
+	if ex.overBudget(len(ps.rels)) {
+		return nil
+	}
 	if g, ok := elems[i+1].(*syntax.GroupPattern); ok {
 		// A relationship leading into a quantified group: the node it reaches
 		// is the group's first node.
@@ -392,6 +401,9 @@ func (ex *exec) walkVarLength(elems []syntax.PatternElem, i int, rp *syntax.RelP
 			}
 		}
 		if max >= 0 && depth >= max {
+			return nil
+		}
+		if ex.overBudget(len(ps.rels) + len(chain)) {
 			return nil
 		}
 		return ex.expand(rp, node, r, used, func(rel *Rel, other *Node) error {
