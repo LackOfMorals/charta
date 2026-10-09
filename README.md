@@ -401,15 +401,6 @@ CGO_ENABLED=0 go test -run=^$ -bench=. -benchtime=10s ./bench/...
 
 This covers the root package and all documented sub-packages. Adding new exported symbols is not a breaking change. See [CONTRIBUTING.md](CONTRIBUTING.md) for the full definition.
 
-| Version | Highlights |
-|---|---|
-| v0.1 | MATCH, CREATE, SET, DELETE, bulk JSON import |
-| v0.2 | OPTIONAL MATCH, WITH, aggregation, COLLECT, DISTINCT, REMOVE, CSV import/export |
-| v0.3 | MERGE (with ON CREATE/ON MATCH), property-based tests, TCK harness |
-| **v1.0** | **CASE expressions, variable-length paths, 100% openCypher TCK pass rate** |
-| v1.1 | CopyFrom / CopyTo migration, Snapshot, functional options (WithBusyTimeout, WithReadOnly, NewTestDB) |
-| **v2.0** | **Remove neo4j driver dependency; native `Open`/`RunQuery`/`BeginTx` API; `Single`, `ErrNoRecords`, `ErrMultipleRecords`; generic helpers (`GetProperty`, `GetRecordValue`, `CollectT`, `SingleT`)** |
-
 ---
 
 ## Contributing
