@@ -250,3 +250,98 @@ func (h *hitHeap) offer(x Hit, k int) {
 		heap.Fix(h, 0)
 	}
 }
+
+// Builder assembles a Matrix from many vectors without the per-vector locking
+// and copying of Upsert: rows are written straight into one array, normalised
+// in parallel at the end, and the id index is built once.
+type Builder struct {
+	dim    int
+	metric Metric
+	ids    []int64
+	data   []float32
+}
+
+// NewBuilder creates a Builder for vectors of the given dimension.
+func NewBuilder(dim int, metric Metric) *Builder { return &Builder{dim: dim, metric: metric} }
+
+// NextRow returns the slice to fill with the next vector's coordinates. Call
+// Keep(id) if it holds a vector, or Discard() to drop it.
+func (b *Builder) NextRow() []float32 {
+	n := len(b.data)
+	if cap(b.data)-n < b.dim {
+		grown := make([]float32, n, max(2*cap(b.data), n+b.dim*1024))
+		copy(grown, b.data)
+		b.data = grown
+	}
+	b.data = b.data[:n+b.dim]
+	return b.data[n:]
+}
+
+// Keep records the row returned by the last NextRow under id.
+func (b *Builder) Keep(id int64) { b.ids = append(b.ids, id) }
+
+// Discard drops the row returned by the last NextRow.
+func (b *Builder) Discard() { b.data = b.data[:len(b.data)-b.dim] }
+
+// Matrix finishes the build. Under cosine, rows are normalised (in parallel)
+// and zero vectors, which have no direction, are left out.
+func (b *Builder) Matrix() *Matrix {
+	n := len(b.ids)
+	if b.metric == Cosine {
+		keep := make([]bool, n)
+		workers := runtime.GOMAXPROCS(0)
+		chunk := (n + workers - 1) / workers
+		var wg sync.WaitGroup
+		for w := 0; w < workers; w++ {
+			lo, hi := w*chunk, min((w+1)*chunk, n)
+			if lo >= hi {
+				continue
+			}
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				for i := lo; i < hi; i++ {
+					keep[i] = Normalize32(b.data[i*b.dim : (i+1)*b.dim])
+				}
+			}()
+		}
+		wg.Wait()
+		out := 0
+		for i := 0; i < n; i++ {
+			if !keep[i] {
+				continue
+			}
+			if out != i {
+				copy(b.data[out*b.dim:(out+1)*b.dim], b.data[i*b.dim:(i+1)*b.dim])
+				b.ids[out] = b.ids[i]
+			}
+			out++
+		}
+		b.ids, b.data = b.ids[:out], b.data[:out*b.dim]
+	}
+	m := &Matrix{dim: b.dim, metric: b.metric, ids: b.ids, data: b.data, pos: make(map[int64]int, len(b.ids))}
+	for i, id := range m.ids {
+		m.pos[id] = i
+	}
+	return m
+}
+
+// MergeBuilders concatenates the rows of several Builders (all for the same
+// dimension and metric) into the first one, so rows can be collected by
+// concurrent workers and combined at the end.
+func MergeBuilders(bs ...*Builder) *Builder {
+	if len(bs) == 0 {
+		return nil
+	}
+	total, rows := 0, 0
+	for _, b := range bs {
+		total += len(b.data)
+		rows += len(b.ids)
+	}
+	out := &Builder{dim: bs[0].dim, metric: bs[0].metric, ids: make([]int64, 0, rows), data: make([]float32, 0, total)}
+	for _, b := range bs {
+		out.ids = append(out.ids, b.ids...)
+		out.data = append(out.data, b.data...)
+	}
+	return out
+}
