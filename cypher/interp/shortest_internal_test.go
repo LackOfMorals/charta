@@ -144,3 +144,32 @@ func TestBidirectionalSearchRespectsUsedRelationships(t *testing.T) {
 	}
 	shortestBidirectionalDisabled = false
 }
+
+func TestSelectedAnyStopsEarlyAndAgrees(t *testing.T) {
+	db := randomGraph(t, 3, 12, 30)
+	const q = "MATCH (a:N {i: 1}), (b:N {i: 7}), p = ANY 2 (a)-[:R|S]->{1,4}(b) RETURN length(p) AS l"
+	early := runInternal(t, db, q, nil)
+	selectedEarlyStopDisabled = true
+	full := runInternal(t, db, q, nil)
+	selectedEarlyStopDisabled = false
+	if len(early) != len(full) {
+		t.Fatalf("early stop returned %d rows, full enumeration %d", len(early), len(full))
+	}
+}
+
+func TestSelectedMatchCap(t *testing.T) {
+	db := randomGraph(t, 4, 12, 40)
+	old := maxSelectedMatches
+	maxSelectedMatches = 50
+	defer func() { maxSelectedMatches = old }()
+	st, err := syntax.Parse("MATCH p = ALL (a:N)-[:R|S]->{1,6}(b:N) RETURN count(p)")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	tx, _ := db.BeginExecTx(ctx)
+	defer tx.Rollback()
+	if _, err := RunWith(ctx, tx, st, nil, nil); err == nil || !strings.Contains(err.Error(), "more than 50 matches") {
+		t.Fatalf("want a match-cap error, got %v", err)
+	}
+}

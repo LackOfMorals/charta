@@ -6,3 +6,5 @@ Tasks 002/003 (parent-pointer BFS + bidirectional search): done.
     near-directed (6 hops):               old: 39 ms                       new: 0.24 ms
     near-all (allShortestPaths, 6 hops):  old: 0.57 ms                     new: 0.40 ms
   Property tests: cypher/interp/shortest_internal_test.go (strategies agree on random multigraphs).
+Task 004: ANY k stops early with bound ends; enumeration capped at 1,000,000 matches (clear error). Early termination for SHORTEST k / GROUPS (iterative deepening) not done: they still enumerate all matches up to the cap.
+Task 005: AGENTS.md updated; full verification run.
