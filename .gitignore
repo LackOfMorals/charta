@@ -35,6 +35,5 @@ vendor/
 dist/
 .claude/worktrees/agent-a9b49e52a5a54faed
 
-# large local data sets for the csvImport example/benchmarks
-/examples/csvImport/*.csv
-/examples/csvImport/out/
+# local csvImport benchmark harness and its large data sets (not part of the repository)
+/examples/csvImport/

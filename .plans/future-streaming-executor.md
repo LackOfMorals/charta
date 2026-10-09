@@ -45,7 +45,9 @@ and mmap_size made no difference.
 
 ## How to measure
 
-`go run ./examples/csvImport -prepare -load -db /tmp/charta_csv.db` (needs `examples/csvImport/import.csv`, not in the
-repository), then `go run ./examples/csvImport -query -db /tmp/charta_csv.db [-only name] [-cpuprofile f]`.
+The csvImport benchmark harness is no longer in the repository (it is git-ignored, with its 598 MB `import.csv`). The last
+tracked version is in history: `git show f1576c0:examples/csvImport/main.go > examples/csvImport/main.go`, then
+`go run ./examples/csvImport -prepare -load -db /tmp/charta_csv.db` and
+`go run ./examples/csvImport -query -db /tmp/charta_csv.db [-only name] [-cpuprofile f]`.
 Correctness harness for any new fast path: compare against the interpreter with the plan disabled, as
 `TestAggregatePushdownAgrees` (flag `aggPushDisabled`) and `TestReversedPatternsAgree` do.
