@@ -1,0 +1,165 @@
+# Rewritten 2026-10-09 for the current architecture: queries are parsed by
+# cypher/syntax, checked by cypher/analyze and executed by the Go interpreter
+# (cypher/interp) directly against SQLite; the SQL translator, planner and plan
+# cache no longer exist. Cypher schema commands (CREATE/DROP INDEX|CONSTRAINT,
+# SHOW ...), VECTOR/POINT/temporal values and quantified path patterns already
+# exist. Verification commands: CGO_ENABLED=0 go build ./... ; go vet ./... ;
+# CGO_ENABLED=0 go test -count=1 ./... ; CGO_ENABLED=0 go test -count=1
+# -tags=tck ./compat/... (TCK and Neo4j-extension suites must stay at 100%).
+feature: concurrent-reads
+prd: ./prd-concurrent-reads.md
+created_at: 2026-09-24T00:00:00Z
+updated_at: 2026-10-09T00:00:00Z
+
+tasks:
+  - id: task-001
+    title: "Read-connection pool in SQLiteStore for file-backed databases"
+    description: |
+      In store/sqlite.go open a second *sql.DB against the same file with SetMaxOpenConns(n), n > 1,
+      applying the same PRAGMAs (WAL, foreign_keys, busy_timeout). Skip it for ":memory:" (a pooled
+      :memory: connection would be a different database) and for databases opened WithReadOnly (the
+      single connection is already read-only; it may be used as the read pool). Expose it through a new
+      store.Store method (e.g. ReadExec() Execer, returning the write Execer when there is no pool).
+      store/ must stay free of Cypher types.
+    status: pending
+    dependencies: []
+    acceptance_criteria:
+      - "store.Open on a file URI creates a write pool of 1 and a read pool of n"
+      - "store.Open on ":memory:" creates no read pool and ReadExec returns the single connection"
+      - "Both pools run in WAL mode"
+
+  - id: task-002
+    title: "Enforce read-only on the read pool"
+    description: |
+      Make read-pool connections unable to write: prefer the modernc.org/sqlite DSN/pragma that sets
+      query_only (PRAGMA query_only = ON on every new connection via the driver connect hook or DSN _pragma),
+      fall back to mode=ro. Test that a write through ReadExec fails and a read succeeds. Document the
+      mechanism chosen.
+    status: pending
+    dependencies:
+      - task-001
+    acceptance_criteria:
+      - "A write statement through the read pool returns an error"
+      - "A read statement through the read pool succeeds"
+      - "The mechanism is documented in a code comment"
+
+  - id: task-003
+    title: "WithMaxReadConns option"
+    description: |
+      Add WithMaxReadConns(n) in options.go (n <= 0 is a no-op, default 4) following WithMaxPathHops, and
+      thread it through Open into store.Config.
+    status: pending
+    dependencies:
+      - task-001
+    acceptance_criteria:
+      - "WithMaxReadConns(8) gives a read pool of 8"
+      - "No option or n <= 0 gives the default"
+
+  - id: task-004
+    title: "Run read-only statements on the read pool"
+    description: |
+      In engine.go, runInterp currently opens a write transaction (BeginExecTx) for every auto-commit
+      statement. For a statement with no updating clause (hasWrites == false, no schema command, no CALL of a
+      registered procedure that may write) run it on the read pool instead: BEGIN a deferred read
+      transaction on one pooled connection so every query the interpreter issues sees one snapshot, run
+      interp.RunWith over a DB wrapper that only exposes QueryContext (ExecContext returns an error), then
+      end the transaction. Writes, schema commands and explicit BeginTx transactions keep using the single
+      write connection (BeginTx must still read its own writes). With WithReadOnly() every statement uses the
+      read pool.
+      interp must not try to write on the read path: graph needs a read-only flag that disables the automatic
+      property-index advisor (Engine.noteScan issues CREATE INDEX) and skips the constraint check.
+    status: pending
+    dependencies:
+      - task-002
+      - task-003
+    acceptance_criteria:
+      - "A read-only RunQuery on a file database runs on a read-pool connection (asserted with a counting/recording Execer or connection identity)"
+      - "Writes, MERGE, schema commands and BeginTx statements still use the write connection"
+      - "A WithReadOnly database serves every statement from the read pool"
+      - "A :memory: database behaves exactly as before"
+      - "The automatic index advisor never runs on the read path"
+
+  - id: task-005
+    title: "Snapshot consistency and thread-safety review of the interpreter"
+    description: |
+      Audit shared state touched by concurrent statements: interp.Engine (statement cache RWMutex, index
+      advisor mutex, proc.Set), the per-DB analyze/parse path, and anything cached on *DB. Add a short
+      design note to AGENTS.md. Fix anything that is not safe under go test -race.
+    status: pending
+    dependencies:
+      - task-004
+    acceptance_criteria:
+      - "go test -race over the root package and ./cypher/... passes"
+      - "AGENTS.md records which Engine state is shared and how it is guarded"
+
+  - id: task-006
+    title: "Concurrency tests"
+    description: |
+      (a) N goroutines run read-only queries concurrently on a file database seeded with data and show real
+      overlap (a deliberately slow query such as a large UNWIND/aggregate, measuring wall time against N
+      serial runs). (b) A writer commits batches while readers run: no deadlock, no SQLITE_BUSY surfaced to
+      callers within WithBusyTimeout, and the final data is correct. (c) Atomicity: a statement that creates
+      two nodes in one transaction is never observed half-applied by a concurrent reader.
+    status: pending
+    dependencies:
+      - task-004
+    acceptance_criteria:
+      - "go test -race -run TestConcurrent ./... passes"
+      - "The overlap test shows concurrent execution, not serialisation"
+      - "The atomicity test never observes a partial write"
+
+  - id: task-007
+    title: "Close both pools cleanly; leak test"
+    description: |
+      DB.Close and SQLiteStore.Close close the write and read pools. Add a test that opens/closes 100 file
+      databases and checks for goroutine and connection leaks (runtime.NumGoroutine before/after, or the
+      project convention).
+    status: pending
+    dependencies:
+      - task-001
+    acceptance_criteria:
+      - "db.Close returns nil and both *sql.DB are closed"
+      - "100 Open/Close cycles leave no extra goroutines"
+
+  - id: task-008
+    title: "Benchmarks"
+    description: |
+      Add parallel read benchmarks (b.RunParallel over lookup, filter and two-hop queries) to
+      engine_bench_test.go and compare read throughput before and after on 1, 4 and 8 CPUs. Re-run the
+      write benchmarks in bench/ and confirm no single-writer regression. Record numbers in the progress file.
+    status: pending
+    dependencies:
+      - task-004
+    acceptance_criteria:
+      - "Read throughput scales with the pool on file databases"
+      - "Write throughput is within noise of the pre-change baseline"
+      - "Results are recorded in .plans/progress-concurrent-reads.txt"
+
+  - id: task-009
+    title: "Documentation"
+    description: |
+      Update the store.Store interface comment (concurrent reads on file databases via a bounded pool;
+      :memory: stays single-connection), the README limitations/feature notes and AGENTS.md (read-path rules:
+      no writes, no advisor, snapshot per statement).
+    status: pending
+    dependencies:
+      - task-004
+    acceptance_criteria:
+      - "store/store.go documents the behaviour accurately"
+      - "README and AGENTS.md describe concurrent reads and the :memory: exception"
+
+  - id: task-010
+    title: "Final verification"
+    description: |
+      Run the standard verification commands including go test -race and both compat suites.
+    status: pending
+    dependencies:
+      - task-005
+      - task-006
+      - task-007
+      - task-008
+      - task-009
+    acceptance_criteria:
+      - "build, vet, unit and race tests pass"
+      - "TCK and Neo4j-extension suites remain at 100%"
+
