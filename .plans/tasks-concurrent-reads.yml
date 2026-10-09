@@ -21,7 +21,8 @@ tasks:
       single connection is already read-only; it may be used as the read pool). Expose it through a new
       store.Store method (e.g. ReadExec() Execer, returning the write Execer when there is no pool).
       store/ must stay free of Cypher types.
-    status: pending
+    status: completed
+    notes: "Done in PR #7 (store.Config.ReadConns, SQLiteStore.readDB); no pool for :memory:."
     dependencies: []
     acceptance_criteria:
       - "store.Open on a file URI creates a write pool of 1 and a read pool of n"
@@ -35,7 +36,8 @@ tasks:
       query_only (PRAGMA query_only = ON on every new connection via the driver connect hook or DSN _pragma),
       fall back to mode=ro. Test that a write through ReadExec fails and a read succeeds. Document the
       mechanism chosen.
-    status: pending
+    status: completed
+    notes: "Done: PRAGMA query_only(1) in the DSN (_pragma) so every pooled connection gets it; store/readpool_test.go asserts writes fail."
     dependencies:
       - task-001
     acceptance_criteria:
@@ -48,7 +50,8 @@ tasks:
     description: |
       Add WithMaxReadConns(n) in options.go (n <= 0 is a no-op, default 4) following WithMaxPathHops, and
       thread it through Open into store.Config.
-    status: pending
+    status: completed
+    notes: "Done: WithMaxReadConns; default is 2, not 4 (measured: more connections slow heavy scans)."
     dependencies:
       - task-001
     acceptance_criteria:
@@ -68,7 +71,8 @@ tasks:
       read pool.
       interp must not try to write on the read path: graph needs a read-only flag that disables the automatic
       property-index advisor (Engine.noteScan issues CREATE INDEX) and skips the constraint check.
-    status: pending
+    status: completed
+    notes: "Done: engine.go runInterp + interp.RunReadOnly + readOnlyDB; automatic index builds are deferred to the write connection (DB.buildIndexes)."
     dependencies:
       - task-002
       - task-003
@@ -85,7 +89,8 @@ tasks:
       Audit shared state touched by concurrent statements: interp.Engine (statement cache RWMutex, index
       advisor mutex, proc.Set), the per-DB analyze/parse path, and anything cached on *DB. Add a short
       design note to AGENTS.md. Fix anything that is not safe under go test -race.
-    status: pending
+    status: completed
+    notes: "Done: Engine state is mutex/RWMutex guarded, per-statement graph is not shared; go test -race passes; notes in AGENTS.md."
     dependencies:
       - task-004
     acceptance_criteria:
@@ -100,7 +105,8 @@ tasks:
       serial runs). (b) A writer commits batches while readers run: no deadlock, no SQLITE_BUSY surfaced to
       callers within WithBusyTimeout, and the final data is correct. (c) Atomicity: a statement that creates
       two nodes in one transaction is never observed half-applied by a concurrent reader.
-    status: pending
+    status: completed
+    notes: "Done: concurrent_test.go and concurrent_internal_test.go (isolation from an open write tx, readers+writer atomicity, second reader, pool size queueing)."
     dependencies:
       - task-004
     acceptance_criteria:
@@ -114,7 +120,8 @@ tasks:
       DB.Close and SQLiteStore.Close close the write and read pools. Add a test that opens/closes 100 file
       databases and checks for goroutine and connection leaks (runtime.NumGoroutine before/after, or the
       project convention).
-    status: pending
+    status: completed
+    notes: "Done: DB.Close waits for background index builds and closes both pools; 50-cycle goroutine leak test."
     dependencies:
       - task-001
     acceptance_criteria:
@@ -127,7 +134,8 @@ tasks:
       Add parallel read benchmarks (b.RunParallel over lookup, filter and two-hop queries) to
       engine_bench_test.go and compare read throughput before and after on 1, 4 and 8 CPUs. Re-run the
       write benchmarks in bench/ and confirm no single-writer regression. Record numbers in the progress file.
-    status: pending
+    status: completed
+    notes: "Done: BenchmarkParallelReads and BenchmarkFileWrites. Lookup 16.7 -> 9.3 us at 2 conns; scan 22.5 -> 16.8 ms at 2 conns but 39.8 ms at 4; file writes 131 us before and 126-133 us after."
     dependencies:
       - task-004
     acceptance_criteria:
@@ -141,7 +149,8 @@ tasks:
       Update the store.Store interface comment (concurrent reads on file databases via a bounded pool;
       :memory: stays single-connection), the README limitations/feature notes and AGENTS.md (read-path rules:
       no writes, no advisor, snapshot per statement).
-    status: pending
+    status: completed
+    notes: "Done: store.Store doc, README Concurrency section, AGENTS.md."
     dependencies:
       - task-004
     acceptance_criteria:
@@ -152,7 +161,8 @@ tasks:
     title: "Final verification"
     description: |
       Run the standard verification commands including go test -race and both compat suites.
-    status: pending
+    status: completed
+    notes: "Done: vet, tests, race, TCK 3,895/3,895 and extensions 222/222."
     dependencies:
       - task-005
       - task-006
