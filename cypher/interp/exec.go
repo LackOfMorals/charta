@@ -192,7 +192,20 @@ func (ex *exec) runQuery(q *syntax.SingleQuery, in []row, scopeVars []string) ([
 		break
 	}
 	var cols []string
-	for _, cl := range q.Clauses {
+	for i := 0; i < len(q.Clauses); i++ {
+		cl := q.Clauses[i]
+		if i == 0 {
+			if names, handled, err := ex.aggregatePushdown(q, st); err != nil {
+				return nil, nil, err
+			} else if handled {
+				// The MATCH and the RETURN/WITH after it ran as one SQL aggregation.
+				if _, isReturn := q.Clauses[1].(*syntax.Return); isReturn {
+					cols = names
+				}
+				i++
+				continue
+			}
+		}
 		var err error
 		cols, err = ex.clause(cl, st, cols)
 		if err != nil {

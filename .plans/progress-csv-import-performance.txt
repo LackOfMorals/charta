@@ -51,3 +51,9 @@ Change 4 (scan memory) — partial. scanNodes: a whole-label scan now drives fro
   Real fixes need a design choice: (a) streaming MATCH->aggregate without materialising rows, (b) pushing simple
   aggregations (count/min/max/sum grouped by property) down to SQL GROUP BY json_extract, (c) lighter nodes
   (lazy props), (d) cache eviction for read-only statements.
+
+Change 4b (aggregation pushdown, cypher/interp/aggpush.go): 3.1M-request graph
+  busiest clients 21.4 s -> 6.7 s; requests per user agent 47 s -> 6.7 s; errors per region 20-21 s -> 6.2 s;
+  count(*) per label ~0.3 s. Single-node aggregations that read properties are NOT pushed: SQLite json_type+json_extract
+  cost ~1.7 us/row, slower than the interpreter (7.9 s vs 6.1 s for "count requests by status").
+  Still slow: multi-hop traversals ("clients that hit the same instances", ~30 s). See .plans/future-streaming-executor.md.

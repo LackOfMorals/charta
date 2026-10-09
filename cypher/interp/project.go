@@ -204,6 +204,12 @@ func (ex *exec) projection(p *syntax.Projection, where syntax.Expr, st *qstate, 
 		}
 	}
 
+	return ex.finishProjection(p, where, st, names, aggregating, out, origs, substs)
+}
+
+// finishProjection applies DISTINCT, ORDER BY, SKIP/LIMIT and the WITH's WHERE to
+// the projected rows and installs them as the query state.
+func (ex *exec) finishProjection(p *syntax.Projection, where syntax.Expr, st *qstate, names []string, aggregating bool, out, origs []row, substs []map[string]any) error {
 	if p.Distinct {
 		seen := map[string]bool{}
 		var o2, g2 []row
