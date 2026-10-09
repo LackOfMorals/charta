@@ -269,6 +269,17 @@ snap, _ := charta.Open("/var/data/graph-checkpoint.db")
 
 ---
 
+## Examples
+
+Runnable programs live in [`examples/`](examples/); run them from the repository root.
+
+| Example | What it shows |
+|---|---|
+| [`examples/basic`](examples/basic/main.go) | Create nodes and relationships, query them, update, run a transaction, and delete — `go run ./examples/basic` |
+| [`examples/movies`](examples/movies/main.go) | Build the movies graph (171 nodes, 253 relationships) by reading a file of Cypher statements, then query it — `go run ./examples/movies` |
+
+---
+
 ## API Reference
 
 ### Entry point
