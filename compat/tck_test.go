@@ -63,10 +63,10 @@ type tckState struct {
 	// effects are the side effects of the last "executing query" step (setup
 	// and control queries are not counted).
 	effects sideEffects
-	feature      string         // feature file, relative to testdata/tck
-	name         string         // scenario name
-	skipped      bool           // set by Before hook; steps become no-ops
-	params       map[string]any // query parameters set by "And parameters are:" step
+	feature string         // feature file, relative to testdata/tck
+	name    string         // scenario name
+	skipped bool           // set by Before hook; steps become no-ops
+	params  map[string]any // query parameters set by "And parameters are:" step
 }
 
 func newTCKState() *tckState { return &tckState{} }
