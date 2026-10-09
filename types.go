@@ -5,6 +5,7 @@ import (
 
 	"github.com/LackOfMorals/graphlite/v2/cypher/spatial"
 	"github.com/LackOfMorals/graphlite/v2/cypher/temporal"
+	"github.com/LackOfMorals/graphlite/v2/cypher/vector"
 )
 
 // Node represents a graph node with a unique element ID, a set of labels, and
@@ -193,3 +194,6 @@ type (
 
 // Point is the value of a Cypher POINT; see [spatial.Point].
 type Point = spatial.Point
+
+// Vector is the value of a Cypher VECTOR; see [vector.Vector].
+type Vector = vector.Vector

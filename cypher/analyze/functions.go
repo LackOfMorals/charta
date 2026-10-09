@@ -58,6 +58,7 @@ var builtins = map[string]funcInfo{
 	// temporal, spatial, vector
 	"date": ret(tAny), "datetime": ret(tAny), "localdatetime": ret(tAny), "localtime": ret(tAny),
 	"time": ret(tAny), "duration": ret(tAny), "point": ret(tAny), "vector": ret(tAny),
+	"vector_distance": ret(tFloat), "vector_norm": ret(tFloat), "vector_dimension_count": ret(tInt),
 }
 
 // namespaces whose member functions are accepted without listing each one.

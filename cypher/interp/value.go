@@ -19,6 +19,7 @@ import (
 
 	"github.com/LackOfMorals/graphlite/v2/cypher/spatial"
 	"github.com/LackOfMorals/graphlite/v2/cypher/temporal"
+	"github.com/LackOfMorals/graphlite/v2/cypher/vector"
 )
 
 // Value types used at run time:
@@ -86,6 +87,8 @@ func typeName(v any) string {
 		return temporalTypeName(x)
 	case spatial.Point:
 		return "Point"
+	case vector.Vector:
+		return "Vector"
 	}
 	return fmt.Sprintf("%T", v)
 }
@@ -94,7 +97,7 @@ func typeName(v any) string {
 // canonical run-time representation.
 func normalize(v any) any {
 	switch x := v.(type) {
-	case nil, bool, int64, float64, string, *Node, *Rel, *Path, temporal.Value, spatial.Point:
+	case nil, bool, int64, float64, string, *Node, *Rel, *Path, temporal.Value, spatial.Point, vector.Vector:
 		return v
 	case int:
 		return int64(x)
@@ -279,6 +282,9 @@ func equals(a, b any) tri {
 	case spatial.Point:
 		y, ok := b.(spatial.Point)
 		return triOf(ok && x == y)
+	case vector.Vector:
+		y, ok := b.(vector.Vector)
+		return triOf(ok && vector.Equal(x, y))
 	case *Path:
 		y, ok := b.(*Path)
 		if !ok || len(x.Nodes) != len(y.Nodes) || len(x.Rels) != len(y.Rels) {
@@ -408,6 +414,8 @@ func orderRank(v any) int {
 		return 4
 	case spatial.Point:
 		return 5
+	case vector.Vector:
+		return 5
 	case temporal.Value:
 		// ZONED DATETIME < LOCAL DATETIME < DATE < ZONED TIME < LOCAL TIME < DURATION
 		switch x.Kind() {
@@ -486,6 +494,8 @@ func orderCompare(a, b any) int {
 		return cmpInt(int64(len(x.Nodes)), int64(len(y.Nodes)))
 	case spatial.Point:
 		return spatial.Compare(x, b.(spatial.Point))
+	case vector.Vector:
+		return strings.Compare(x.String(), b.(vector.Vector).String())
 	case temporal.Value:
 		if c, ok := temporal.Compare(x, b.(temporal.Value)); ok {
 			return c
@@ -592,6 +602,8 @@ func writeKey(sb *strings.Builder, v any) {
 		sb.WriteString("T" + strconv.Itoa(int(x.Kind())) + x.String() + ";")
 	case spatial.Point:
 		sb.WriteString("S" + x.String() + ";")
+	case vector.Vector:
+		sb.WriteString("V" + x.String() + ";")
 	case *Path:
 		sb.WriteString("P[")
 		for i, n := range x.Nodes {

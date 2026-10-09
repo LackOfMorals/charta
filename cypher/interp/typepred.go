@@ -2,9 +2,11 @@ package interp
 
 import (
 	"math"
+	"strconv"
 	"strings"
 
 	"github.com/LackOfMorals/graphlite/v2/cypher/temporal"
+	"github.com/LackOfMorals/graphlite/v2/cypher/vector"
 )
 
 // A value type as written after `IS ::` or reported by valueType(), reduced to
@@ -15,6 +17,9 @@ type vtype struct {
 	elem    []vtype // element type alternatives of a LIST
 	hasElem bool
 	notNull bool
+	// VECTOR<TYPE>(dimension): empty/zero when unconstrained.
+	vecType vector.Type
+	vecDim  int
 }
 
 // parseVType parses the normalised type text produced by the syntax package
@@ -51,6 +56,17 @@ func parseVAtom(s string) vtype {
 	if strings.HasSuffix(s, " NOT NULL") {
 		t.notNull = true
 		s = strings.TrimSuffix(s, " NOT NULL")
+	}
+	if rest, ok := strings.CutPrefix(s, "VECTOR"); ok {
+		t.name = "VECTOR"
+		if i := strings.IndexByte(rest, '('); i >= 0 && strings.HasSuffix(rest, ")") {
+			t.vecDim, _ = strconv.Atoi(rest[i+1 : len(rest)-1])
+			rest = rest[:i]
+		}
+		if strings.HasPrefix(rest, "<") && strings.HasSuffix(rest, ">") {
+			t.vecType, _ = vector.ParseType(strings.TrimSpace(rest[1 : len(rest)-1]))
+		}
+		return t
 	}
 	if i := strings.IndexByte(s, '<'); i >= 0 && strings.HasSuffix(s, ">") {
 		t.elem = parseVTypes(s[i+1 : len(s)-1])
@@ -203,17 +219,16 @@ func (t vtype) matches(v any) bool {
 		return true
 	case "PROPERTY VALUE":
 		return isPropertyValue(v)
-	case "POINT", "VECTOR":
-		return typeName(v) == titleType(t.name)
+	case "VECTOR":
+		vec, ok := v.(vector.Vector)
+		if !ok {
+			return false
+		}
+		return (t.vecType == "" || vec.Type == t.vecType) && (t.vecDim == 0 || vec.Dimension() == t.vecDim)
+	case "POINT":
+		return typeName(v) == "Point"
 	}
 	return false
-}
-
-func titleType(name string) string {
-	if name == "POINT" {
-		return "Point"
-	}
-	return "Vector"
 }
 
 func isPropertyValue(v any) bool {
@@ -283,6 +298,8 @@ func valueTypeName(v any, withNullability bool) string {
 		base = "MAP"
 	case temporal.Value:
 		base = temporalVType(x)
+	case vector.Vector:
+		base = "VECTOR<" + string(x.Type) + ">(" + strconv.Itoa(x.Dimension()) + ")"
 	case []any:
 		base = "LIST<" + listElemType(x) + ">"
 	default:

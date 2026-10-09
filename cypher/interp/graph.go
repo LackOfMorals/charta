@@ -12,6 +12,7 @@ import (
 
 	"github.com/LackOfMorals/graphlite/v2/cypher/spatial"
 	"github.com/LackOfMorals/graphlite/v2/cypher/temporal"
+	"github.com/LackOfMorals/graphlite/v2/cypher/vector"
 )
 
 // DB is the SQL surface the interpreter needs. *sql.DB, *sql.Tx and the
@@ -86,7 +87,7 @@ func newGraph(ctx context.Context, db DB) *graph {
 // number or string, or a list of one such type.
 func checkPropValue(key string, v any) error {
 	switch x := v.(type) {
-	case nil, bool, int64, string, temporal.Value, spatial.Point:
+	case nil, bool, int64, string, temporal.Value, spatial.Point, vector.Vector:
 		return nil
 	case float64:
 		if math.IsInf(x, 0) || math.IsNaN(x) {
@@ -97,7 +98,7 @@ func checkPropValue(key string, v any) error {
 		var first any
 		for i, e := range x {
 			switch e.(type) {
-			case bool, int64, float64, string, temporal.Value, spatial.Point:
+			case bool, int64, float64, string, temporal.Value, spatial.Point, vector.Vector:
 			default:
 				return errorf("TypeError", "InvalidPropertyType", "property `%s`: collections containing %s cannot be stored as properties", key, typeName(e))
 			}
@@ -179,6 +180,19 @@ func encodeValue(sb *strings.Builder, v any) error {
 		sb.WriteString(`{"$p":` + strconv.Itoa(x.SRID) + `,"c":[` +
 			strconv.FormatFloat(x.X, 'g', -1, 64) + `,` + strconv.FormatFloat(x.Y, 'g', -1, 64) + `,` +
 			strconv.FormatFloat(x.Z, 'g', -1, 64) + `]}`)
+	case vector.Vector:
+		sb.WriteString(`{"$v":"` + string(x.Type) + `","c":[`)
+		for i := 0; i < x.Dimension(); i++ {
+			if i > 0 {
+				sb.WriteByte(',')
+			}
+			if x.Type.IsInteger() {
+				sb.WriteString(strconv.FormatInt(x.Ints[i], 10))
+			} else {
+				sb.WriteString(strconv.FormatFloat(x.Floats[i], 'g', -1, 64))
+			}
+		}
+		sb.WriteString(`]}`)
 	default:
 		return errorf("TypeError", "InvalidPropertyType", "%s values cannot be stored as properties", typeName(v))
 	}
@@ -208,6 +222,28 @@ func decodeProps(s string) (map[string]any, error) {
 func reviveTemporal(v any) any {
 	switch x := v.(type) {
 	case map[string]any:
+		if tname, ok := x["$v"].(string); ok {
+			if t, ok := vector.ParseType(tname); ok {
+				if c, ok := x["c"].([]any); ok {
+					vals := make([]any, len(c))
+					for i, e := range c {
+						switch n := e.(type) {
+						case int64:
+							vals[i] = n
+						case float64:
+							if t.IsInteger() {
+								vals[i] = int64(n)
+							} else {
+								vals[i] = n
+							}
+						}
+					}
+					if vec, err := vector.New(vals, len(vals), t); err == nil {
+						return vec
+					}
+				}
+			}
+		}
 		if srid, ok := x["$p"].(int64); ok {
 			if c, ok := x["c"].([]any); ok && len(c) == 3 {
 				f := func(i int) float64 {

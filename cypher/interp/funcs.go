@@ -10,6 +10,7 @@ import (
 	"github.com/LackOfMorals/graphlite/v2/cypher/spatial"
 	"github.com/LackOfMorals/graphlite/v2/cypher/syntax"
 	"github.com/LackOfMorals/graphlite/v2/cypher/temporal"
+	"github.com/LackOfMorals/graphlite/v2/cypher/vector"
 )
 
 // aggregates are the aggregating function names (lower case).
@@ -45,6 +46,9 @@ func (ex *exec) call(e *syntax.FuncCall, r row) (any, error) {
 		if v, ok, err := spatialFunction(e.Namespace, e.Name, args); ok {
 			return v, err
 		}
+		if v, ok, err := vectorFunction(e.Namespace, e.Name, args); ok {
+			return v, err
+		}
 		return nil, unsupported("function %s.%s", strings.Join(e.Namespace, "."), e.Name)
 	}
 	// exists() accepts a property or a pattern; evaluate its argument specially.
@@ -69,6 +73,9 @@ func (ex *exec) call(e *syntax.FuncCall, r row) (any, error) {
 		return v, err
 	}
 	if v, ok, err := spatialFunction(nil, name, args); ok {
+		return v, err
+	}
+	if v, ok, err := vectorFunction(nil, name, args); ok {
 		return v, err
 	}
 	return ex.builtin(name, args)
@@ -789,6 +796,8 @@ func toStringFn(v any, orNull bool) (any, error) {
 	case temporal.Value:
 		return x.String(), nil
 	case spatial.Point:
+		return x.String(), nil
+	case vector.Vector:
 		return x.String(), nil
 	}
 	if orNull {

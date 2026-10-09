@@ -542,6 +542,24 @@ func (p *parser) parseFuncCall() Expr {
 		}
 	}
 	p.expect(RPAREN)
+	// vector(v, n, FLOAT32), vector_distance(a, b, EUCLIDEAN), vector_norm(v, MANHATTAN):
+	// the coordinate type and metric are bare keywords, not variables.
+	if len(f.Namespace) == 0 {
+		idx := -1
+		switch strings.ToLower(f.Name) {
+		case "vector":
+			idx = 2
+		case "vector_distance":
+			idx = 2
+		case "vector_norm":
+			idx = 1
+		}
+		if idx >= 0 && len(f.Args) > idx {
+			if id, ok := f.Args[idx].(*Ident); ok {
+				f.Args[idx] = &StringLit{Loc: id.Loc, Value: upper(id.Name)}
+			}
+		}
+	}
 	// normalize(s, NFD): the normal form is a bare keyword, not a variable.
 	if len(f.Namespace) == 0 && equalFold(f.Name, "normalize") && len(f.Args) == 2 {
 		if id, ok := f.Args[1].(*Ident); ok {
