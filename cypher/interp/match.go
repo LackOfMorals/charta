@@ -550,6 +550,39 @@ type predecessor struct {
 	from *Node
 }
 
+// prefetchLevel loads, in a few batched queries, the adjacency of a search
+// frontier and then the nodes at the far ends, so expanding the level does not
+// issue one query per node.
+func (ex *exec) prefetchLevel(rp *syntax.RelPattern, frontier []*Node) error {
+	if len(frontier) < 2 {
+		return nil
+	}
+	ids := make([]int64, len(frontier))
+	for i, n := range frontier {
+		ids[i] = n.ID
+	}
+	var far []int64
+	for _, outgoing := range []bool{true, false} {
+		if (outgoing && rp.Dir == syntax.DirLeft) || (!outgoing && rp.Dir == syntax.DirRight) {
+			continue
+		}
+		if err := ex.g.prefetchAdj(ids, outgoing); err != nil {
+			return err
+		}
+		for _, id := range ids {
+			rels, _ := ex.g.loadAdj(id, outgoing)
+			for _, rel := range rels {
+				if outgoing {
+					far = append(far, rel.End)
+				} else {
+					far = append(far, rel.Start)
+				}
+			}
+		}
+	}
+	return ex.g.prefetchNodes(far)
+}
+
 // shortestPathsBFS is a breadth-first search over nodes. Each node is expanded
 // once, at the depth it is first reached, and remembers the (rel, node) pairs
 // that reach it at that depth, so a path is rebuilt only for the target instead
@@ -562,6 +595,9 @@ func (ex *exec) shortestPathsBFS(rp *syntax.RelPattern, s, e *Node, max int64, a
 	frontier := []*Node{s}
 	for depth := int64(0); len(frontier) > 0 && (max < 0 || depth < max); depth++ {
 		var next []*Node
+		if err := ex.prefetchLevel(rp, frontier); err != nil {
+			return nil, err
+		}
 		for _, node := range frontier {
 			err := ex.expand(rp, node, r, used, func(rel *Rel, other *Node) error {
 				d, seen := dist[other.ID]
@@ -670,6 +706,9 @@ func (ex *exec) shortestPathBidirectional(rp *syntax.RelPattern, s, e *Node, max
 			pattern, dist, other, pred, front, depth = back, distB, distF, predB, &frontB, &depthB
 		}
 		var next []*Node
+		if err := ex.prefetchLevel(pattern, *front); err != nil {
+			return nil, err
+		}
 		for _, node := range *front {
 			err := ex.expand(pattern, node, r, used, func(rel *Rel, n *Node) error {
 				if _, seen := dist[n.ID]; seen {

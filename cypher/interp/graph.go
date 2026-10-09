@@ -497,6 +497,135 @@ func (g *graph) loadAdj(id int64, outgoing bool) ([]*Rel, error) {
 	return rs, nil
 }
 
+// idsJSON renders ids as a JSON array, so a batch lookup is one short constant
+// statement (WHERE id IN (SELECT value FROM json_each(?))) instead of one with
+// a placeholder per id.
+func idsJSON(ids []int64) string {
+	b := make([]byte, 0, len(ids)*8+2)
+	b = append(b, '[')
+	for i, id := range ids {
+		if i > 0 {
+			b = append(b, ',')
+		}
+		b = strconv.AppendInt(b, id, 10)
+	}
+	return string(append(b, ']'))
+}
+
+// prefetchAdj loads, with one query per chunk instead of one per node, the
+// adjacency of every listed node not already cached.
+func (g *graph) prefetchAdj(ids []int64, outgoing bool) error {
+	cache := g.in
+	col := "end_id"
+	if outgoing {
+		cache, col = g.out, "start_id"
+	}
+	var missing []int64
+	for _, id := range ids {
+		if _, ok := cache[id]; !ok {
+			missing = append(missing, id)
+		}
+	}
+	const chunk = 5000
+	for len(missing) > 0 {
+		n := min(chunk, len(missing))
+		part := missing[:n]
+		missing = missing[n:]
+		rows, err := g.db.QueryContext(g.ctx,
+			`SELECT id, type, start_id, end_id, props FROM edges WHERE `+col+` IN (SELECT value FROM json_each(?)) ORDER BY id`, idsJSON(part))
+		if err != nil {
+			return err
+		}
+		type rec struct {
+			id         int64
+			typ        string
+			start, end int64
+			props      string
+		}
+		var recs []rec
+		for rows.Next() {
+			var r rec
+			if err := rows.Scan(&r.id, &r.typ, &r.start, &r.end, &r.props); err != nil {
+				rows.Close()
+				return err
+			}
+			recs = append(recs, r)
+		}
+		err = rows.Err()
+		rows.Close()
+		if err != nil {
+			return err
+		}
+		got := make(map[int64][]*Rel, n)
+		for _, r := range recs {
+			rel, err := g.internRel(r.id, r.typ, r.start, r.end, r.props)
+			if err != nil {
+				return err
+			}
+			key := r.end
+			if outgoing {
+				key = r.start
+			}
+			got[key] = append(got[key], rel)
+		}
+		for _, id := range part {
+			if _, ok := cache[id]; !ok {
+				rs := got[id]
+				if rs == nil {
+					rs = []*Rel{}
+				}
+				cache[id] = rs
+			}
+		}
+	}
+	return nil
+}
+
+// prefetchNodes loads the listed nodes that are not cached yet in batches.
+func (g *graph) prefetchNodes(ids []int64) error {
+	var missing []int64
+	for _, id := range ids {
+		if _, ok := g.nodes[id]; !ok {
+			missing = append(missing, id)
+		}
+	}
+	const chunk = 5000
+	for len(missing) > 0 {
+		n := min(chunk, len(missing))
+		part := missing[:n]
+		missing = missing[n:]
+		rows, err := g.db.QueryContext(g.ctx,
+			`SELECT id, labels, props FROM nodes WHERE id IN (SELECT value FROM json_each(?))`, idsJSON(part))
+		if err != nil {
+			return err
+		}
+		type rec struct {
+			id            int64
+			labels, props string
+		}
+		var recs []rec
+		for rows.Next() {
+			var r rec
+			if err := rows.Scan(&r.id, &r.labels, &r.props); err != nil {
+				rows.Close()
+				return err
+			}
+			recs = append(recs, r)
+		}
+		err = rows.Err()
+		rows.Close()
+		if err != nil {
+			return err
+		}
+		for _, r := range recs {
+			if _, err := g.internNode(r.id, r.labels, r.props); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 // outRels and inRels return the live relationships leaving and entering a node.
 func (g *graph) outRels(id int64) ([]*Rel, error) { return g.liveRels(id, true) }
 func (g *graph) inRels(id int64) ([]*Rel, error)  { return g.liveRels(id, false) }
