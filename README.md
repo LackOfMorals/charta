@@ -1,10 +1,17 @@
 # charta
 
-**Zero-infrastructure embedded property graph database for Go — openCypher over SQLite.**
+**An embedded property graph database for Go — Cypher over SQLite.**
 
-charta stores a labelled property graph in a local SQLite file (or in memory) and accepts queries written in openCypher. There is no external process to start, no driver dependency to manage, and no network — just open a file and query.
+charta was created as a response to poor cell phone signal on U.K trains that prevented download of Neo4j docker container & associated Go driver; I was in midst of learning Go ( still am ) and wanted to try out using Neo4j drivers.  I felt, perhaps more in hope, that a smaller download may have made it. 
+
+charta is a Go package that provides an embedded property graph accessible using openCypher or Cypher 25.  It uses SQLite for storage, either in memory or file based. It sets out to be a small, lightweight, and allows moving to full Neo4j with as least friction as possible. 
+
+Like this
 
 ```go
+import "github.com/LackOfMorals/charta"
+
+// In-memory — transient, great for tests
 db, err := charta.Open(":memory:")
 result, err := db.RunQuery(ctx, `MATCH (n:Person) RETURN n.name AS name`, nil)
 for result.Next(ctx) {
@@ -12,16 +19,11 @@ for result.Next(ctx) {
 }
 ```
 
----
+> 
+> Note: charta is intentionally embedded-only. It does not implement the Bolt wire protocol and is not designed to run as a standalone server.
+> 
 
-## Why charta
 
-- **Tests run without infrastructure.** No Docker container to spin up, no port to reserve, no shared state between CI workers.
-- **Development is friction-free.** Clone the repo, run `go test` — it works. No `docker compose up`.
-- **No driver dependency.** charta has no dependency on the neo4j Go driver package. Add it to any project without import conflicts.
-- **Neo4j-compatible.** Queries are openCypher / Cypher 25, so the same Cypher runs against a Neo4j server.
-
-charta is intentionally embedded-only. It does not implement the Bolt wire protocol and is not designed to run as a standalone server. Staying embedded means staying zero-infrastructure, CGO-free, and deployable anywhere Go runs.
 
 ---
 
@@ -408,7 +410,7 @@ CGO_ENABLED=0 go test -run=^$ -bench=. -benchtime=10s ./bench/...
 
 ## API Stability
 
-**No breaking changes are made to the public API after v0.3 without a major version bump.**
+**No breaking changes are made to the public API after v1.0 without a major version bump.**
 
 This covers the root package and all documented sub-packages. Adding new exported symbols is not a breaking change. See [CONTRIBUTING.md](CONTRIBUTING.md) for the full definition.
 
