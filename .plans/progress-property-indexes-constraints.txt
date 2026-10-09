@@ -18,6 +18,13 @@ DONE
                 (700-760x). New option WithoutAutomaticIndexes (needed to measure the baseline and
                 useful for users who want to own the schema).
 
-REMAINING
-  task-006      Constraints during bulk Import; schema in Export/Import (next PR).
-  task-009      Final docs/verification.
+  task-006      Bulk Import (JSON, CSV nodes, CSV edges) validates the imported rows against constraints
+                and vector index dimensions before commit (atomic failure, ErrConstraintViolation);
+                vector matrices are invalidated afterwards. DECISION on the open question: yes, the
+                JSON export/import carries the schema, as a "schema" array of Cypher
+                CREATE ... IF NOT EXISTS statements replayed after the data in the import transaction
+                (so a constraint is checked against the imported rows, and nothing is applied if it
+                fails). The statements are restricted to CREATE INDEX / CREATE CONSTRAINT. CSV formats
+                carry no schema. Full-text indexes are not exported (they cannot be recreated from a
+                definition).
+  task-009      Docs and verification done. The plan is complete.

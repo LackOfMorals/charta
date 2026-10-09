@@ -97,7 +97,8 @@ tasks:
       the imported entities against existing constraints and fail the import with ErrConstraintViolation (the
       import is one transaction, so nothing is applied). Decide whether Export/Import JSON should carry schema
       definitions; if yes add an optional "schema" section restored after the data.
-    status: pending
+    status: completed
+    notes: "Done: Import (JSON, CSV nodes, CSV edges) validates against constraints and vector indexes before commit and fails atomically with ErrConstraintViolation; JSON export/import carries a schema section."
     dependencies:
       - task-003
     acceptance_criteria:
@@ -137,7 +138,8 @@ tasks:
       Document CREATE INDEX/CONSTRAINT, SHOW, the Go wrappers, enforcement semantics (checked when a
       statement finishes; Import checked after task-006) and the automatic index policy in README and AGENTS.md.
       Run the standard verification commands.
-    status: pending
+    status: completed
+    notes: "Done: README, AGENTS.md, progress file; verification run."
     dependencies:
       - task-004
       - task-006
