@@ -13,6 +13,21 @@ import (
 // first violation is returned as an *Error with a SchemaRef.
 func (e *Engine) ValidateImported(ctx context.Context, db DB, nodeIDs, relIDs []int64) error {
 	const batch = 500
+	// With no constraint and no vector index there is nothing to check, so do
+	// not re-read every imported row to find that out.
+	probe := newGraph(ctx, db)
+	probe.eng = e
+	cons, err := probe.constraintsFor()
+	if err != nil {
+		return err
+	}
+	idx, err := probe.vectorIndexes()
+	if err != nil {
+		return err
+	}
+	if len(cons) == 0 && len(idx) == 0 {
+		return nil
+	}
 	for lo := 0; lo < len(nodeIDs); lo += batch {
 		hi := min(lo+batch, len(nodeIDs))
 		g := newGraph(ctx, db)

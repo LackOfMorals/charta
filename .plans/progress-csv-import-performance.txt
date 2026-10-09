@@ -36,3 +36,9 @@ Change 2 (node insert): profiling showed bulk node insert spent ~85% of its time
   Not helpful (measured): PRAGMA temp_store=MEMORY, larger cache_size, prepared INSERT statements.
   BenchmarkImportCSVNodes 100k rows: 36k -> 101k rows/s. Full import: 3m36s -> 2m17s (92k nodes+rels/s).
   Relationship import ~137k rows/s (1.5M-edge file: 11.8 s earlier run, 15.6 s in the second; likely noise/db size).
+
+Change 3 (streaming CSV import): importCSVNodes/Edges read and insert row by row (no ReadAll, no 500 MiB cap; the old
+  LimitReader silently TRUNCATED a larger CSV without an error). ValidateImported returns immediately when the database has
+  no constraint or vector index (it used to re-read every imported row to find that out).
+  BenchmarkImportCSVNodes 101k -> 122k rows/s, ...Edges 137k -> 168k rows/s.
+  Full 3.1M-request import: 2m17s -> 1m56s (108k nodes+rels/s); peak heap during import 334 MiB -> 31 MiB.

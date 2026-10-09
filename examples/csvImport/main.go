@@ -65,7 +65,7 @@ func main() {
 	load := flag.Bool("load", false, "import the files in -out and run the queries")
 	queryOnly := flag.Bool("query", false, "run only the queries, on the existing database -db (from an earlier -load -db <file>)")
 	rows := flag.Int("rows", 0, "limit to the first N data rows (0 = all)")
-	chunk := flag.Int("chunk", 500_000, "requests per node file (the importer reads a whole file into memory and accepts at most 500 MiB)")
+	chunk := flag.Int("chunk", 500_000, "requests per node file (each file is one transaction; the importer streams, so any size works; smaller files show progress and bound the size of a failed transaction)")
 	flag.Parse()
 	if !*prepare && !*load && !*queryOnly {
 		flag.Usage()

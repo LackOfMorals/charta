@@ -453,3 +453,48 @@ func isErrType[T error](err error, target *T) bool {
 	}
 	return false
 }
+
+// CSV files are streamed row by row inside one transaction: a bad row anywhere
+// (here after 5,000 good ones) leaves nothing behind, and a large file imports
+// without being held in memory.
+func TestImportCSVStreamsAndRollsBack(t *testing.T) {
+	ctx := context.Background()
+	db, err := charta.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close(ctx)
+
+	var good, bad strings.Builder
+	good.WriteString(":ID,:LABEL,n:int\n")
+	for i := 1; i <= 5000; i++ {
+		fmt.Fprintf(&good, "%d,Item,%d\n", i, i)
+	}
+	bad.WriteString(good.String())
+	bad.WriteString("5001,Item,not-a-number\n")
+
+	if err := db.Import(ctx, strings.NewReader(bad.String()), charta.FormatCSVNodes); err == nil {
+		t.Fatal("expected an error for the bad row")
+	}
+	count := func() int64 {
+		res, err := db.RunQuery(ctx, "MATCH (n) RETURN count(n) AS c", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		rec, err := res.Single(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		c, _, _ := charta.GetRecordValue[int64](rec, "c")
+		return c
+	}
+	if c := count(); c != 0 {
+		t.Fatalf("a failed import left %d nodes behind", c)
+	}
+	if err := db.Import(ctx, strings.NewReader(good.String()), charta.FormatCSVNodes); err != nil {
+		t.Fatal(err)
+	}
+	if c := count(); c != 5000 {
+		t.Fatalf("imported %d nodes, want 5000", c)
+	}
+}
