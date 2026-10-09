@@ -2,6 +2,7 @@ package graphlite
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"strconv"
@@ -28,10 +29,20 @@ func parseSyntax(cypherStr string, eng *interp.Engine) (*syntax.Statement, error
 	return st, nil
 }
 
+// readOnlyDB lets the interpreter read through a connection while refusing any
+// write, as a guard on top of the connection's own query_only setting.
+type readOnlyDB struct{ interp.DB }
+
+func (readOnlyDB) ExecContext(context.Context, string, ...any) (sql.Result, error) {
+	return nil, errors.New("graphlite: write attempted on a read-only connection")
+}
+
 // runInterp executes a query with the interpreter. When beginTxFn is non-nil
 // the query runs in its own transaction, committed on success and rolled back on
-// error; otherwise ex is already transaction-scoped.
-func runInterp(ctx context.Context, ex execer, cypherStr string, params map[string]any, beginTxFn func(context.Context) (txExecer, error), readOnly bool, eng *interp.Engine) (*Result, error) {
+// error; otherwise ex is already transaction-scoped. When beginRead is also
+// non-nil, a statement without updating clauses runs instead in a read-only
+// transaction on the read pool, so it neither waits for nor blocks the writer.
+func runInterp(ctx context.Context, ex execer, cypherStr string, params map[string]any, beginTxFn, beginRead func(context.Context) (txExecer, error), readOnly bool, eng *interp.Engine) (*Result, error) {
 	st, err := parseSyntax(cypherStr, eng)
 	if err != nil {
 		return nil, err
@@ -48,6 +59,18 @@ func runInterp(ctx context.Context, ex execer, cypherStr string, params map[stri
 		return nil, ErrReadOnly
 	}
 	var res *interp.Result
+	if beginRead != nil && !hasWrites(st) {
+		tx, err := beginRead(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("graphlite: begin read transaction: %w", err)
+		}
+		res, err = interp.RunReadOnly(ctx, readOnlyDB{tx}, st, params, eng)
+		_ = tx.Rollback() // nothing to commit; this just ends the snapshot
+		if err != nil {
+			return nil, execError(err)
+		}
+		return interpResult(res), nil
+	}
 	if beginTxFn != nil {
 		tx, err := beginTxFn(ctx)
 		if err != nil {
@@ -97,6 +120,13 @@ func hasWrites(st *syntax.Statement) bool {
 					return true
 				}
 			}
+		case *syntax.Conditional:
+			for _, w := range b.Branches {
+				if body(w.Body) {
+					return true
+				}
+			}
+			return b.Else != nil && body(b.Else)
 		case *syntax.CreateIndex, *syntax.CreateConstraint, *syntax.DropSchema:
 			return true
 		}

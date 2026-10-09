@@ -37,7 +37,7 @@ func (t *Tx) Run(ctx context.Context, cypherStr string, params map[string]any) (
 	if t.done {
 		return nil, fmt.Errorf("graphlite: transaction already closed")
 	}
-	return runInterp(ctx, t.rawTx, cypherStr, params, nil, false, t.eng)
+	return runInterp(ctx, t.rawTx, cypherStr, params, nil, nil, false, t.eng)
 }
 
 // Commit commits the transaction.

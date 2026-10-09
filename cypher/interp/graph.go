@@ -73,6 +73,10 @@ type graph struct {
 
 	counters Counters
 
+	// readOnly is set when the statement runs on a read-only connection: it
+	// must not write, so schema-dependent maintenance is deferred.
+	readOnly bool
+
 	// constraints are the schema constraints, loaded on first use.
 	constraints       []schemaDef
 	constraintsLoaded bool
@@ -377,7 +381,7 @@ func (g *graph) scanNodes(label string, hints []propHint) ([]*Node, error) {
 		// index on json_extract(props, '$."key"') can serve the lookup.
 		sb.WriteString(` AND json_extract(n.props, '$."` + h.key + `"') = ?`)
 		args = append(args, h.val)
-		g.eng.noteScan(g.ctx, g.db, h.key)
+		g.eng.noteScan(g.ctx, g.db, h.key, g.readOnly)
 	}
 	sb.WriteString(` ORDER BY n.id`)
 	rows, err := g.db.QueryContext(g.ctx, sb.String(), args...)

@@ -92,6 +92,12 @@ In tests, use `NewTestDB` to open an in-memory database that is closed automatic
 db := graphlite.NewTestDB(t)
 ```
 
+### Concurrency
+
+A `*DB` is safe for concurrent use. On a file-backed database, statements without updating clauses run on a small pool of read-only SQLite connections (`WithMaxReadConns`, default 2), each in its own snapshot transaction. Readers never wait for the writer and the writer never waits for readers: a read issued while another goroutine holds an open `BeginTx` transaction returns immediately and sees only committed data. Writes, schema commands and explicit transactions use the single write connection. In-memory databases have one connection and no read pool.
+
+More read connections are not always faster, because the pure-Go SQLite shares allocator and file-lock state between connections. On a 20,000-node graph, two readers run indexed lookups 1.8x faster than one but gain nothing from more, and run a full-label scan 1.3x faster, while four run it slower than one. Raise `WithMaxReadConns` only after measuring (`go test -bench ParallelReads`).
+
 ### Auto-commit queries
 
 `RunQuery` executes a Cypher statement in auto-commit mode and returns a lazy `*Result` cursor.

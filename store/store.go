@@ -93,8 +93,11 @@ type EdgeRow struct {
 // persistence. All methods operate on raw IDs, label strings, JSON blobs, and
 // SQL primitives — no Cypher types cross this boundary.
 //
-// The Store is safe for concurrent reads when opened with WAL mode (which the
-// SQLiteStore implementation enables automatically).
+// File-backed databases serve concurrent reads: the store enables WAL mode and,
+// when Config.ReadConns is positive, keeps a pool of read-only connections that
+// [Store.BeginReadTx] hands out, so readers neither wait for nor block the
+// single writer. In-memory databases have a single connection and no read
+// pool.
 type Store interface {
 	// --- Node operations ---
 
@@ -171,6 +174,11 @@ type Store interface {
 	// Returns an error if called on a Store that is already a transaction scope
 	// (i.e. nested transactions are not supported).
 	BeginExecTx(ctx context.Context) (TxExecer, error)
+
+	// BeginReadTx starts a read-only transaction that sees one consistent
+	// snapshot. With a read pool it uses a read-only connection and writes fail;
+	// without one it is the same as BeginExecTx.
+	BeginReadTx(ctx context.Context) (TxExecer, error)
 }
 
 // Snapshotter is implemented by stores that support atomic file snapshots.

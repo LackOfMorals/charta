@@ -3,6 +3,7 @@ package interp
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 
@@ -26,6 +27,7 @@ type Engine struct {
 	loaded  bool
 	indexed map[string]bool // property keys with an automatic index
 	scans   map[string]int  // how often each key was used to narrow a scan
+	wanted  map[string]bool // keys read-only statements asked to have indexed
 
 	stmtMu sync.RWMutex
 	stmts  map[string]*syntax.Statement // parsed and analysed statements, by text
@@ -86,7 +88,7 @@ func (e *Engine) ResetIndexState() {
 // noteScan records that key narrowed a node scan and creates an expression
 // index on it when the policy says so. Failures (a read-only database, say)
 // are ignored: an index only ever makes queries faster.
-func (e *Engine) noteScan(ctx context.Context, db DB, key string) {
+func (e *Engine) noteScan(ctx context.Context, db DB, key string, readOnly bool) {
 	if e == nil {
 		return
 	}
@@ -130,12 +132,63 @@ func (e *Engine) noteScan(ctx context.Context, db DB, key string) {
 	if maxID < indexMinNodes {
 		return
 	}
+	if readOnly {
+		// A read-only connection cannot create the index; ask the caller to do
+		// it on the write connection once this statement is done.
+		if e.wanted == nil {
+			e.wanted = map[string]bool{}
+		}
+		e.wanted[key] = true
+		e.scans[key] = -1 << 29 // do not queue it again
+		return
+	}
+	if err := e.createIndex(ctx, db, key); err != nil {
+		e.scans[key] = -1 << 30 // do not retry
+	}
+}
+
+// createIndex creates the expression index for key. The caller holds e.mu.
+func (e *Engine) createIndex(ctx context.Context, db DB, key string) error {
+	id := fmt.Sprintf("%x", key)
 	// key is restricted to [A-Za-z0-9_] by pushableKey, so it is safe to inline.
-	_, err = db.ExecContext(ctx, fmt.Sprintf(
+	_, err := db.ExecContext(ctx, fmt.Sprintf(
 		`CREATE INDEX IF NOT EXISTS %s%s ON nodes(json_extract(props, '$."%s"'))`, indexPrefix, id, key))
 	if err == nil {
 		e.indexed[id] = true
-	} else {
-		e.scans[key] = -1 << 30 // do not retry
+	}
+	return err
+}
+
+// TakeWantedIndexes returns, and forgets, the property keys that read-only
+// statements found worth indexing. Create them with CreateIndexes on the write
+// connection.
+func (e *Engine) TakeWantedIndexes() []string {
+	if e == nil {
+		return nil
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	var keys []string
+	for k := range e.wanted {
+		keys = append(keys, k)
+	}
+	e.wanted = nil
+	sort.Strings(keys)
+	return keys
+}
+
+// CreateIndexes creates the automatic indexes for keys on db, which must be
+// able to write. Failures (a read-only database, say) are ignored: an index only
+// ever makes queries faster.
+func (e *Engine) CreateIndexes(ctx context.Context, db DB, keys []string) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.indexed == nil {
+		e.indexed = map[string]bool{}
+	}
+	for _, k := range keys {
+		if pushableKey(k) {
+			_ = e.createIndex(ctx, db, k)
+		}
 	}
 }

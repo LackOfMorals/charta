@@ -41,6 +41,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 
 	"github.com/LackOfMorals/graphlite/v2/cypher/interp"
 	"github.com/LackOfMorals/graphlite/v2/cypher/proc"
@@ -52,7 +53,13 @@ import (
 type DB struct {
 	st       store.Store
 	readOnly bool
-	eng      interp.Engine // interpreter state: registered procedures, index advisor
+	// hasReadPool is true when read-only statements run on the read pool.
+	hasReadPool bool
+
+	mu     sync.Mutex // guards closed
+	closed bool
+	bg     sync.WaitGroup // background index builds
+	eng    interp.Engine  // interpreter state: registered procedures, index advisor
 }
 
 // Open opens (or creates) a graphlite database at path and returns a *DB.
@@ -70,7 +77,7 @@ type DB struct {
 // symlinks (e.g. "../../etc/passwd" and symlinks pointing outside the working
 // tree are both rejected).
 func Open(path string, opts ...Option) (*DB, error) {
-	cfg := &dbConfig{}
+	cfg := &dbConfig{readConns: defaultReadConns}
 	for _, o := range opts {
 		o(cfg)
 	}
@@ -89,11 +96,12 @@ func Open(path string, opts ...Option) (*DB, error) {
 
 	st, err := store.Open(path, store.Config{
 		BusyTimeout: cfg.busyTimeout,
+		ReadConns:   cfg.readConns,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("graphlite: open %q: %w", path, err)
 	}
-	d := &DB{st: st, readOnly: cfg.readOnly}
+	d := &DB{st: st, readOnly: cfg.readOnly, hasReadPool: st.HasReadPool()}
 	d.eng.MaxPathHops = cfg.maxPathHops
 	d.eng.ImportDir = cfg.importDir
 	return d, nil
@@ -120,6 +128,10 @@ func (d *DB) Snapshot(path string) error {
 // Close releases all resources held by the database. Subsequent calls on a
 // closed DB return errors.
 func (d *DB) Close(_ context.Context) error {
+	d.mu.Lock()
+	d.closed = true
+	d.mu.Unlock()
+	d.bg.Wait() // let queued index builds finish before the connections go
 	if err := d.st.Close(); err != nil {
 		return fmt.Errorf("graphlite: close: %w", err)
 	}
@@ -134,7 +146,42 @@ func (d *DB) Close(_ context.Context) error {
 // Returns ErrReadOnly if the database was opened with WithReadOnly and the
 // query contains write statements.
 func (d *DB) RunQuery(ctx context.Context, cypherStr string, params map[string]any) (*Result, error) {
-	return runInterp(ctx, d.st.Exec(), cypherStr, params, d.st.BeginExecTx, d.readOnly, &d.eng)
+	var beginRead func(context.Context) (txExecer, error)
+	if d.hasReadPool {
+		beginRead = d.st.BeginReadTx
+	}
+	res, err := runInterp(ctx, d.st.Exec(), cypherStr, params, d.st.BeginExecTx, beginRead, d.readOnly, &d.eng)
+	if keys := d.eng.TakeWantedIndexes(); len(keys) > 0 {
+		d.buildIndexes(keys)
+	}
+	return res, err
+}
+
+// buildIndexes creates the automatic indexes that read-only statements asked
+// for. Those statements run on read-only connections and cannot create them
+// themselves, so it is done here on the write connection, in the background so
+// a read does not wait for it.
+func (d *DB) buildIndexes(keys []string) {
+	d.mu.Lock()
+	if d.closed || d.readOnly {
+		d.mu.Unlock()
+		return
+	}
+	d.bg.Add(1)
+	d.mu.Unlock()
+	go func() {
+		defer d.bg.Done()
+		ctx := context.Background()
+		tx, err := d.st.BeginExecTx(ctx)
+		if err != nil {
+			return
+		}
+		d.eng.CreateIndexes(ctx, tx, keys)
+		if err := tx.Commit(); err != nil {
+			_ = tx.Rollback()
+			d.eng.ResetIndexState()
+		}
+	}()
 }
 
 // BeginTx starts an explicit transaction and returns a *Tx.
