@@ -225,3 +225,5 @@ func BenchmarkSearchCosine1M(b *testing.B) {
 	}
 	benchSearch(b, 1000000, 384, Cosine)
 }
+
+func bg() context.Context { return context.Background() }

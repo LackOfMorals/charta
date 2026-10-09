@@ -29,7 +29,8 @@ BENCHMARKS (Apple M5 Max, 18 cores, Go 1.26, dimension 384 unless stated, k = 10
   hit nodes in one query):
       1,000   0.54 ms     10,000   0.77 ms     100,000   1.36 ms
   cold first query (decoding every stored vector into the matrix):
-      1,000   29 ms        10,000   0.30 s      100,000   3.0 s     (about 30 us per vector)
+      first version (generic decoder):  1,000 29 ms   10,000 0.30 s   100,000 3.0 s    (30 us per vector)
+      after the cold-build work below:  1,000  7 ms   10,000 0.04 s   100,000 0.37 s   (3.7 us per vector)
 
 DECISIONS (from the numbers)
   * Hand-written SIMD assembly (NEON/AVX2): NOT worth it now. The scan is memory-bandwidth bound at
@@ -43,10 +44,20 @@ DECISIONS (from the numbers)
     4-core laptop. A proposal would be justified past roughly 5M vectors, or when a latency budget under
     10 ms on small machines is required. The Matrix/Hit API would not change: an HNSW graph would
     replace Matrix.Search behind the same procedure.
-  * The cost that does matter is the COLD BUILD (30 us per vector: JSON decode into boxed []any, then
-    conversion). 3 s per 100,000 once per process. If it hurts: parse the vector text straight into
-    float32 (skip the []any), or add the binary side table graphlite_vectors(index_id, node_id, blob)
-    sketched in task-004 (decoding a blob is 0.1 us). Not done: no demand yet.
+  * The cost that did matter was the COLD BUILD (30 us per vector). Done (8x faster, 3.7 us per vector):
+      - measured first: fetching a row is 3.6-4.4 us; SQLite json_extract costs 11-17 us a row because it
+        parses the whole document, so pushing extraction into SQL does not help;
+      - fetch the raw props text and skip to the vector property in Go (vector.StoredVector), no Node, map
+        or boxed []any; parse the numbers with a fast parser (up to 19 digits, within 4e-16 of strconv,
+        which is plenty for float32; a stored embedding has 17 digits and strconv costs 45 ns a number
+        against about 8 ns here); a first version only fast-pathed 15 digits and gained nothing on real
+        data, which the benchmark with 17-digit numbers caught;
+      - hand the rows to a pool of up to 8 parser goroutines (the parse is 10 us, the fetch 4), so the build
+        runs at the fetch speed; builders are merged and normalised in parallel at the end.
+    The remaining floor is the fetch of the ~4 KB props text per node. A binary side table
+    graphlite_vectors(index_id, node_id, blob) would cut the row to ~1.5 KB but needs writes to keep it in step
+    (and the bulk importer bypasses the interpreter), so it is not worth it at 0.4 s per 100,000.
+    Also tried: mmap_size on the read pool (211 -> 197 ms at 10k, within noise), not adopted.
 
 KNOWN LIMITS (documented in README/AGENTS.md)
   * node vector indexes only; relationship indexes are validated but not searchable.

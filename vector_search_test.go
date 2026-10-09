@@ -359,3 +359,35 @@ func TestVectorSearchGoAPI(t *testing.T) {
 		t.Errorf("k limit: %v %v", empty, err)
 	}
 }
+
+// The matrix is built straight from the stored JSON, skipping the generic
+// decoder. Whatever shape the data has, it must pick up exactly the valid vectors.
+func TestVectorSearchBuildsFromAwkwardStoredData(t *testing.T) {
+	ctx := context.Background()
+	db, _ := openFileDB(t)
+	for _, q := range []string{
+		// Created before the index exists, so nothing has validated them.
+		`CREATE (:Doc {id: 1, e: [0.0, 0.0, 0.0]}),
+		        (:Doc {id: 2, e: [1, 0, 0]}),                              // integers
+		        (:Doc {id: 3, e: vector([2, 0, 0], 3, FLOAT64)}),          // a stored VECTOR value
+		        (:Doc {id: 4, e: [1.0e-5, -2.5e3, 0.5]}),                  // exponents
+		        (:Doc {id: 5, e: [0.12345678901234568, 0.9, -0.1]}),       // 17 digits
+		        (:Doc {id: 6, e: [1, 2]}),                                 // wrong dimension
+		        (:Doc {id: 7, e: [1, 2, 3, 4]}),                           // wrong dimension
+		        (:Doc {id: 8, e: 'not a vector'}),
+		        (:Doc {id: 9, name: 'no vector at all'}),
+		        (:Doc {id: 10, e: ['a', 'b', 'c'], tags: ['x]', '}']}),    // strings, brackets in other values
+		        (:Other {id: 11, e: [0.0, 0.0, 0.0]})`,
+		vecIndexDDL,
+	} {
+		if _, err := db.RunQuery(ctx, q, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got := search(t, dbRunner{db}, []float64{0, 0, 0}, 20)
+	// Ordered by distance from the origin: 0, 0.91, 1, 2, 2500.
+	want := []int64{1, 5, 2, 3, 4}
+	if !sameIDs(got, want) {
+		t.Errorf("got %v, want %v", got, want)
+	}
+}

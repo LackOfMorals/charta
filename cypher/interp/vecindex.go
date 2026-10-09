@@ -2,7 +2,11 @@ package interp
 
 import (
 	"context"
+	"database/sql"
 	"math"
+	"runtime"
+	"sync"
+	"unsafe"
 
 	"github.com/LackOfMorals/graphlite/v2/cypher/vector"
 )
@@ -120,6 +124,9 @@ func metricOf(d schemaDef) vector.Metric {
 // buildMatrix reads every vector of the index from the database snapshot the
 // statement sees. Zero vectors cannot be scored under cosine and are skipped.
 func (g *graph) buildMatrix(d schemaDef) (*vector.Matrix, error) {
+	if d.Entity == "NODE" && pushableKey(d.Props[0]) {
+		return g.buildMatrixFast(d)
+	}
 	m := vector.NewMatrix(d.VectorDims, metricOf(d))
 	nodes, err := g.scanNodes(d.Targets[0], nil)
 	if err != nil {
@@ -133,6 +140,113 @@ func (g *graph) buildMatrix(d schemaDef) (*vector.Matrix, error) {
 		}
 	}
 	return m, nil
+}
+
+// buildMatrixFast reads the vectors without decoding each node's properties:
+// it fetches the raw JSON text and pulls out just the vector property
+// (vector.StoredVector), parsing the numbers straight into matrix rows. The
+// generic decoder cost about 30 us per 384-dimensional vector (a Node, a map and
+// a boxed []any of float64 each) and SQLite's own json_extract about the same,
+// since it parses the whole document. Fetching a row takes about 4 us, parsing a
+// 17-digit embedding about 10, so the rows are handed to a pool of parser
+// goroutines and the build runs at the speed of the fetch.
+func (g *graph) buildMatrixFast(d schemaDef) (*vector.Matrix, error) {
+	rows, err := g.db.QueryContext(g.ctx,
+		`SELECT n.id, n.props FROM nodes n
+		 WHERE EXISTS (SELECT 1 FROM node_labels l WHERE l.node_id = n.id AND l.label = ?)`, d.Targets[0])
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	prop := d.Props[0]
+
+	workers := min(runtime.GOMAXPROCS(0), 8)
+	batches := make(chan *rowBatch, 2*workers)
+	free := make(chan *rowBatch, 2*workers+1)
+	builders := make([]*vector.Builder, workers)
+	var wg sync.WaitGroup
+	for w := range builders {
+		builders[w] = vector.NewBuilder(d.VectorDims, metricOf(d))
+		wg.Add(1)
+		go func(b *vector.Builder) {
+			defer wg.Done()
+			for batch := range batches {
+				for i, id := range batch.ids {
+					row := b.NextRow()
+					if vector.StoredVector(unsafe.String(&batch.data[batch.offs[i]], batch.offs[i+1]-batch.offs[i]), prop, row) {
+						b.Keep(id)
+					} else {
+						b.Discard()
+					}
+				}
+				batch.reset()
+				select {
+				case free <- batch:
+				default:
+				}
+			}
+		}(builders[w])
+	}
+
+	next := func() *rowBatch {
+		select {
+		case b := <-free:
+			return b
+		default:
+			return &rowBatch{}
+		}
+	}
+	cur := next()
+	var scanErr error
+	for rows.Next() {
+		var id int64
+		var raw sql.RawBytes
+		if scanErr = rows.Scan(&id, &raw); scanErr != nil {
+			break
+		}
+		cur.add(id, raw) // copies raw: it is only valid until the next row
+		if len(cur.ids) >= 64 || len(cur.data) >= 1<<20 {
+			if g.ctx.Err() != nil {
+				scanErr = g.ctx.Err()
+				break
+			}
+			batches <- cur
+			cur = next()
+		}
+	}
+	if scanErr == nil {
+		scanErr = rows.Err()
+	}
+	if scanErr == nil && len(cur.ids) > 0 {
+		batches <- cur
+	}
+	close(batches)
+	wg.Wait()
+	if scanErr != nil {
+		return nil, scanErr
+	}
+	return vector.MergeBuilders(builders...).Matrix(), nil
+}
+
+// rowBatch is a run of fetched rows: ids and the raw property text of each, laid
+// out back to back in data (row i is data[offs[i]:offs[i+1]]).
+type rowBatch struct {
+	ids  []int64
+	offs []int
+	data []byte
+}
+
+func (b *rowBatch) add(id int64, props []byte) {
+	if len(b.offs) == 0 {
+		b.offs = append(b.offs, 0)
+	}
+	b.ids = append(b.ids, id)
+	b.data = append(b.data, props...)
+	b.offs = append(b.offs, len(b.data))
+}
+
+func (b *rowBatch) reset() {
+	b.ids, b.offs, b.data = b.ids[:0], b.offs[:0], b.data[:0]
 }
 
 // matrixFor returns the matrix to search: the shared one when the statement may
