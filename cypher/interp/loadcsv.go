@@ -4,7 +4,7 @@ import (
 	"encoding/csv"
 	"errors"
 	"io"
-	"net/url"
+	neturl "net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -28,11 +28,24 @@ func (ex *exec) resolveCSVPath(raw string) (string, error) {
 	}
 	path := raw
 	if strings.Contains(raw, "://") {
-		u, err := url.Parse(raw)
-		if err != nil || u.Scheme != "file" {
+		// Parsed by hand rather than with net/url: only file URLs are accepted,
+		// and a path is all that is needed from them.
+		rest, ok := strings.CutPrefix(raw, "file://")
+		if !ok {
 			return "", errorf("ConfigurationError", "LoadCSVUnsupportedURL", "LOAD CSV only reads files (file:///name.csv); got %q", raw)
 		}
-		path = u.Path
+		if !strings.HasPrefix(rest, "/") { // file://host/path: only localhost is local
+			host, p, _ := strings.Cut(rest, "/")
+			if host != "localhost" {
+				return "", errorf("ConfigurationError", "LoadCSVUnsupportedURL", "LOAD CSV cannot read from host %q", host)
+			}
+			rest = "/" + p
+		}
+		decoded, err := neturl.PathUnescape(rest)
+		if err != nil {
+			return "", errorf("ConfigurationError", "LoadCSVUnsupportedURL", "bad file URL %q", raw)
+		}
+		path = decoded
 	}
 	root, err := filepath.Abs(ex.g.eng.ImportDir)
 	if err != nil {
