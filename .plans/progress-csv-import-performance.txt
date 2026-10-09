@@ -1,0 +1,25 @@
+CSV import performance (examples/csvImport) — measured 2026-10-09, Apple M5 Max, file database
+Data: import.csv, 3,145,832 API request log rows, 598 MB.
+Model: (:Client)-[:MADE]->(:Request)-[:TARGETS]->(:Instance), (:Request)-[:USING]->(:UserAgent)
+  = 3,176,261 nodes, 9,437,496 relationships; converted to 631 MiB of node/relationship CSV (convert: 2.0 s).
+
+Import (DB.Import, FormatCSVNodes / FormatCSVEdges, one transaction per file):
+  request nodes: 500k per file, ~22.3 s each (~45 us/node, 3.3 MiB/s)
+  relationships: 1.5M per file, ~11.8 s each (~7.7 us/edge, 2.3 MiB/s)
+  total 3 min 36 s = 58k nodes+relationships/s; peak heap during import 331 MiB; database file 1,686 MiB.
+  Constraints found: importer reads a whole file into memory (ReadAll) and accepts at most 500 MiB per reader,
+  so the data had to be split into files; a failure rolls back only the current file.
+  Hotspot to investigate: node insert is ~6x slower than edge insert (node_labels trigger with recursive CTE,
+  JSON props, checkImport?).
+
+Queries on the full graph (3.1M requests), first run, no extra indexes:
+  count requests by status               6.8 s
+  busiest clients (aggregate over MADE) 22.0 s
+  requests per user agent               29.6 s
+  one client's requests (by ip)          3.5 s
+  requests to one instance by status    27.8 s   (2,038 rows: scans every Request instead of starting at the Instance)
+  clients reaching the same instances   20.5 s
+  errors (status>=500) per region       21.1 s
+  whole-run peak RSS 15.3 GB (the interpreter caches every node/relationship it touches; no eviction).
+Findings: (1) node import speed, (2) MATCH starts at the leftmost node, not the selective one,
+  (3) aggregations over millions of nodes cost ~7 us/node and hold everything in memory (RSS).
