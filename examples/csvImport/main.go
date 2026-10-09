@@ -31,7 +31,9 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"runtime/pprof"
 	"sort"
+	"strings"
 	"strconv"
 	"sync/atomic"
 	"time"
@@ -64,9 +66,22 @@ func main() {
 	prepare := flag.Bool("prepare", false, "convert -in into node/relationship files in -out")
 	load := flag.Bool("load", false, "import the files in -out and run the queries")
 	queryOnly := flag.Bool("query", false, "run only the queries, on the existing database -db (from an earlier -load -db <file>)")
+	cpuProf := flag.String("cpuprofile", "", "write a CPU profile to this file")
+	only := flag.String("only", "", "with -query: run only queries whose name contains this text")
 	rows := flag.Int("rows", 0, "limit to the first N data rows (0 = all)")
 	chunk := flag.Int("chunk", 500_000, "requests per node file (each file is one transaction; the importer streams, so any size works; smaller files show progress and bound the size of a failed transaction)")
 	flag.Parse()
+	queryFilter = *only
+	if *cpuProf != "" {
+		f, err := os.Create(*cpuProf)
+		if err != nil {
+			log.Fatal(err)
+		}
+		if err := pprof.StartCPUProfile(f); err != nil {
+			log.Fatal(err)
+		}
+		defer pprof.StopCPUProfile()
+	}
 	if !*prepare && !*load && !*queryOnly {
 		flag.Usage()
 		os.Exit(2)
@@ -434,6 +449,9 @@ func queryOnlyRun(dbPath string) error {
 }
 
 // runQueries times a few representative queries.
+// queryFilter, when set, restricts runQueries to queries whose name contains it.
+var queryFilter string
+
 func runQueries(ctx context.Context, db *charta.DB) {
 	fmt.Printf("%-52s %10s  %s\n", "query", "time", "first row")
 	for _, q := range []struct{ name, cypher string }{
@@ -445,6 +463,9 @@ func runQueries(ctx context.Context, db *charta.DB) {
 		{"clients that hit the same instances as one client", `MATCH (:Client {ip: '35.198.196.208'})-[:MADE]->(:Request)-[:TARGETS]->(i:Instance) WITH DISTINCT i MATCH (i)<-[:TARGETS]-(:Request)<-[:MADE]-(o:Client) RETURN count(DISTINCT o) AS clients`},
 		{"error requests (status >= 500) per region", `MATCH (c:Client)-[:MADE]->(r:Request) WHERE r.status >= 500 RETURN c.region AS region, count(r) AS n ORDER BY n DESC LIMIT 5`},
 	} {
+		if queryFilter != "" && !strings.Contains(q.name, queryFilter) {
+			continue
+		}
 		t := time.Now()
 		res, err := db.RunQuery(ctx, q.cypher, nil)
 		var first string
