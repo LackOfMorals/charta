@@ -11,6 +11,9 @@ var (
 	indexColumns      = []string{"id", "name", "state", "populationPercent", "type", "entityType", "labelsOrTypes", "properties", "indexProvider", "owningConstraint", "lastRead", "readCount"}
 	constraintColumns = []string{"id", "name", "type", "entityType", "labelsOrTypes", "properties", "ownedIndex", "propertyType"}
 	procedureColumns  = []string{"name", "description", "mode", "worksOnSystem"}
+
+	// YIELD may also name the verbose columns.
+	indexColumnsVerbose = append(append([]string{}, indexColumns...), "options")
 )
 
 func strList(ss []string) any {
@@ -44,6 +47,9 @@ func (ex *exec) execShow(sh *syntax.Show) ([]string, []row, error) {
 	switch last {
 	case "INDEX", "INDEXES":
 		cols = indexColumns
+		if sh.Yield != nil {
+			cols = indexColumnsVerbose
+		}
 		rows, err = ex.showIndexes(filter, sh.What)
 	case "CONSTRAINT", "CONSTRAINTS":
 		cols = constraintColumns
@@ -136,25 +142,36 @@ func (ex *exec) showIndexes(filter []string, what string) ([]row, error) {
 		return nil, err
 	}
 	var rows []row
-	add := func(id int64, name, typ, entity string, targets, props []string, provider string, owning any) {
+	add := func(id int64, name, typ, entity string, targets, props []string, provider string, owning any, config map[string]any) {
 		if kind != "" && kind != typ {
 			return
+		}
+		if config == nil {
+			config = map[string]any{}
 		}
 		rows = append(rows, row{
 			"id": id, "name": name, "state": "ONLINE", "populationPercent": 100.0, "type": typ,
 			"entityType": entity, "labelsOrTypes": nullableList(targets), "properties": nullableList(props),
 			"indexProvider": provider, "owningConstraint": owning, "lastRead": nil, "readCount": int64(0),
+			"options": map[string]any{"indexProvider": provider, "indexConfig": config},
 		})
 	}
 	// The token lookup indexes every database has.
-	add(1, "node_label_lookup_index", "LOOKUP", "NODE", nil, nil, indexProviders["LOOKUP"], nil)
-	add(2, "relationship_type_lookup_index", "LOOKUP", "RELATIONSHIP", nil, nil, indexProviders["LOOKUP"], nil)
+	add(1, "node_label_lookup_index", "LOOKUP", "NODE", nil, nil, indexProviders["LOOKUP"], nil, nil)
+	add(2, "relationship_type_lookup_index", "LOOKUP", "RELATIONSHIP", nil, nil, indexProviders["LOOKUP"], nil, nil)
 	for _, d := range defs {
 		switch {
 		case !d.Constraint:
-			add(d.ID+2, d.Name, d.Kind, d.Entity, d.Targets, d.Props, indexProviders[d.Kind], nil)
+			var config map[string]any
+			if d.Kind == "VECTOR" {
+				config = map[string]any{
+					"vector.dimensions":          int64(d.VectorDims),
+					"vector.similarity_function": strings.ToUpper(d.VectorSim),
+				}
+			}
+			add(d.ID+2, d.Name, d.Kind, d.Entity, d.Targets, d.Props, indexProviders[d.Kind], nil, config)
 		case d.Kind == "UNIQUENESS" || d.Kind == "KEY":
-			add(d.ID+2, d.Name, "RANGE", d.Entity, d.Targets, d.Props, indexProviders["RANGE"], d.Name)
+			add(d.ID+2, d.Name, "RANGE", d.Entity, d.Targets, d.Props, indexProviders["RANGE"], d.Name, nil)
 		}
 	}
 	return rows, nil

@@ -3,11 +3,13 @@ package interp
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"sort"
 	"strconv"
 	"strings"
 
 	"github.com/LackOfMorals/graphlite/v2/cypher/syntax"
+	"github.com/LackOfMorals/graphlite/v2/cypher/vector"
 )
 
 // Schema commands (CREATE/DROP INDEX|CONSTRAINT, SHOW INDEXES|CONSTRAINTS).
@@ -33,6 +35,10 @@ type schemaDef struct {
 	ValueType  string   `json:"valueType,omitempty"`
 	Options    string   `json:"options,omitempty"`
 	BackingIdx string   `json:"backingIndex,omitempty"`
+
+	// Vector indexes: the validated indexConfig.
+	VectorDims int    `json:"vectorDimensions,omitempty"`
+	VectorSim  string `json:"vectorSimilarity,omitempty"` // "cosine" or "euclidean"
 }
 
 func (ex *exec) schemaExists() (bool, error) {
@@ -183,6 +189,14 @@ func (ex *exec) execCreateIndex(ci *syntax.CreateIndex) error {
 	def := schemaDef{Kind: kind, Entity: entity, Props: props, Options: opts}
 	if name != "" {
 		def.Targets = []string{name}
+	}
+	if kind == "VECTOR" {
+		if len(props) != 1 {
+			return schemaError("InvalidSchemaTarget", "a vector index takes exactly one property")
+		}
+		if def.VectorDims, def.VectorSim, err = ex.vectorConfig(ci.Options); err != nil {
+			return err
+		}
 	}
 	return ex.addSchema(ci.Name, ci.IfNotExists, "index", def)
 }
@@ -584,6 +598,164 @@ func (ex *exec) validateExisting(d schemaDef) error {
 	for _, r := range rels {
 		if r.Type == d.Targets[0] {
 			if err := visit(r.ID, r.Props); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// vectorConfig validates the OPTIONS of CREATE VECTOR INDEX:
+//
+//	OPTIONS {indexConfig: {`vector.dimensions`: 384, `vector.similarity_function`: 'cosine'}}
+//
+// The dimension is required (1 to vector.MaxDimension); the similarity function
+// is cosine (default) or euclidean. The HNSW tuning keys Neo4j accepts are
+// accepted and ignored, since graphlite searches exhaustively.
+func (ex *exec) vectorConfig(opts syntax.Expr) (dims int, sim string, err error) {
+	bad := func(format string, args ...any) (int, string, error) {
+		return 0, "", schemaError("InvalidOptions", format, args...)
+	}
+	if opts == nil {
+		return bad("a vector index needs OPTIONS {indexConfig: {`vector.dimensions`: n}}")
+	}
+	v, err := ex.eval(opts, row{})
+	if err != nil {
+		return 0, "", err
+	}
+	m, ok := v.(map[string]any)
+	if !ok {
+		return bad("OPTIONS must be a map")
+	}
+	for k := range m {
+		if k != "indexConfig" && k != "indexProvider" {
+			return bad("unknown option %q (expected indexConfig)", k)
+		}
+	}
+	cfg, ok := m["indexConfig"].(map[string]any)
+	if !ok {
+		return bad("a vector index needs OPTIONS {indexConfig: {`vector.dimensions`: n}}")
+	}
+	sim = "cosine"
+	haveDims := false
+	for k, val := range cfg {
+		switch k {
+		case "vector.dimensions":
+			n, isInt := val.(int64)
+			if !isInt || n < 1 || n > int64(vector.MaxDimension) {
+				return bad("vector.dimensions must be an integer between 1 and %d, got %v", vector.MaxDimension, val)
+			}
+			dims, haveDims = int(n), true
+		case "vector.similarity_function":
+			s, isStr := val.(string)
+			if !isStr || (!strings.EqualFold(s, "cosine") && !strings.EqualFold(s, "euclidean")) {
+				return bad("vector.similarity_function must be 'cosine' or 'euclidean', got %v", val)
+			}
+			sim = strings.ToLower(s)
+		case "vector.hnsw.m", "vector.hnsw.ef_construction", "vector.quantization.enabled":
+			// accepted for compatibility; the search is exhaustive
+		default:
+			return bad("unknown index setting %q", k)
+		}
+	}
+	if !haveDims {
+		return bad("vector.dimensions is required")
+	}
+	return dims, sim, nil
+}
+
+// vectorIndexes returns the vector index definitions, loaded once per statement.
+func (g *graph) vectorIndexes() ([]schemaDef, error) {
+	if !g.vectorLoaded {
+		all, err := g.loadSchema()
+		if err != nil {
+			return nil, err
+		}
+		for _, d := range all {
+			if !d.Constraint && d.Kind == "VECTOR" {
+				g.vectors = append(g.vectors, d)
+			}
+		}
+		g.vectorLoaded = true
+	}
+	return g.vectors, nil
+}
+
+// vectorValue reports whether v is acceptable for a vector index of the given
+// dimension: a VECTOR value or a list of numbers of that length.
+func vectorValue(v any, dims int) bool {
+	switch x := v.(type) {
+	case vector.Vector:
+		return x.Dimension() == dims
+	case []any:
+		if len(x) != dims {
+			return false
+		}
+		for _, e := range x {
+			switch n := e.(type) {
+			case int64:
+			case float64:
+				if math.IsNaN(n) || math.IsInf(n, 0) {
+					return false
+				}
+			default:
+				return false
+			}
+		}
+		return true
+	}
+	return false
+}
+
+// checkVectorIndexes validates the vector properties of the entities a
+// statement created or changed against the vector indexes covering them.
+func (g *graph) checkVectorIndexes() error {
+	if len(g.createdNodes)+len(g.nodeSnap)+len(g.createdRels)+len(g.relSnap) == 0 {
+		return nil
+	}
+	idx, err := g.vectorIndexes()
+	if err != nil || len(idx) == 0 {
+		return err
+	}
+	check := func(entity string, id int64, labels []string, props map[string]any) error {
+		for _, d := range idx {
+			if d.Entity != entity || !containsStr(labels, d.Targets[0]) {
+				continue
+			}
+			if v := props[d.Props[0]]; v != nil && !vectorValue(v, d.VectorDims) {
+				return constraintViolation("%s with %s `%s`: property `%s` must be a vector of dimension %d (vector index `%s`), got %s",
+					describeEntity(entity, id), map[string]string{"NODE": "label", "RELATIONSHIP": "type"}[entity],
+					d.Targets[0], d.Props[0], d.VectorDims, d.Name, valueTypeName(v, true))
+			}
+		}
+		return nil
+	}
+	seenN := map[*Node]bool{}
+	for _, set := range []map[*Node]bool{g.createdNodes} {
+		for n := range set {
+			seenN[n] = true
+		}
+	}
+	for n := range g.nodeSnap {
+		seenN[n] = true
+	}
+	for n := range seenN {
+		if !n.Deleted {
+			if err := check("NODE", n.ID, n.Labels, n.Props); err != nil {
+				return err
+			}
+		}
+	}
+	seenR := map[*Rel]bool{}
+	for r := range g.createdRels {
+		seenR[r] = true
+	}
+	for r := range g.relSnap {
+		seenR[r] = true
+	}
+	for r := range seenR {
+		if !r.Deleted {
+			if err := check("RELATIONSHIP", r.ID, []string{r.Type}, r.Props); err != nil {
 				return err
 			}
 		}
