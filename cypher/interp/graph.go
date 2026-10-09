@@ -80,6 +80,8 @@ type graph struct {
 	// constraints are the schema constraints, loaded on first use.
 	constraints       []schemaDef
 	constraintsLoaded bool
+	vectors           []schemaDef
+	vectorLoaded      bool
 }
 
 func newGraph(ctx context.Context, db DB) *graph {
@@ -948,5 +950,8 @@ func (g *graph) finish() error {
 	if err := g.netCounters(); err != nil {
 		return err
 	}
-	return g.checkConstraints()
+	if err := g.checkConstraints(); err != nil {
+		return err
+	}
+	return g.checkVectorIndexes()
 }
