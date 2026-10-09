@@ -46,6 +46,7 @@ var builtins = map[string]funcInfo{
 	"pi": ret(tFloat), "sin": ret(tFloat), "cos": ret(tFloat), "tan": ret(tFloat), "cot": ret(tFloat),
 	"asin": ret(tFloat), "acos": ret(tFloat), "atan": ret(tFloat), "atan2": ret(tFloat),
 	"degrees": ret(tFloat), "radians": ret(tFloat), "haversin": ret(tFloat),
+	"sinh": ret(tFloat), "cosh": ret(tFloat), "tanh": ret(tFloat), "coth": ret(tFloat),
 
 	// string
 	"left": ret(tString), "right": ret(tString), "ltrim": ret(tString), "rtrim": ret(tString),

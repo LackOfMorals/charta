@@ -102,6 +102,29 @@ func (ex *exec) eval(e syntax.Expr, r row) (any, error) {
 			out[en.Key] = v
 		}
 		return out, nil
+	case *syntax.TypePredicate:
+		v, err := ex.eval(e.X, r)
+		if err != nil {
+			return nil, err
+		}
+		return matchesVTypes(v, parseVTypes(e.Type)) != e.Negated, nil
+	case *syntax.Normalized:
+		v, err := ex.eval(e.X, r)
+		if err != nil {
+			return nil, err
+		}
+		if v == nil {
+			return nil, nil
+		}
+		s, ok := v.(string)
+		if !ok {
+			return nil, typeErr("IS NORMALIZED expects a string, got %s", typeName(v))
+		}
+		form, err := normForm(e.Form)
+		if err != nil {
+			return nil, err
+		}
+		return form.IsNormalString(s) != e.Negated, nil
 	case *syntax.Property:
 		subject, err := ex.eval(e.Subject, r)
 		if err != nil {

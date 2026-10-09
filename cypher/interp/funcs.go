@@ -126,7 +126,7 @@ func (ex *exec) builtin(name string, args []any) (any, error) {
 	// All remaining functions return null for a null argument.
 	if len(args) > 0 && args[0] == nil {
 		switch name {
-		case "isempty":
+		case "isempty", "valuetype":
 		default:
 			return nil, nil
 		}
@@ -360,7 +360,7 @@ func (ex *exec) builtin(name string, args []any) (any, error) {
 		}
 		return nil, typeErr("sign() expects a number, got %s", typeName(args[0]))
 	case "ceil", "floor", "sqrt", "exp", "log", "log10", "sin", "cos", "tan", "cot", "asin", "acos", "atan",
-		"degrees", "radians", "haversin":
+		"degrees", "radians", "haversin", "sinh", "cosh", "tanh", "coth":
 		if !isNumber(args[0]) {
 			return nil, typeErr("%s() expects a number, got %s", name, typeName(args[0]))
 		}
@@ -384,12 +384,50 @@ func (ex *exec) builtin(name string, args []any) (any, error) {
 		return stringArg1(name, args, strings.ToLower)
 	case "toupper", "upper":
 		return stringArg1(name, args, strings.ToUpper)
-	case "trim", "btrim":
-		return stringArg1(name, args, strings.TrimSpace)
-	case "ltrim":
-		return stringArg1(name, args, func(s string) string { return strings.TrimLeft(s, " \t\n\r\v\f") })
-	case "rtrim":
-		return stringArg1(name, args, func(s string) string { return strings.TrimRight(s, " \t\n\r\v\f") })
+	case "trim", "btrim", "ltrim", "rtrim":
+		return fnTrim(name, args)
+	case "normalize":
+		if err := argc(name, args, 1, 2); err != nil {
+			return nil, err
+		}
+		if args[0] == nil {
+			return nil, nil
+		}
+		s, ok := args[0].(string)
+		if !ok {
+			return nil, typeErr("normalize() expects a string, got %s", typeName(args[0]))
+		}
+		formName := "NFC"
+		if len(args) == 2 {
+			f, ok := args[1].(string)
+			if !ok {
+				return nil, typeErr("normalize() form must be NFC, NFD, NFKC or NFKD")
+			}
+			formName = f
+		}
+		form, err := normForm(formName)
+		if err != nil {
+			return nil, err
+		}
+		return form.String(s), nil
+	case "isnan":
+		if err := argc(name, args, 1, 1); err != nil {
+			return nil, err
+		}
+		switch x := args[0].(type) {
+		case nil:
+			return nil, nil
+		case float64:
+			return math.IsNaN(x), nil
+		case int64:
+			return false, nil
+		}
+		return nil, typeErr("isNaN() expects a number, got %s", typeName(args[0]))
+	case "valuetype":
+		if err := argc(name, args, 1, 1); err != nil {
+			return nil, err
+		}
+		return valueTypeName(args[0], args[0] != nil), nil
 	case "replace":
 		if err := argc(name, args, 3, 3); err != nil {
 			return nil, err
@@ -521,6 +559,14 @@ func mathFn(name string, x float64) any {
 		return x * math.Pi / 180
 	case "haversin":
 		return (1 - math.Cos(x)) / 2
+	case "sinh":
+		return math.Sinh(x)
+	case "cosh":
+		return math.Cosh(x)
+	case "tanh":
+		return math.Tanh(x)
+	case "coth":
+		return 1 / math.Tanh(x)
 	}
 	return math.NaN()
 }

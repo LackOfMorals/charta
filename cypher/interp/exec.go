@@ -23,6 +23,10 @@ func Run(ctx context.Context, db DB, st *syntax.Statement, params map[string]any
 
 // RunWith is Run using an Engine's registered procedures and index advisor.
 func RunWith(ctx context.Context, db DB, st *syntax.Statement, params map[string]any, eng *Engine) (*Result, error) {
+	if st.Mode == syntax.ModeExplain {
+		// EXPLAIN compiles the query but does not run it: no rows, no effects.
+		return &Result{Columns: explainColumns(st.Body)}, nil
+	}
 	g := newGraph(ctx, db)
 	g.eng = eng
 	ex := &exec{g: g, params: params, clock: time.Now()}
@@ -370,4 +374,30 @@ func (ex *exec) execCallSubquery(cl *syntax.CallSubquery, st *qstate) error {
 	st.declare(outCols...)
 	st.rows = out
 	return nil
+}
+
+// explainColumns are the output columns of a query, read from its final RETURN
+// without executing anything (`RETURN *` yields none).
+func explainColumns(b syntax.Body) []string {
+	var q *syntax.SingleQuery
+	switch b := b.(type) {
+	case *syntax.SingleQuery:
+		q = b
+	case *syntax.UnionQuery:
+		if len(b.Queries) > 0 {
+			q = b.Queries[0]
+		}
+	}
+	if q == nil || len(q.Clauses) == 0 {
+		return nil
+	}
+	ret, ok := q.Clauses[len(q.Clauses)-1].(*syntax.Return)
+	if !ok {
+		return nil
+	}
+	var cols []string
+	for _, it := range projItems(&ret.Projection, &qstate{}) {
+		cols = append(cols, it.name)
+	}
+	return cols
 }

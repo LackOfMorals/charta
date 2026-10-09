@@ -5,6 +5,7 @@ go 1.24.12
 require (
 	github.com/cucumber/godog v0.15.1
 	github.com/goccy/go-json v0.10.6
+	golang.org/x/text v0.23.0
 	modernc.org/sqlite v1.35.0
 )
 

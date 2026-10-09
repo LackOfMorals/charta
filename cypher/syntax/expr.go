@@ -519,6 +519,11 @@ func (p *parser) parseFuncCall() Expr {
 		f.Namespace = parts[:len(parts)-1]
 	}
 	p.expect(LPAREN)
+	if len(f.Namespace) == 0 && equalFold(f.Name, "trim") {
+		if call := p.parseTrimForm(f); call != nil {
+			return call
+		}
+	}
 	switch {
 	case p.at(STAR):
 		star := p.next()
@@ -537,6 +542,15 @@ func (p *parser) parseFuncCall() Expr {
 		}
 	}
 	p.expect(RPAREN)
+	// normalize(s, NFD): the normal form is a bare keyword, not a variable.
+	if len(f.Namespace) == 0 && equalFold(f.Name, "normalize") && len(f.Args) == 2 {
+		if id, ok := f.Args[1].(*Ident); ok {
+			switch upper(id.Name) {
+			case "NFC", "NFD", "NFKC", "NFKD":
+				f.Args[1] = &StringLit{Loc: id.Loc, Value: upper(id.Name)}
+			}
+		}
+	}
 	return f
 }
 
