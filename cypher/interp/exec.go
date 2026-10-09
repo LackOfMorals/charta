@@ -23,11 +23,24 @@ func Run(ctx context.Context, db DB, st *syntax.Statement, params map[string]any
 
 // RunWith is Run using an Engine's registered procedures and index advisor.
 func RunWith(ctx context.Context, db DB, st *syntax.Statement, params map[string]any, eng *Engine) (*Result, error) {
+	return run(ctx, db, st, params, eng, false)
+}
+
+// RunReadOnly is RunWith for a db that cannot write (a read-only connection or
+// transaction). The statement must not contain updating clauses. Automatic
+// index creation is not attempted; keys worth indexing are queued on the Engine
+// (see Engine.TakeWantedIndexes).
+func RunReadOnly(ctx context.Context, db DB, st *syntax.Statement, params map[string]any, eng *Engine) (*Result, error) {
+	return run(ctx, db, st, params, eng, true)
+}
+
+func run(ctx context.Context, db DB, st *syntax.Statement, params map[string]any, eng *Engine, readOnly bool) (*Result, error) {
 	if st.Mode == syntax.ModeExplain {
 		// EXPLAIN compiles the query but does not run it: no rows, no effects.
 		return &Result{Columns: explainColumns(st.Body)}, nil
 	}
 	g := newGraph(ctx, db)
+	g.readOnly = readOnly
 	g.eng = eng
 	ex := &exec{g: g, params: params, clock: time.Now()}
 	if eng != nil {

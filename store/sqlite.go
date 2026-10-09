@@ -19,6 +19,14 @@ type Config struct {
 	// SQLite will retry locked operations for up to this duration before
 	// returning SQLITE_BUSY. Useful under concurrent write contention.
 	BusyTimeout time.Duration
+
+	// ReadConns is the size of the read-connection pool. When positive and the
+	// database is file-backed, read-only work runs on that many extra
+	// connections (see [SQLiteStore.BeginReadTx]) so readers do not queue
+	// behind the single writer. Zero disables the pool; in-memory databases
+	// never get one, because a second connection would see a different
+	// database.
+	ReadConns int
 }
 
 // SQLiteStore is the SQLite-backed implementation of Store.
@@ -32,8 +40,13 @@ type Config struct {
 // provides Commit/Rollback; it is always equal to q when non-nil.
 type SQLiteStore struct {
 	db *sql.DB
-	q  querier    // *sql.DB (no tx) or *sql.Tx (within a tx)
-	tx *sql.Tx    // non-nil only when this store is a transaction scope
+	q  querier // *sql.DB (no tx) or *sql.Tx (within a tx)
+	tx *sql.Tx // non-nil only when this store is a transaction scope
+
+	// readDB is the read-only connection pool, or nil when the database is
+	// in-memory or the pool is disabled. Its connections run with
+	// PRAGMA query_only = ON, so they cannot write.
+	readDB *sql.DB
 }
 
 // Compile-time assertion: *SQLiteStore must satisfy both Store and Tx.
@@ -93,7 +106,71 @@ func Open(uri string, cfg Config) (*SQLiteStore, error) {
 		return nil, fmt.Errorf("store: backfill node_labels: %w", err)
 	}
 
-	return &SQLiteStore{db: db, q: db}, nil
+	s := &SQLiteStore{db: db, q: db}
+	if cfg.ReadConns > 0 && fileBacked(uri) {
+		readDB, err := openReadPool(uri, cfg)
+		if err != nil {
+			_ = db.Close()
+			return nil, err
+		}
+		s.readDB = readDB
+	}
+	return s, nil
+}
+
+// fileBacked reports whether uri names a database file (as opposed to an
+// in-memory database, whose connections each see a separate database).
+func fileBacked(uri string) bool {
+	u := strings.ToLower(uri)
+	return uri != "" && !strings.Contains(u, ":memory:") && !strings.Contains(u, "mode=memory")
+}
+
+// openReadPool opens the read-only pool. The pragmas go in the DSN so that
+// every connection the pool opens gets them, not just the first.
+func openReadPool(uri string, cfg Config) (*sql.DB, error) {
+	pragmas := []string{"query_only(1)", "foreign_keys(1)"}
+	if cfg.BusyTimeout > 0 {
+		pragmas = append(pragmas, fmt.Sprintf("busy_timeout(%d)", cfg.BusyTimeout.Milliseconds()))
+	}
+	sep := "?"
+	if strings.Contains(uri, "?") {
+		sep = "&"
+	}
+	var q []string
+	for _, p := range pragmas {
+		q = append(q, "_pragma="+p)
+	}
+	db, err := sql.Open("sqlite", uri+sep+strings.Join(q, "&"))
+	if err != nil {
+		return nil, fmt.Errorf("store: open read pool: %w", err)
+	}
+	db.SetMaxOpenConns(cfg.ReadConns)
+	db.SetMaxIdleConns(cfg.ReadConns)
+	// Fail now, not on the first query, if the database cannot be read.
+	if err := db.Ping(); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("store: open read pool: %w", err)
+	}
+	return db, nil
+}
+
+// HasReadPool reports whether read-only work runs on a separate pool.
+func (s *SQLiteStore) HasReadPool() bool { return s.readDB != nil }
+
+// BeginReadTx starts a read-only transaction. With a read pool it runs on one
+// of the pool's connections: every statement in it sees one consistent
+// snapshot (WAL readers never block, and are never blocked by, the writer) and
+// any attempt to write fails. Without a pool it is a normal transaction on the
+// single connection, which is what in-memory databases need.
+func (s *SQLiteStore) BeginReadTx(ctx context.Context) (TxExecer, error) {
+	if s.readDB == nil {
+		return s.BeginExecTx(ctx)
+	}
+	tx, err := s.readDB.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("store: begin read tx: %w", err)
+	}
+	return tx, nil
 }
 
 // DB returns the underlying *sql.DB. This method is on the concrete type only
@@ -118,7 +195,16 @@ func (s *SQLiteStore) BeginExecTx(ctx context.Context) (TxExecer, error) {
 }
 
 // Close releases all resources held by the store.
-func (s *SQLiteStore) Close() error { return s.db.Close() }
+func (s *SQLiteStore) Close() error {
+	var readErr error
+	if s.readDB != nil {
+		readErr = s.readDB.Close()
+	}
+	if err := s.db.Close(); err != nil {
+		return err
+	}
+	return readErr
+}
 
 // Snapshot writes an atomic, consistent copy of the database to path using
 // VACUUM INTO. path must not already exist.
