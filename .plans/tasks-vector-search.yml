@@ -47,7 +47,8 @@ tasks:
       [1, 4096] (required), similarity_function 'cosine' or 'euclidean' (default cosine), unknown keys rejected.
       Store the parsed values in the schema definition so later tasks read them without re-parsing, and show them in
       SHOW INDEXES (add an options column, as Neo4j does).
-    status: pending
+    status: completed
+    notes: "PR #10"
     dependencies:
       - task-001
     acceptance_criteria:
@@ -61,7 +62,8 @@ tasks:
       vector index: the indexed property must be a VECTOR value or a list of numbers whose dimension equals the
       declared one; null/absent is allowed. A violation is a ConstraintVerificationFailed-style error naming the
       index and the expected dimension, and the statement rolls back.
-    status: pending
+    status: completed
+    notes: "PR #10"
     dependencies:
       - task-002
     acceptance_criteria:
@@ -88,7 +90,8 @@ tasks:
       (copy-on-write of the id/row slices) so a search never sees a half-updated matrix.
       If building from JSON is too slow for large indexes (about 1 s per 100k), add a binary side table
       graphlite_vectors(index_id, node_id, blob) maintained in graph.finish() and build the cache from it.
-    status: pending
+    status: completed
+    notes: "PR #12 (design note in progress file: RWMutex matrix, not copy-on-write)"
     dependencies:
       - task-003
     acceptance_criteria:
@@ -106,7 +109,8 @@ tasks:
       or assembly. Use them for the search only; vector_distance() and vector.similarity.* keep their float64 maths
       so existing results do not change. Test the kernels against a float64 reference over random vectors and
       awkward dimensions (1, 3, 7, 8, 9, 383, 4096) with a relative tolerance.
-    status: pending
+    status: completed
+    notes: "PR #11: 3.9x over naive"
     dependencies:
       - task-001
     acceptance_criteria:
@@ -122,7 +126,8 @@ tasks:
       100k x 384 scan from 7.3 ms to 0.82 ms (9x). Choose the worker count as min(GOMAXPROCS, rows/16384), so small
       indexes run on one goroutine and a search never spawns more goroutines than that; honour ctx cancellation between
       chunks. Ties break on node id so results are deterministic.
-    status: pending
+    status: completed
+    notes: "PR #12"
     dependencies:
       - task-004
       - task-005
@@ -140,7 +145,8 @@ tasks:
       and the query dimension; accept a LIST<number> or VECTOR query. Register it as a built-in in cypher/interp
       (call.go builtinProc) because it needs graph access, load the returned nodes by id, and add it to SHOW PROCEDURES.
       On the read-pool path it runs against an immutable matrix snapshot, so it is safe next to a writer.
-    status: pending
+    status: completed
+    notes: "PR #12"
     dependencies:
       - task-006
     acceptance_criteria:
@@ -153,7 +159,8 @@ tasks:
     description: |
       Add (*DB) VectorSearch(ctx, indexName string, query []float64, k int) ([]VectorMatch, error) as a thin wrapper over
       the same code path for callers that do not use Cypher; VectorMatch carries *Node and Score.
-    status: pending
+    status: completed
+    notes: "PR #12"
     dependencies:
       - task-007
     acceptance_criteria:
@@ -171,7 +178,8 @@ tasks:
           coordinate type already maps to it);
         * an approximate index (pure-Go HNSW): the answer for 1M+ vectors, where brute force is bound by memory bandwidth
           (about 1.5 GB per query at 384 float32). Write a short proposal rather than adopting a dependency speculatively.
-    status: pending
+    status: completed
+    notes: "Numbers and decisions in .plans/progress-vector-search.txt (assembly, quantisation and HNSW deferred)"
     dependencies:
       - task-007
     acceptance_criteria:
@@ -184,7 +192,8 @@ tasks:
       Verify go list -f '{{.CgoFiles}}' ./... across the dependency tree is empty. Document CREATE VECTOR INDEX,
       db.index.vector.queryNodes, VectorSearch, the in-memory cache (memory use, cap option) and the brute-force scope
       with the benchmark numbers in the README and AGENTS.md. Run the standard verification commands.
-    status: pending
+    status: completed
+    notes: "README and AGENTS.md updated; builds with CGO_ENABLED=0 and no cgo files in the dependency tree"
     dependencies:
       - task-008
       - task-009

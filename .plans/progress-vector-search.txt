@@ -1,0 +1,55 @@
+PROGRESS: vector-search (2026-10-09)
+
+DONE
+  task-001  VECTOR values, vector(), vector_distance/norm/similarity, SHOW/CREATE VECTOR INDEX (earlier work).
+  task-002  CREATE VECTOR INDEX options validated (PR #10).
+  task-003  Dimension and element type enforced on write; relationship indexes validated too (PR #10).
+  task-004  In-memory vector.Matrix per index, built lazily, updated from per-statement deltas that
+            are applied only after commit (auto-commit path and Tx.Commit); private matrix for
+            statements that may have uncommitted writes of their own; memory cap with fallback.
+            Design change from the plan: a RWMutex-guarded mutable matrix (swap-remove, in-place
+            overwrite) instead of copy-on-write snapshots. Copy-on-write would copy the whole
+            matrix (154 MB at 100k x 384) on every write; searches hold the read lock for under a
+            millisecond, so a writer waits at most that long.
+  task-005  Eight-accumulator float32 kernels: 3.9x faster than the naive loop (PR #11).
+  task-006  Parallel scan with per-worker bounded heaps; workers = min(GOMAXPROCS, rows/2048)
+            (threshold tuned: 16384 left 10k vectors on one core at 0.66 ms, 2048 gives 0.19 ms).
+  task-007  db.index.vector.queryNodes(index, k, query) YIELD node, score.
+  task-008  DB.VectorSearch.
+
+BENCHMARKS (Apple M5 Max, 18 cores, Go 1.26, dimension 384 unless stated, k = 10)
+  matrix scan only (cypher/vector BenchmarkSearch*):
+      1,000 vectors      0.07 ms   (single goroutine)
+     10,000              0.19 ms
+    100,000              0.80 ms
+    100,000 x 768        2.0  ms
+    100,000 euclidean    0.80 ms   (same as cosine)
+  1,000,000              7.0  ms   (about 1.5 GB resident)
+  end to end through Cypher (BenchmarkVectorSearch, includes parse cache, procedure call and loading the
+  hit nodes in one query):
+      1,000   0.54 ms     10,000   0.77 ms     100,000   1.36 ms
+  cold first query (decoding every stored vector into the matrix):
+      1,000   29 ms        10,000   0.30 s      100,000   3.0 s     (about 30 us per vector)
+
+DECISIONS (from the numbers)
+  * Hand-written SIMD assembly (NEON/AVX2): NOT worth it now. The scan is memory-bandwidth bound at
+    scale (1M x 384 float32 = 1.5 GB in 7 ms is about 220 GB/s on this machine) and the pure-Go kernel
+    already runs at about 6 G multiply-adds per second per core. Assembly would mean two kernels, CPU
+    detection and upkeep for a small gain. Revisit only if a profile on target hardware shows the kernel,
+    not memory, as the limit.
+  * int8/float16 quantisation: not needed below a few million vectors; the memory cap
+    (WithMaxVectorCacheBytes) is the pressure valve. Revisit if users hit it.
+  * Approximate index (pure-Go HNSW): not now. 1M vectors search in 7 ms here and perhaps 20-40 ms on a
+    4-core laptop. A proposal would be justified past roughly 5M vectors, or when a latency budget under
+    10 ms on small machines is required. The Matrix/Hit API would not change: an HNSW graph would
+    replace Matrix.Search behind the same procedure.
+  * The cost that does matter is the COLD BUILD (30 us per vector: JSON decode into boxed []any, then
+    conversion). 3 s per 100,000 once per process. If it hurts: parse the vector text straight into
+    float32 (skip the []any), or add the binary side table graphlite_vectors(index_id, node_id, blob)
+    sketched in task-004 (decoding a blob is 0.1 us). Not done: no demand yet.
+
+KNOWN LIMITS (documented in README/AGENTS.md)
+  * node vector indexes only; relationship indexes are validated but not searchable.
+  * a write by another process to the same file is not seen until reopen.
+  * a search sees committed data newer than its snapshot (the matrix is "latest committed"); hit nodes that
+    its own snapshot cannot see are skipped, so a result can contain fewer than k rows in a race.

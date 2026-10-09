@@ -45,7 +45,7 @@ graphlite passes **every scenario of the openCypher Technology Compatibility Kit
 | Bulk import — JSON, CSV (Neo4j format); bulk export — JSON | ✅ |
 | Neo4j extensions — label/type expressions, dynamic labels and properties, map projections, `EXISTS`/`COUNT`/`COLLECT` and `CALL {}` subqueries, `FILTER`/`LET`/`FINISH`, `OFFSET`, `IS :: TYPE` predicates, `EXPLAIN`/`PROFILE` | ✅ |
 | Quantified path patterns (`((a)-[:R]->(b)){1,3}`, `-[:R]->+`) and path selectors (`ANY`, `ALL`, `SHORTEST k`, `SHORTEST k GROUPS`) | ✅ |
-| `POINT` (cartesian, WGS-84; `point.distance`, `point.withinBBox`) and `VECTOR` (`vector()`, `vector_distance`, `vector_norm`, `vector.similarity.*`) values | ✅ |
+| `POINT` (cartesian, WGS-84; `point.distance`, `point.withinBBox`) and `VECTOR` (`vector()`, `vector_distance`, `vector_norm`, `vector.similarity.*`) values; vector indexes with exact nearest-neighbour search (`db.index.vector.queryNodes`, `DB.VectorSearch`) | ✅ |
 | Schema — `CREATE`/`DROP INDEX` and `CONSTRAINT` (unique, node/relationship key, existence, type), `SHOW INDEXES`/`CONSTRAINTS`/`PROCEDURES` | ✅ |
 | `LOAD CSV` (opt-in: `WithImportDirectory`) | ✅ |
 | Nested quantified path patterns, `SHOW FUNCTIONS`, `USE` and user/role/database management commands | ❌ (parsed; execution returns `ErrUnsupportedCypher`) |
@@ -97,6 +97,26 @@ db := graphlite.NewTestDB(t)
 A `*DB` is safe for concurrent use. On a file-backed database, statements without updating clauses run on a small pool of read-only SQLite connections (`WithMaxReadConns`, default 2), each in its own snapshot transaction. Readers never wait for the writer and the writer never waits for readers: a read issued while another goroutine holds an open `BeginTx` transaction returns immediately and sees only committed data. Writes, schema commands and explicit transactions use the single write connection. In-memory databases have one connection and no read pool.
 
 More read connections are not always faster, because the pure-Go SQLite shares allocator and file-lock state between connections. On a 20,000-node graph, two readers run indexed lookups 1.8x faster than one but gain nothing from more, and run a full-label scan 1.3x faster, while four run it slower than one. Raise `WithMaxReadConns` only after measuring (`go test -bench ParallelReads`).
+
+### Vector search
+
+Store embeddings as `VECTOR` values (or lists of numbers), declare a vector index, and search it:
+
+```cypher
+CREATE VECTOR INDEX doc_embeddings FOR (d:Doc) ON (d.embedding)
+OPTIONS {indexConfig: {`vector.dimensions`: 384, `vector.similarity_function`: 'cosine'}}
+
+CALL db.index.vector.queryNodes('doc_embeddings', 10, $query) YIELD node, score
+RETURN node.title, score
+```
+
+```go
+matches, err := db.VectorSearch(ctx, "doc_embeddings", queryVector, 10) // []VectorMatch{Node, Score}
+```
+
+The index validates the dimension on every write (a wrong-sized vector fails the statement) and supports `cosine` (score `(1 + cos)/2`) and `euclidean` (score `1/(1 + d²)`). The search is exact, not approximate: it scans an in-memory copy of the index's vectors (float32, contiguous, split across CPUs). Measured on an Apple M5 Max at 384 dimensions: 10,000 vectors in 0.2 ms, 100,000 in 0.8 ms, 1,000,000 in 7 ms (about 1.5 GB of memory). The copy is built on the first search (about 30 µs per vector, 3 s for 100,000) and then kept current as you write. Writes inside an explicit transaction are visible to searches in that transaction and to others only after it commits.
+
+Limits: node indexes only (no relationship vector indexes), a write to the same file by another process is not seen until the database is reopened, and the in-memory copy is capped at 512 MiB across all indexes (`WithMaxVectorCacheBytes`); beyond that a search still works but rebuilds its copy each time. There is no approximate (HNSW) index, which only starts to matter beyond a few million vectors.
 
 ### Auto-commit queries
 
