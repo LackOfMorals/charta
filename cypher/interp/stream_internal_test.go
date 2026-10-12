@@ -114,6 +114,23 @@ func richGraph(t *testing.T, seed int64, nodes, rels int) *store.SQLiteStore {
 }
 
 var streamQueries = []string{
+	// bounded top-N: ties, direction, nulls, several keys, SKIP, DISTINCT, keys not projected
+	"MATCH (n:N) RETURN n.i AS i, n.g AS g ORDER BY g LIMIT 9",
+	"MATCH (n:N) RETURN n.i AS i, n.g AS g ORDER BY g DESC LIMIT 9",
+	"MATCH (n:N) RETURN n.i AS i, n.s AS s ORDER BY s LIMIT 12",
+	"MATCH (n:N) RETURN n.i AS i, n.f AS f ORDER BY f DESC, i LIMIT 6",
+	"MATCH (n:N) RETURN n.i AS i ORDER BY n.g, n.i DESC SKIP 4 LIMIT 6",
+	"MATCH (n:N) RETURN n.i AS i ORDER BY n.s DESC SKIP 3 LIMIT 5",
+	"MATCH (n:N) RETURN DISTINCT n.g AS g ORDER BY g DESC LIMIT 3",
+	"MATCH (n:N) RETURN DISTINCT n.s AS s ORDER BY s LIMIT 4",
+	"MATCH (n:N) RETURN n ORDER BY n.g, n.i LIMIT 5",
+	"MATCH (n:N) RETURN n.i AS i ORDER BY i LIMIT 1000000",
+	"MATCH (n:N) RETURN n.i AS i ORDER BY i SKIP 2 LIMIT 0",
+	"MATCH (n:N) WITH n.i AS i, n.g AS g ORDER BY g, i DESC LIMIT 8 WHERE i % 2 = 0 RETURN i, g",
+	"MATCH (n:N) WITH n ORDER BY n.i DESC LIMIT 4 MATCH (n)-[r:R2]->(m) RETURN n.i AS a, m.i AS b",
+	"MATCH (a:N)-[r:R2]->(b) RETURN a.i AS x, b.i AS y ORDER BY r.w DESC, x LIMIT 7",
+	"MATCH (n:N) RETURN n.i AS i ORDER BY n.i / (n.g - 2) LIMIT 5",
+	"MATCH (n:N) RETURN n.i AS i ORDER BY n.i / (n.g - 2) LIMIT 5 + 'x'",
 	// plain reads, filters, projections
 	"MATCH (n:N) RETURN n.i AS i ORDER BY i LIMIT 5",
 	"MATCH (n:N) RETURN n.i AS i, n.s AS s",
@@ -415,5 +432,28 @@ func TestStreamLeavesWritesAlone(t *testing.T) {
 		if gerr != werr || strings.Join(got, "\n") != strings.Join(want, "\n") || strings.Join(after1, "\n") != strings.Join(after2, "\n") {
 			t.Fatalf("%s\n result: %v / %v\n  legacy: %v / %v", q, got, gerr, want, werr)
 		}
+	}
+}
+
+// ORDER BY ... LIMIT keeps only the best rows, and must keep the rows (and their
+// order among ties) the sort of the whole input gives.
+func TestTopNBoundsTheRowsKept(t *testing.T) {
+	db := richGraph(t, 5, bigNodes(), 0)
+	before := topNUsed.Load()
+	for _, q := range []string{
+		"MATCH (n:N) RETURN n.i AS i, n.g AS g ORDER BY g LIMIT 20",
+		"MATCH (n:N) RETURN n.i AS i, n.g AS g ORDER BY g DESC SKIP 7 LIMIT 20",
+		"MATCH (n:N) RETURN DISTINCT n.g AS g ORDER BY g LIMIT 3",
+	} {
+		topNDisabled = true
+		want, werr := runOrdered(t, db, q, nil)
+		topNDisabled = false
+		got, gerr := runOrdered(t, db, q, nil)
+		if gerr != werr || strings.Join(got, "\n") != strings.Join(want, "\n") {
+			t.Errorf("%s\n top-N: %.300v / %q\n whole:  %.300v / %q", q, got, gerr, want, werr)
+		}
+	}
+	if topNUsed.Load()-before != 3 {
+		t.Errorf("top-N ran %d times, want 3", topNUsed.Load()-before)
 	}
 }

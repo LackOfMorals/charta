@@ -524,6 +524,19 @@ func (g *graph) readNode(id int64, labels, props string) (*Node, error) {
 	return &Node{ID: id, Labels: g.labelsOf(labels), Props: p}, nil
 }
 
+// readRel is internRel without remembering a relationship that is not already
+// cached (see readNode).
+func (g *graph) readRel(id int64, typ string, start, end int64, props string) (*Rel, error) {
+	if r, ok := g.rels[id]; ok {
+		return r, nil
+	}
+	p, err := decodeProps(props)
+	if err != nil {
+		return nil, err
+	}
+	return &Rel{ID: id, Type: typ, Start: start, End: end, Props: p}, nil
+}
+
 func (g *graph) internNode(id int64, labels, props string) (*Node, error) {
 	if n, ok := g.nodes[id]; ok {
 		return n, nil

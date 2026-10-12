@@ -2,6 +2,8 @@ package interp
 
 import (
 	"errors"
+	"math"
+	"sort"
 	"strings"
 	"sync/atomic"
 
@@ -29,6 +31,13 @@ import (
 // streamDisabled turns streaming off; tests use it to compare both executors on
 // the same data.
 var streamDisabled bool
+
+// topNDisabled keeps every row of an ORDER BY ... LIMIT instead of the best few;
+// tests use it to compare the two.
+var topNDisabled bool
+
+// topNUsed counts ORDER BY ... LIMIT stages that kept only the best rows (for tests).
+var topNUsed atomic.Int64
 
 // streamUsed counts queries run through the pipeline (for tests).
 var streamUsed atomic.Int64
@@ -387,15 +396,22 @@ func (ex *exec) mapStage(p *syntax.Projection, where syntax.Expr, items []projIt
 
 // bufferStage holds the projected rows of a non-aggregating projection that
 // needs all of them (ORDER BY, DISTINCT). With DISTINCT only the first row of
-// each distinct value is kept, so memory follows the distinct values.
+// each distinct value is kept, so memory follows the distinct values. With
+// ORDER BY and a LIMIT only the best SKIP+LIMIT rows are kept (see topN).
 func (ex *exec) bufferStage(p *syntax.Projection, where syntax.Expr, items []projItem, names []string, next *stage) *stage {
 	var out, origs []row
 	var seen map[string]bool
 	if p.Distinct {
 		seen = map[string]bool{}
 	}
+	var top *topN
+	topChecked := false
 	return &stage{
 		push: func(r row) error {
+			if !topChecked {
+				topChecked = true
+				top = ex.newTopN(p)
+			}
 			nr, err := ex.project(items, r)
 			if err != nil {
 				return err
@@ -407,19 +423,150 @@ func (ex *exec) bufferStage(p *syntax.Projection, where syntax.Expr, items []pro
 				}
 				seen[k] = true
 			}
+			if top != nil {
+				top.add(ex, nr, r)
+				return nil
+			}
 			out = append(out, nr)
 			origs = append(origs, r)
 			return nil
 		},
 		finish: func() error {
+			if top != nil {
+				if top.err != nil {
+					return top.err
+				}
+				out, origs = top.sorted()
+			}
 			rows, err := ex.finishProjectionRows(p, where, names, false, out, origs, nil)
 			if err != nil {
 				return err
 			}
-			out, origs = nil, nil
+			out, origs, top = nil, nil, nil
 			return flush(rows, next)
 		},
 	}
+}
+
+// topN keeps the best n rows of an ORDER BY ... SKIP s LIMIT l (n = s+l) as
+// they arrive, in a heap whose root is the worst row kept, so memory follows
+// the limit, not the input. Rows that tie on every ORDER BY key are ordered by
+// arrival, which is what the stable sort of the whole input does, so the rows
+// kept are exactly the first n of that sort. A failure evaluating a key is held
+// back until the input is complete, as the sort of the whole input reports it
+// only then.
+type topN struct {
+	order []syntax.SortItem
+	n     int
+	heap  []topEntry
+	seq   int
+	err   error
+}
+
+type topEntry struct {
+	keys      []any
+	seq       int
+	out, orig row
+}
+
+// newTopN returns a topN for the projection, or nil when it does not apply: no
+// ORDER BY, no LIMIT, or a SKIP/LIMIT that cannot be evaluated or leaves nothing
+// to keep (the whole-input path then reports the error).
+func (ex *exec) newTopN(p *syntax.Projection) *topN {
+	if len(p.Order) == 0 || p.Limit == nil || topNDisabled {
+		return nil
+	}
+	skip, err := ex.nonNegInt(p.Skip, "SKIP")
+	if err != nil {
+		return nil
+	}
+	limit, err := ex.nonNegInt(p.Limit, "LIMIT")
+	if err != nil || limit <= 0 {
+		return nil
+	}
+	skip = max(skip, 0)
+	if skip > math.MaxInt32 || limit > math.MaxInt32 || skip+limit > 1<<20 {
+		return nil // keep memory bounded by the input, not by an absurd limit
+	}
+	topNUsed.Add(1)
+	return &topN{order: p.Order, n: int(skip + limit)}
+}
+
+// before reports whether a sorts ahead of b.
+func (t *topN) before(a, b *topEntry) bool {
+	for j, s := range t.order {
+		c := orderCompare(a.keys[j], b.keys[j])
+		if s.Desc {
+			c = -c
+		}
+		if c != 0 {
+			return c < 0
+		}
+	}
+	return a.seq < b.seq
+}
+
+func (t *topN) add(ex *exec, out, orig row) {
+	if t.err != nil {
+		return
+	}
+	scope := orig.clone()
+	for k, v := range out {
+		scope[k] = v
+	}
+	keys := make([]any, len(t.order))
+	for j, s := range t.order {
+		v, err := ex.eval(s.Expr, scope)
+		if err != nil {
+			t.err = err
+			t.heap = nil
+			return
+		}
+		keys[j] = v
+	}
+	e := topEntry{keys: keys, seq: t.seq, out: out, orig: orig}
+	t.seq++
+	if len(t.heap) < t.n {
+		t.heap = append(t.heap, e)
+		// sift up: the worst row at the root
+		for i := len(t.heap) - 1; i > 0; {
+			p := (i - 1) / 2
+			if !t.before(&t.heap[p], &t.heap[i]) {
+				break
+			}
+			t.heap[p], t.heap[i] = t.heap[i], t.heap[p]
+			i = p
+		}
+		return
+	}
+	if !t.before(&e, &t.heap[0]) {
+		return
+	}
+	t.heap[0] = e
+	for i := 0; ; {
+		l, r, w := 2*i+1, 2*i+2, i
+		if l < len(t.heap) && t.before(&t.heap[w], &t.heap[l]) {
+			w = l
+		}
+		if r < len(t.heap) && t.before(&t.heap[w], &t.heap[r]) {
+			w = r
+		}
+		if w == i {
+			return
+		}
+		t.heap[i], t.heap[w] = t.heap[w], t.heap[i]
+		i = w
+	}
+}
+
+// sorted returns the rows kept, best first.
+func (t *topN) sorted() (out, origs []row) {
+	sort.Slice(t.heap, func(a, b int) bool { return t.before(&t.heap[a], &t.heap[b]) })
+	for _, e := range t.heap {
+		out = append(out, e.out)
+		origs = append(origs, e.orig)
+	}
+	return out, origs
 }
 
 // aggGroup is the state of one group: its grouping key values, its first row
