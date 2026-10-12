@@ -161,6 +161,8 @@ func interpResult(res *interp.Result) *Result {
 		propertiesRemoved:    c.PropertiesRemoved,
 		labelsAdded:          c.LabelsAdded,
 		labelsRemoved:        c.LabelsRemoved,
+		nodeLabelsAdded:      c.NodeLabelsAdded,
+		nodeLabelsRemoved:    c.NodeLabelsRemoved,
 		indexesAdded:         c.IndexesAdded,
 		indexesRemoved:       c.IndexesRemoved,
 		constraintsAdded:     c.ConstraintsAdded,

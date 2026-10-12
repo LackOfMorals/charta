@@ -522,3 +522,46 @@ func TestRecord_MissingKey(t *testing.T) {
 	}
 	_, _ = qr.Consume(ctx)
 }
+
+// The public Counters expose both label counts, and containsUpdates notices a
+// label change even when no label appears in or vanishes from the graph.
+func TestNodeLabelCountersPublicAPI(t *testing.T) {
+	ctx := context.Background()
+	db, err := charta.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close(ctx)
+
+	counters := func(q string) charta.Counters {
+		t.Helper()
+		res, err := db.RunQuery(ctx, q, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		sum, err := res.Consume(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return sum.Counters()
+	}
+
+	c := counters("UNWIND range(1,5) AS i CREATE (:A {i: i})")
+	if c.NodeLabelsAdded() != 5 || c.LabelsAdded() != 1 {
+		t.Errorf("create: NodeLabelsAdded=%d LabelsAdded=%d, want 5 and 1", c.NodeLabelsAdded(), c.LabelsAdded())
+	}
+
+	counters("CREATE (:B)")
+	c = counters("MATCH (n:A) SET n:B")
+	if c.NodeLabelsAdded() != 5 || c.LabelsAdded() != 0 {
+		t.Errorf("set existing label: NodeLabelsAdded=%d LabelsAdded=%d, want 5 and 0", c.NodeLabelsAdded(), c.LabelsAdded())
+	}
+	if !c.ContainsUpdates() {
+		t.Error("ContainsUpdates is false for a statement that added labels to five nodes")
+	}
+
+	c = counters("MATCH (n:A) REMOVE n:B")
+	if c.NodeLabelsRemoved() != 5 || c.LabelsRemoved() != 0 || !c.ContainsUpdates() {
+		t.Errorf("remove: NodeLabelsRemoved=%d LabelsRemoved=%d ContainsUpdates=%v", c.NodeLabelsRemoved(), c.LabelsRemoved(), c.ContainsUpdates())
+	}
+}

@@ -149,6 +149,8 @@ type queryCounters struct {
 	propertiesRemoved    int
 	labelsAdded          int
 	labelsRemoved        int
+	nodeLabelsAdded      int
+	nodeLabelsRemoved    int
 	indexesAdded         int
 	indexesRemoved       int
 	constraintsAdded     int
@@ -175,10 +177,21 @@ type Counters interface {
 	PropertiesSet() int
 	// PropertiesRemoved returns the number of property values removed.
 	PropertiesRemoved() int
-	// LabelsAdded returns the number of labels added to nodes.
+	// LabelsAdded returns the number of labels that first appeared in the
+	// graph during the statement (a label already on any node does not count),
+	// the meaning the openCypher TCK gives "+labels".
 	LabelsAdded() int
-	// LabelsRemoved returns the number of labels removed from nodes.
+	// LabelsRemoved returns the number of labels that no longer appear on any
+	// node after the statement (the TCK's "-labels").
 	LabelsRemoved() int
+	// NodeLabelsAdded returns the number of labels added to nodes, one per
+	// node and label, counted when the label is added. This is what Neo4j
+	// reports as labelsAdded: CREATE (:A), (:A) adds two, and SET n:A on a
+	// node that already has A adds none.
+	NodeLabelsAdded() int
+	// NodeLabelsRemoved returns the number of labels removed from nodes, one
+	// per node and label. Deleting a node does not count, as in Neo4j.
+	NodeLabelsRemoved() int
 	// IndexesAdded and IndexesRemoved count schema indexes created and dropped.
 	IndexesAdded() int
 	IndexesRemoved() int
@@ -212,6 +225,8 @@ func (c *counters) PropertiesSet() int        { return c.c.propertiesSet }
 func (c *counters) PropertiesRemoved() int    { return c.c.propertiesRemoved }
 func (c *counters) LabelsAdded() int          { return c.c.labelsAdded }
 func (c *counters) LabelsRemoved() int        { return c.c.labelsRemoved }
+func (c *counters) NodeLabelsAdded() int      { return c.c.nodeLabelsAdded }
+func (c *counters) NodeLabelsRemoved() int    { return c.c.nodeLabelsRemoved }
 func (c *counters) IndexesAdded() int         { return c.c.indexesAdded }
 func (c *counters) IndexesRemoved() int       { return c.c.indexesRemoved }
 func (c *counters) ConstraintsAdded() int     { return c.c.constraintsAdded }
@@ -221,5 +236,6 @@ func (c *counters) ContainsUpdates() bool {
 		c.c.relationshipsCreated > 0 || c.c.relationshipsDeleted > 0 ||
 		c.c.propertiesSet > 0 || c.c.propertiesRemoved > 0 ||
 		c.c.labelsAdded > 0 || c.c.labelsRemoved > 0 ||
+		c.c.nodeLabelsAdded > 0 || c.c.nodeLabelsRemoved > 0 ||
 		c.c.indexesAdded > 0 || c.c.indexesRemoved > 0 || c.c.constraintsAdded > 0 || c.c.constraintsRemoved > 0
 }
