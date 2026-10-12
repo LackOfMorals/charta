@@ -336,6 +336,34 @@ func BenchmarkCreateBatch_1000(b *testing.B) {
 	}
 }
 
+// BenchmarkSetProperty_3000 measures setting a property on 3000 existing nodes
+// in one statement: per node, the property journal, re-encoding the node's
+// properties and one UPDATE. The value changes every iteration, so nothing is a
+// no-op.
+func BenchmarkSetProperty_3000(b *testing.B) {
+	ctx := context.Background()
+	db, err := charta.Open(":memory:")
+	if err != nil {
+		b.Fatalf("open: %v", err)
+	}
+	defer db.Close(ctx)
+	if _, err := db.RunQuery(ctx, `UNWIND range(1, 3000) AS i
+		CREATE (:Bulk {id: i, name: 'Company ' + i + ' Ltd', bucket: i % 10, score: i * 0.5})`, nil); err != nil {
+		b.Fatalf("seed: %v", err)
+	}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for range b.N {
+		res, err := db.RunQuery(ctx, `MATCH (n:Bulk) SET n.score = n.score + 1`, nil)
+		if err != nil {
+			b.Fatalf("set: %v", err)
+		}
+		if _, err := res.Consume(ctx); err != nil {
+			b.Fatalf("consume: %v", err)
+		}
+	}
+}
+
 // BenchmarkAggregationPipeline measures the cost of a
 // MATCH ... WITH n RETURN count(n) aggregation pipeline on a 100K-node graph.
 func BenchmarkAggregationPipeline(b *testing.B) {
