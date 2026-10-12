@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync/atomic"
 
 	"github.com/LackOfMorals/charta/cypher/spatial"
 	"github.com/LackOfMorals/charta/cypher/temporal"
@@ -170,6 +171,11 @@ type graph struct {
 	// readOnly is set when the statement runs on a read-only connection: it
 	// must not write, so schema-dependent maintenance is deferred.
 	readOnly bool
+	// evictable is set when the whole statement only reads. Nodes and
+	// relationships are then never modified, and nothing compares them by
+	// pointer (equality, ordering and grouping all go by id), so the caches may
+	// be dropped and refilled without changing any result.
+	evictable bool
 
 	// constraints are the schema constraints, loaded on first use.
 	constraints       []schemaDef
@@ -539,7 +545,92 @@ func (g *graph) scanNodes(label string, hints []propHint) ([]*Node, error) {
 	if err != nil {
 		return nil, err
 	}
+	scanRowsRead.Add(int64(len(out)))
 	return out, nil
+}
+
+// scanPage returns up to limit nodes in id order whose id is greater than
+// after, that carry label (any node when label is empty) and match the
+// property equalities in hints. raw is how many rows the page held before
+// deleted nodes were dropped, so a short page means the end; last is the id of
+// the page's final row.
+func (g *graph) scanPage(label string, hints []propHint, after int64, limit int) (nodes []*Node, last int64, raw int, err error) {
+	var sb strings.Builder
+	var args []any
+	order := "n.id"
+	if label != "" && len(hints) == 0 {
+		// The (label, node_id) index serves the scan, as in scanNodes.
+		sb.WriteString(`SELECT n.id, n.labels, n.props FROM node_labels l JOIN nodes n ON n.id = l.node_id WHERE l.label = ? AND l.node_id > ?`)
+		args = append(args, label, after)
+		order = "l.node_id"
+	} else {
+		sb.WriteString(`SELECT n.id, n.labels, n.props FROM nodes n WHERE n.id > ?`)
+		args = append(args, after)
+		if label != "" {
+			sb.WriteString(` AND EXISTS (SELECT 1 FROM node_labels l WHERE l.node_id = n.id AND l.label = ?)`)
+			args = append(args, label)
+		}
+		for _, h := range hints {
+			// The path is inlined (h.key is a plain identifier) so an expression
+			// index on json_extract(props, '$."key"') can serve the lookup.
+			sb.WriteString(` AND json_extract(n.props, '$."` + h.key + `"') = ?`)
+			args = append(args, h.val)
+		}
+	}
+	sb.WriteString(` ORDER BY ` + order + ` LIMIT ?`)
+	args = append(args, limit)
+	rows, err := g.db.QueryContext(g.ctx, sb.String(), args...)
+	if err != nil {
+		return nil, 0, 0, err
+	}
+	nodes = make([]*Node, 0, limit)
+	for rows.Next() {
+		var id int64
+		var labels, props string
+		if err := rows.Scan(&id, &labels, &props); err != nil {
+			rows.Close()
+			return nil, 0, 0, err
+		}
+		raw++
+		last = id
+		n, err := g.internNode(id, labels, props)
+		if err != nil {
+			rows.Close()
+			return nil, 0, 0, err
+		}
+		if !n.Deleted {
+			nodes = append(nodes, n)
+		}
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return nil, 0, 0, err
+	}
+	scanRowsRead.Add(int64(raw))
+	return nodes, last, raw, nil
+}
+
+// scanRowsRead counts the node rows label and node scans have read (for tests).
+var scanRowsRead atomic.Int64
+
+// cacheLimit is how many cached nodes, relationships and adjacency lists a
+// read-only statement keeps before trimCaches drops them.
+var cacheLimit = 50000
+
+// trimCaches drops the node, relationship and adjacency caches once they have
+// grown past cacheLimit. It does nothing unless the statement only reads (see
+// evictable), and callers must not hold a chunk of prefetched work across it.
+func (g *graph) trimCaches() {
+	if !g.evictable {
+		return
+	}
+	if len(g.nodes)+len(g.rels)+len(g.out)+len(g.in) > cacheLimit {
+		clear(g.nodes)
+		clear(g.rels)
+		clear(g.out)
+		clear(g.in)
+	}
 }
 
 func (g *graph) node(id int64) (*Node, error) {

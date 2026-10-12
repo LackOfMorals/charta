@@ -134,9 +134,8 @@ func TestStartPrefetchWithWrites(t *testing.T) {
 }
 
 // A traversal over many start nodes costs a handful of statements, not one per
-// node, and a selective start is not made worse. (The engine evaluates a MATCH
-// fully before applying LIMIT, so prefetching never loads more than the lazy
-// walk would have.)
+// node, and a selective start is not made worse. (A query that stops early, a
+// LIMIT, now stops the matcher feeding it: see TestStreamLimitStopsTheMatcher.)
 func TestStartPrefetchRoundTrips(t *testing.T) {
 	db := randomGraph(t, 11, 700, 1500)
 
@@ -150,7 +149,6 @@ func TestStartPrefetchRoundTrips(t *testing.T) {
 		{"one hop over all nodes", "MATCH (a:N)-[:R]->(b:N) RETURN a.i AS a, b.i AS b", 30, 600},
 		{"two hops over all nodes", "MATCH (a:N)-[:R]->(b:N)-[:S]->(c:N) RETURN a.i AS a, c.i AS c", 40, 600},
 		{"variable length", "MATCH (a:N)-[:R*1..3]->(b:N) RETURN a.i AS a, b.i AS b", 200, 600},
-		{"limit 1", "MATCH (a:N)-[:R]->(b:N) RETURN b.i AS b LIMIT 1", 12, 600},
 		// One matching start node: nothing else is prefetched.
 		{"selective start", "MATCH (a:N {i: 5})-[:R]->(b:N) RETURN b.i AS b", 8, 0},
 	}

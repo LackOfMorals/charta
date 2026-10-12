@@ -68,6 +68,10 @@ type exec struct {
 	// limit. relPruned records that the limit cut a search short.
 	relLimit  int
 	relPruned bool
+	// streaming is positive while a pipeline runs (see stream.go); scanDepth
+	// counts the chunked scans in progress.
+	streaming int
+	scanDepth int
 }
 
 // overBudget reports whether a path that already has n relationships may not be
