@@ -1,6 +1,7 @@
 package interp
 
 import (
+	"math"
 	"strings"
 	"sync/atomic"
 
@@ -70,6 +71,64 @@ func (g *graph) scanRels(typ string, hints []propHint) ([]*Rel, error) {
 	return out, nil
 }
 
+// relRowsRead counts the relationship rows relationship scans have read (for tests).
+var relRowsRead atomic.Int64
+
+// scanRelPage is scanRels for one page: up to limit relationships with an id
+// greater than after, in id order. raw is how many rows the page held before
+// deleted relationships were dropped, so a short page means the end; last is
+// the id of the page's final row.
+func (g *graph) scanRelPage(typ string, hints []propHint, after int64, limit int) (rels []*Rel, last int64, raw int, err error) {
+	var sb strings.Builder
+	args := []any{after}
+	sb.WriteString(`SELECT e.id, e.type, e.start_id, e.end_id, e.props FROM edges e WHERE e.id > ?`)
+	if typ != "" {
+		sb.WriteString(` AND e.type = ?`)
+		args = append(args, typ)
+	}
+	for _, h := range hints {
+		sb.WriteString(` AND json_extract(e.props, '$."` + h.key + `"') = ?`)
+		args = append(args, h.val)
+	}
+	sb.WriteString(` ORDER BY e.id LIMIT ?`)
+	args = append(args, limit)
+	rows, err := g.db.QueryContext(g.ctx, sb.String(), args...)
+	if err != nil {
+		return nil, 0, 0, err
+	}
+	rels = make([]*Rel, 0, limit)
+	for rows.Next() {
+		var id, start, end int64
+		var typ, props string
+		if err := rows.Scan(&id, &typ, &start, &end, &props); err != nil {
+			rows.Close()
+			return nil, 0, 0, err
+		}
+		raw++
+		last = id
+		var rel *Rel
+		if g.evictable {
+			rel, err = g.readRel(id, typ, start, end, props)
+		} else {
+			rel, err = g.internRel(id, typ, start, end, props)
+		}
+		if err != nil {
+			rows.Close()
+			return nil, 0, 0, err
+		}
+		if !rel.Deleted {
+			rels = append(rels, rel)
+		}
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return nil, 0, 0, err
+	}
+	relRowsRead.Add(int64(raw))
+	return rels, last, raw, nil
+}
+
 // relHints collects the property equalities that narrow a relationship pattern,
 // from its inline property map and the enclosing MATCH's WHERE.
 func (ex *exec) relHints(rp *syntax.RelPattern, r row) []propHint {
@@ -134,19 +193,12 @@ func (ex *exec) matchRelFirst(part *syntax.PatternPart, r row, used map[int64]bo
 		typ = ln.Name
 	}
 	relFirstUsed.Add(1)
-	rels, err := ex.g.scanRels(typ, hints)
-	if err != nil {
-		return true, err
-	}
-	for _, rel := range rels {
+	process := func(rel *Rel) error {
 		if used[rel.ID] {
-			continue
+			return nil
 		}
 		if ok, err := ex.relMatches(rp, rel, r); err != nil || !ok {
-			if err != nil {
-				return true, err
-			}
-			continue
+			return err
 		}
 		// The orientations the pattern allows: (a)-[]->(b) reads the relationship
 		// forwards, (a)<-[]-(b) backwards, an undirected one both ways (a
@@ -163,20 +215,20 @@ func (ex *exec) matchRelFirst(part *syntax.PatternPart, r row, used map[int64]bo
 			from, err := ex.g.node(o.from)
 			if err != nil || from.Deleted {
 				if err != nil {
-					return true, err
+					return err
 				}
 				continue
 			}
 			to, err := ex.g.node(o.to)
 			if err != nil || to.Deleted {
 				if err != nil {
-					return true, err
+					return err
 				}
 				continue
 			}
 			ok, err := ex.nodeMatches(a, from, r)
 			if err != nil {
-				return true, err
+				return err
 			}
 			if !ok {
 				continue
@@ -187,7 +239,7 @@ func (ex *exec) matchRelFirst(part *syntax.PatternPart, r row, used map[int64]bo
 			}
 			r3, ok, err := ex.bindStep(rp, rel, b, to, r2)
 			if err != nil {
-				return true, err
+				return err
 			}
 			if !ok {
 				continue
@@ -196,8 +248,60 @@ func (ex *exec) matchRelFirst(part *syntax.PatternPart, r row, used map[int64]bo
 			err = finish(r3, &pathState{nodes: []*Node{from, to}, rels: []*Rel{rel}})
 			delete(used, rel.ID)
 			if err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
+	if ex.streaming > 0 {
+		// Inside a pipeline the relationships are read a page at a time, and the
+		// nodes at their ends loaded in a few batched queries instead of two
+		// statements per relationship. A LIMIT stops the scan after the first
+		// page; for a read-only statement the caches are trimmed between pages.
+		g := ex.g
+		for _, h := range hints {
+			g.eng.noteScan(g.ctx, g.db, h.key, g.readOnly)
+		}
+		ex.scanDepth++
+		defer func() { ex.scanDepth-- }()
+		after := int64(math.MinInt64)
+		size := startChunk
+		for {
+			if ex.scanDepth == 1 {
+				g.trimCaches()
+			}
+			page, last, raw, err := g.scanRelPage(typ, hints, after, size)
+			if err != nil {
 				return true, err
 			}
+			ends := make([]int64, 0, 2*len(page))
+			for _, rel := range page {
+				ends = append(ends, rel.Start, rel.End)
+			}
+			if err := g.prefetchNodes(ends); err != nil {
+				return true, err
+			}
+			for _, rel := range page {
+				if err := process(rel); err != nil {
+					return true, err
+				}
+			}
+			if raw < size {
+				return true, nil
+			}
+			after = last
+			size = scanPageSize
+		}
+	}
+
+	rels, err := ex.g.scanRels(typ, hints)
+	if err != nil {
+		return true, err
+	}
+	for _, rel := range rels {
+		if err := process(rel); err != nil {
+			return true, err
 		}
 	}
 	return true, nil

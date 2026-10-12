@@ -113,3 +113,41 @@ func TestRelFirstAgreesWithNodeFirst(t *testing.T) {
 		t.Error("the relationship-first strategy was never chosen, so this test compared nothing")
 	}
 }
+
+// A relationship scan read in pages (the first 512 rows, then 2048) must find
+// what the single read finds, with the pages meeting a LIMIT, deleted
+// relationships and self-loops.
+func TestRelFirstPagesAgreeWithNodeFirst(t *testing.T) {
+	db := richGraph(t, 9, 300, 4200)
+	runInternal(t, db, "MATCH ()-[r:R2 {w: 4}]->() WHERE id(r) % 7 = 0 DELETE r", nil)
+	queries := []string{
+		"MATCH (a)-[r:R2 {w: 2}]->(b) RETURN count(*) AS c",
+		"MATCH (a)-[r:R2 {w: 2}]->(b) RETURN a.g AS g, count(*) AS c, sum(b.i) AS s",
+		"MATCH (a)-[r:R2 {w: 1}]-(b) RETURN DISTINCT b.g AS g",
+		"MATCH (a:N)-[r:R2 {w: 3}]->(b:N) WHERE a.i < b.i RETURN a.i AS x, b.i AS y",
+		"MATCH (a)-[r:R2 {w: 4}]->(a) RETURN a.i AS i, id(r) AS r",
+	}
+	usedBefore, rowsBefore := relFirstUsed.Load(), relRowsRead.Load()
+	for _, q := range queries {
+		relFirstDisabled = true
+		want := runInternal(t, db, q, nil)
+		relFirstDisabled = false
+		got := runInternal(t, db, q, nil)
+		if strings.Join(got, "\n") != strings.Join(want, "\n") {
+			t.Errorf("%s\n paged relationship-first (%d rows) != node-first (%d rows)", q, len(got), len(want))
+		}
+	}
+	if relFirstUsed.Load() == usedBefore || relRowsRead.Load()-rowsBefore < 2*int64(startChunk) {
+		t.Error("the paged relationship scan did not run over several pages, so this test compared nothing")
+	}
+
+	// A LIMIT stops after the first page.
+	before := relRowsRead.Load()
+	got := runInternal(t, db, "MATCH (a)-[r:R2 {w: 2}]->(b) RETURN a.i AS i LIMIT 5", nil)
+	if len(got) != 5 {
+		t.Fatalf("LIMIT 5 returned %d rows", len(got))
+	}
+	if read := relRowsRead.Load() - before; read > int64(startChunk) {
+		t.Errorf("LIMIT 5 read %d relationship rows; want at most the first page of %d", read, startChunk)
+	}
+}

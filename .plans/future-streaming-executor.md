@@ -54,8 +54,8 @@ and mmap_size made no difference.
 ## What is not done (the suggested solutions, in order of value)
 
 1. **Streaming executor: done for read-only queries** (see "What is done"). Still clause by clause: any query with an
-   updating clause, `CALL`, `FOREACH` or `LOAD CSV`; relationship-first matching (`relfirst.go`) and `allRels` still read
-   every relationship at once; ORDER BY buffers all its rows (a bounded top-N for ORDER BY ... LIMIT would not).
+   updating clause, `CALL`, `FOREACH` or `LOAD CSV`; `allRels` still reads every relationship at once. Relationship-first matching pages its scan and ORDER BY ... LIMIT
+   keeps a bounded top-N (both done; an unbounded ORDER BY still buffers all its rows, as it must).
 2. **Lighter nodes: measured, mostly not worth it.** Decoding every node's properties is the largest single cost of a
    scan-and-aggregate query (about 36% of `MATCH (c:Company) RETURN c.status, count(*)` over 1M nodes: 1,170 ms, against
    745 ms with decoding skipped altogether), but most of it is not the JSON: decoding only the one key the query needs
