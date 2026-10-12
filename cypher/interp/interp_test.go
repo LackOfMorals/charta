@@ -414,3 +414,14 @@ func TestSchemaVisualization(t *testing.T) {
 		t.Errorf("schema = %s", got)
 	}
 }
+
+func TestDbPing(t *testing.T) {
+	db := newDB(t)
+	res, err := run(db, nil, "CALL db.ping() YIELD success RETURN success", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(rows(res), ","); got != "true" {
+		t.Errorf("db.ping: %s", got)
+	}
+}

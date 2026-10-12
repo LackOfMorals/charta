@@ -135,6 +135,7 @@ var Builtin = []*Signature{
 	{Name: "db.labels", Outputs: []Param{{Name: "label", Type: "STRING"}}},
 	{Name: "db.relationshipTypes", Outputs: []Param{{Name: "relationshipType", Type: "STRING"}}},
 	{Name: "db.propertyKeys", Outputs: []Param{{Name: "propertyKey", Type: "STRING"}}},
+	{Name: "db.ping", Outputs: []Param{{Name: "success", Type: "BOOLEAN"}}},
 	{Name: "db.schema.visualization", Outputs: []Param{{Name: "nodes", Type: "LIST"}, {Name: "relationships", Type: "LIST"}}},
 	{
 		Name: "db.index.vector.queryNodes",

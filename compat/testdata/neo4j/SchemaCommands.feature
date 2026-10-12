@@ -384,6 +384,7 @@ Feature: SchemaCommands - indexes and constraints
       | name                   |
       | 'db.index.vector.queryNodes' |
       | 'db.labels'            |
+      | 'db.ping'              |
       | 'db.propertyKeys'      |
       | 'db.relationshipTypes' |
       | 'db.schema.visualization' |

@@ -167,6 +167,10 @@ func (ex *exec) builtinProc(name string) proc.Func {
 	switch proc.Key(name) {
 	case "db.index.vector.querynodes":
 		return ex.queryVectorNodes
+	case "db.ping":
+		return func(context.Context, []any) ([]map[string]any, error) {
+			return []map[string]any{{"success": true}}, nil
+		}
 	case "db.schema.visualization":
 		return ex.schemaVisualization
 	case "db.labels":
