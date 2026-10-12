@@ -323,6 +323,12 @@ Runnable programs live in [`examples/`](examples/); run them from the repository
 | `Single` | `(*Result) Single(ctx) (*Record, error)` | Return the single record, or `ErrNoRecords` / `ErrMultipleRecords`. |
 | `Consume` | `(*Result) Consume(ctx) (*ResultSummary, error)` | Drain remaining records and return query counters. |
 
+`ResultSummary` carries two views of a statement's side effects. `Counters()` compares the graph before and after
+(the openCypher TCK's side effects): a node created and deleted in one statement leaves no trace. `Statistics()` counts
+each change as it happens, the way a Neo4j server reports it: that same node counts as created and as deleted, setting
+a property to the value it already has counts, and removing a property counts as a property set. Use `Statistics()` to
+give clients of a Neo4j-compatible service the numbers Neo4j would.
+
 ### Generic helpers
 
 | Function | Description |
