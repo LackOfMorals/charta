@@ -32,10 +32,18 @@ type Counters struct {
 	PropertiesRemoved    int
 	LabelsAdded          int
 	LabelsRemoved        int
-	IndexesAdded         int
-	IndexesRemoved       int
-	ConstraintsAdded     int
-	ConstraintsRemoved   int
+	// NodeLabelsAdded and NodeLabelsRemoved count label changes on nodes the
+	// way Neo4j's query statistics do: one per node and label, at the moment
+	// the label is added or removed. Unlike LabelsAdded and LabelsRemoved
+	// (which follow the openCypher TCK: a label counts when it first appears
+	// in, or disappears from, the graph) they are not netted out over the
+	// statement and deleting a node does not count.
+	NodeLabelsAdded    int
+	NodeLabelsRemoved  int
+	IndexesAdded       int
+	IndexesRemoved     int
+	ConstraintsAdded   int
+	ConstraintsRemoved int
 }
 
 // graph is the per-statement view of the database. Nodes and relationships are
@@ -727,6 +735,7 @@ func (g *graph) createNode(labels []string, props map[string]any) (*Node, error)
 	g.nodes[id] = n
 	g.createdNodes[n] = true
 	g.counters.NodesCreated++
+	g.counters.NodeLabelsAdded += len(labels)
 	return n, nil
 }
 
@@ -875,6 +884,7 @@ func (g *graph) addLabels(n *Node, labels []string) error {
 		if !n.hasLabel(l) {
 			g.snapNode(n)
 			n.Labels = append(n.Labels, l)
+			g.counters.NodeLabelsAdded++
 			changed = true
 		}
 	}
@@ -894,6 +904,7 @@ func (g *graph) removeLabels(n *Node, labels []string) error {
 			if x == l {
 				g.snapNode(n)
 				n.Labels = append(append([]string{}, n.Labels[:i]...), n.Labels[i+1:]...)
+				g.counters.NodeLabelsRemoved++
 				changed = true
 				break
 			}
