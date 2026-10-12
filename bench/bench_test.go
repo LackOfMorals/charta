@@ -647,3 +647,45 @@ func BenchmarkImportCSVEdges(b *testing.B) {
 		_ = db.Close(ctx)
 	}
 }
+
+// BenchmarkCypherCreate_1000 measures CREATE through the interpreter: 1000
+// nodes with two labels and properties, in one statement and transaction.
+func BenchmarkCypherCreate_1000(b *testing.B) {
+	ctx := context.Background()
+	db, err := charta.Open(":memory:")
+	if err != nil {
+		b.Fatalf("open: %v", err)
+	}
+	b.Cleanup(func() { _ = db.Close(context.Background()) })
+	b.ResetTimer()
+	for range b.N {
+		res, err := db.RunQuery(ctx, `UNWIND range(1, 1000) AS i CREATE (:Person:Admin {name: 'n' + i, age: i % 100})`, nil)
+		if err != nil {
+			b.Fatalf("query: %v", err)
+		}
+		if _, err := res.Collect(ctx); err != nil {
+			b.Fatalf("collect: %v", err)
+		}
+	}
+}
+
+// BenchmarkCypherCreateRels_1000 creates 500 pairs of nodes joined by a
+// relationship, in one statement.
+func BenchmarkCypherCreateRels_1000(b *testing.B) {
+	ctx := context.Background()
+	db, err := charta.Open(":memory:")
+	if err != nil {
+		b.Fatalf("open: %v", err)
+	}
+	b.Cleanup(func() { _ = db.Close(context.Background()) })
+	b.ResetTimer()
+	for range b.N {
+		res, err := db.RunQuery(ctx, `UNWIND range(1, 500) AS i CREATE (:Person {i: i})-[:KNOWS {w: i}]->(:Person {i: -i})`, nil)
+		if err != nil {
+			b.Fatalf("query: %v", err)
+		}
+		if _, err := res.Collect(ctx); err != nil {
+			b.Fatalf("collect: %v", err)
+		}
+	}
+}
