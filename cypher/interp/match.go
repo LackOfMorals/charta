@@ -2,6 +2,7 @@ package interp
 
 import (
 	"github.com/LackOfMorals/charta/cypher/syntax"
+	"sync/atomic"
 )
 
 // matchParts calls emit once for every way of matching all parts against the
@@ -82,12 +83,12 @@ func (ex *exec) matchPart(part *syntax.PatternPart, r row, used map[int64]bool, 
 	}
 	if elems, ok := ex.reversed(part, r); ok {
 		reverseUsed.Add(1)
-		return ex.forEachStart(elems[0].(*syntax.NodePattern), r, func(n *Node, r2 row) error {
+		return ex.forEachStart(elems[0].(*syntax.NodePattern), restOf(elems), r, func(n *Node, r2 row) error {
 			return ex.walk(elems, 1, n, r2, &pathState{nodes: []*Node{n}}, used, finish)
 		})
 	}
 	first := part.Elems[0].(*syntax.NodePattern)
-	return ex.forEachStart(first, r, func(n *Node, r2 row) error {
+	return ex.forEachStart(first, restOf(part.Elems), r, func(n *Node, r2 row) error {
 		return ex.walk(part.Elems, 1, n, r2, &pathState{nodes: []*Node{n}}, used, finish)
 	})
 }
@@ -100,8 +101,37 @@ func firstNode(g *syntax.GroupPattern) syntax.PatternElem {
 	return g.Elems[0]
 }
 
-// forEachStart calls fn for every node that can start the pattern.
-func (ex *exec) forEachStart(np *syntax.NodePattern, r row, fn func(*Node, row) error) error {
+// startChunk is how many candidate start nodes forEachStart filters and
+// prefetches at a time. It bounds the work done ahead of the consumer, so a
+// query that stops early (LIMIT) does not load the adjacency of every node.
+const startChunk = 512
+
+// prefetchDisabled turns off prefetching along a pattern from its start nodes;
+// tests use it to compare both ways on the same data.
+var prefetchDisabled bool
+
+// prefetchUsed counts how often a chunk of start nodes was prefetched (for tests).
+var prefetchUsed atomic.Int64
+
+// maxPrefetchFrontier bounds how many nodes beyond the start nodes are loaded
+// ahead of the walk. Past it the walk falls back to loading lazily, so a
+// query that stops early (LIMIT) on a high fan-out graph does not preload a
+// large part of the database.
+const maxPrefetchFrontier = 4096
+
+// restOf returns the pattern elements after the first node.
+func restOf(elems []syntax.PatternElem) []syntax.PatternElem {
+	if len(elems) > 1 {
+		return elems[1:]
+	}
+	return nil
+}
+
+// forEachStart calls fn for every node that can start the pattern. rest is the
+// remainder of the path pattern (relationship, node, relationship, ...); it
+// lets the adjacency along the pattern be loaded for a chunk of start nodes in
+// a few batched queries instead of one per node.
+func (ex *exec) forEachStart(np *syntax.NodePattern, rest []syntax.PatternElem, r row, fn func(*Node, row) error) error {
 	if np.Var != "" {
 		if v, bound := r[np.Var]; bound {
 			n, ok := v.(*Node)
@@ -119,14 +149,8 @@ func (ex *exec) forEachStart(np *syntax.NodePattern, r row, fn func(*Node, row) 
 	if err != nil {
 		return err
 	}
-	for _, n := range cands {
-		ok, err := ex.nodeMatches(np, n, r)
-		if err != nil {
-			return err
-		}
-		if !ok {
-			continue
-		}
+	// visit binds a matching start node and runs the rest of the pattern.
+	visit := func(n *Node) error {
 		r2 := r
 		if np.Var != "" {
 			r2 = r.with(np.Var, n)
@@ -137,11 +161,44 @@ func (ex *exec) forEachStart(np *syntax.NodePattern, r row, fn func(*Node, row) 
 				return err
 			}
 			if c != true {
-				continue
+				return nil
 			}
 		}
-		if err := fn(n, r2); err != nil {
+		return fn(n, r2)
+	}
+	if len(rest) == 0 || prefetchDisabled {
+		for _, n := range cands {
+			ok, err := ex.nodeMatches(np, n, r)
+			if err != nil {
+				return err
+			}
+			if ok {
+				if err := visit(n); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	}
+	for lo := 0; lo < len(cands); lo += startChunk {
+		matched := make([]*Node, 0, min(startChunk, len(cands)-lo))
+		for _, n := range cands[lo:min(lo+startChunk, len(cands))] {
+			ok, err := ex.nodeMatches(np, n, r)
+			if err != nil {
+				return err
+			}
+			if ok {
+				matched = append(matched, n)
+			}
+		}
+		// Only nodes that will be walked from are prefetched.
+		if err := ex.prefetchChain(rest, matched, r); err != nil {
 			return err
+		}
+		for _, n := range matched {
+			if err := visit(n); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -497,8 +554,8 @@ func (ex *exec) matchShortest(part *syntax.PatternPart, r row, used map[int64]bo
 			max = *rng.Max
 		}
 	}
-	return ex.forEachStart(start, r, func(s *Node, r2 row) error {
-		return ex.forEachStart(end, r2, func(e *Node, r3 row) error {
+	return ex.forEachStart(start, nil, r, func(s *Node, r2 row) error {
+		return ex.forEachStart(end, nil, r2, func(e *Node, r3 row) error {
 			paths, err := ex.shortestPaths(rp, s, e, min, max, all, r3, used)
 			if err != nil {
 				return err
@@ -557,36 +614,97 @@ type predecessor struct {
 }
 
 // prefetchLevel loads, in a few batched queries, the adjacency of a search
-// frontier and then the nodes at the far ends, so expanding the level does not
-// issue one query per node.
-func (ex *exec) prefetchLevel(rp *syntax.RelPattern, frontier []*Node) error {
+// frontier and then the nodes at the far ends of the relationships that match
+// rp, so expanding the level does not issue one query per node. It returns
+// those far nodes (without duplicates). When limit is positive and more far
+// nodes than that would be loaded, only the adjacency is prefetched and the
+// result is nil.
+func (ex *exec) prefetchLevel(rp *syntax.RelPattern, frontier []*Node, r row, limit int) ([]*Node, error) {
 	if len(frontier) < 2 {
-		return nil
+		return nil, nil
 	}
 	ids := make([]int64, len(frontier))
 	for i, n := range frontier {
 		ids[i] = n.ID
 	}
 	var far []int64
+	seen := map[int64]bool{}
 	for _, outgoing := range []bool{true, false} {
 		if (outgoing && rp.Dir == syntax.DirLeft) || (!outgoing && rp.Dir == syntax.DirRight) {
 			continue
 		}
 		if err := ex.g.prefetchAdj(ids, outgoing); err != nil {
-			return err
+			return nil, err
 		}
 		for _, id := range ids {
 			rels, _ := ex.g.loadAdj(id, outgoing)
 			for _, rel := range rels {
+				// Skip relationships the pattern will reject (wrong type or
+				// properties): their far nodes would never be visited. An
+				// error here is left for the walk itself to report.
+				if ok, err := ex.relMatches(rp, rel, r); err != nil || !ok {
+					continue
+				}
+				id := rel.Start
 				if outgoing {
-					far = append(far, rel.End)
-				} else {
-					far = append(far, rel.Start)
+					id = rel.End
+				}
+				if !seen[id] {
+					seen[id] = true
+					far = append(far, id)
 				}
 			}
 		}
 	}
-	return ex.g.prefetchNodes(far)
+	if limit > 0 && len(far) > limit {
+		return nil, nil
+	}
+	if err := ex.g.prefetchNodes(far); err != nil {
+		return nil, err
+	}
+	nodes := make([]*Node, 0, len(far))
+	for _, id := range far {
+		if n, ok := ex.g.nodes[id]; ok && !n.Deleted {
+			nodes = append(nodes, n)
+		}
+	}
+	return nodes, nil
+}
+
+// prefetchChain prefetches along a path pattern from a set of start nodes:
+// for each (relationship, node) pair of rest it loads the adjacency of the
+// current frontier and the far nodes, then continues from the far nodes that
+// satisfy the node pattern. It stops at the first element it cannot follow
+// (a quantified group, a variable-length relationship after its first hop) and
+// when the frontier grows past maxPrefetchFrontier.
+func (ex *exec) prefetchChain(rest []syntax.PatternElem, frontier []*Node, r row) error {
+	for len(rest) >= 2 && len(frontier) > 1 {
+		rp, ok := rest[0].(*syntax.RelPattern)
+		np, ok2 := rest[1].(*syntax.NodePattern)
+		if !ok || !ok2 {
+			return nil
+		}
+		prefetchUsed.Add(1)
+		far, err := ex.prefetchLevel(rp, frontier, r, maxPrefetchFrontier)
+		if err != nil {
+			return err
+		}
+		if rangeOf(rp) != nil {
+			return nil
+		}
+		next := far[:0:0]
+		for _, n := range far {
+			ok, err := ex.nodeMatches(np, n, r)
+			if err != nil {
+				return nil // the walk reports it
+			}
+			if ok {
+				next = append(next, n)
+			}
+		}
+		frontier, rest = next, rest[2:]
+	}
+	return nil
 }
 
 // shortestPathsBFS is a breadth-first search over nodes. Each node is expanded
@@ -601,7 +719,7 @@ func (ex *exec) shortestPathsBFS(rp *syntax.RelPattern, s, e *Node, max int64, a
 	frontier := []*Node{s}
 	for depth := int64(0); len(frontier) > 0 && (max < 0 || depth < max); depth++ {
 		var next []*Node
-		if err := ex.prefetchLevel(rp, frontier); err != nil {
+		if _, err := ex.prefetchLevel(rp, frontier, r, 0); err != nil {
 			return nil, err
 		}
 		for _, node := range frontier {
@@ -712,7 +830,7 @@ func (ex *exec) shortestPathBidirectional(rp *syntax.RelPattern, s, e *Node, max
 			pattern, dist, other, pred, front, depth = back, distB, distF, predB, &frontB, &depthB
 		}
 		var next []*Node
-		if err := ex.prefetchLevel(pattern, *front); err != nil {
+		if _, err := ex.prefetchLevel(pattern, *front, r, 0); err != nil {
 			return nil, err
 		}
 		for _, node := range *front {
