@@ -45,6 +45,27 @@ type Counters struct {
 	IndexesRemoved     int
 	ConstraintsAdded   int
 	ConstraintsRemoved int
+
+	// Events tallies side effects the way Neo4j's query statistics do: as
+	// they happen, not netted out over the statement.
+	Events EventCounters
+}
+
+// EventCounters count each side effect when it happens. Unlike the net
+// counters above (which follow the openCypher TCK and compare the graph
+// before and after the statement) they do not cancel out: a node created and
+// deleted in one statement counts as both, setting a property to the value it
+// already has counts, and removing a property counts as a property set, as in
+// Neo4j.
+type EventCounters struct {
+	NodesCreated         int
+	NodesDeleted         int
+	RelationshipsCreated int
+	RelationshipsDeleted int
+	// PropertiesSet counts every property assignment, including the removal of
+	// an existing property. Deleting a node or relationship does not count its
+	// properties.
+	PropertiesSet int
 }
 
 // graph is the per-statement view of the database. Nodes and relationships are
@@ -930,6 +951,8 @@ func (g *graph) createNode(labels []string, props map[string]any) (*Node, error)
 	g.nodes[id] = n
 	g.createdNodes[n] = true
 	g.counters.NodesCreated++
+	g.counters.Events.NodesCreated++
+	g.counters.Events.PropertiesSet += len(props)
 	g.counters.NodeLabelsAdded += len(labels)
 	return n, nil
 }
@@ -962,6 +985,8 @@ func (g *graph) createRel(typ string, start, end *Node, props map[string]any) (*
 	}
 	g.createdRels[r] = true
 	g.counters.RelationshipsCreated++
+	g.counters.Events.RelationshipsCreated++
+	g.counters.Events.PropertiesSet += len(props)
 	return r, nil
 }
 
@@ -1037,6 +1062,7 @@ func (g *graph) setNodeProp(n *Node, key string, v any) error {
 	if v == nil {
 		if _, had := n.Props[key]; had {
 			g.snapNodeProp(n, key)
+			g.counters.Events.PropertiesSet++
 			delete(n.Props, key)
 			return g.persistNodeProps(n)
 		}
@@ -1046,6 +1072,7 @@ func (g *graph) setNodeProp(n *Node, key string, v any) error {
 		return err
 	}
 	g.snapNodeProp(n, key)
+	g.counters.Events.PropertiesSet++
 	n.Props[key] = v
 	return g.persistNodeProps(n)
 }
@@ -1057,6 +1084,7 @@ func (g *graph) setRelProp(r *Rel, key string, v any) error {
 	if v == nil {
 		if _, had := r.Props[key]; had {
 			g.snapRelProp(r, key)
+			g.counters.Events.PropertiesSet++
 			delete(r.Props, key)
 			return g.persistRelProps(r)
 		}
@@ -1066,6 +1094,7 @@ func (g *graph) setRelProp(r *Rel, key string, v any) error {
 		return err
 	}
 	g.snapRelProp(r, key)
+	g.counters.Events.PropertiesSet++
 	r.Props[key] = v
 	return g.persistRelProps(r)
 }
@@ -1309,6 +1338,7 @@ func (g *graph) finish() error {
 		if _, err := g.db.ExecContext(g.ctx, `DELETE FROM edges WHERE id = ?`, r.ID); err != nil {
 			return err
 		}
+		g.counters.Events.RelationshipsDeleted++
 		if g.createdRels[r] {
 			g.counters.RelationshipsCreated-- // created and deleted within the statement
 		} else {
@@ -1319,6 +1349,7 @@ func (g *graph) finish() error {
 		if _, err := g.db.ExecContext(g.ctx, `DELETE FROM nodes WHERE id = ?`, n.ID); err != nil {
 			return err
 		}
+		g.counters.Events.NodesDeleted++
 		if g.createdNodes[n] {
 			g.counters.NodesCreated--
 		} else {

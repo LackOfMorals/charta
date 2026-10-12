@@ -565,3 +565,60 @@ func TestNodeLabelCountersPublicAPI(t *testing.T) {
 		t.Errorf("remove: NodeLabelsRemoved=%d LabelsRemoved=%d ContainsUpdates=%v", c.NodeLabelsRemoved(), c.LabelsRemoved(), c.ContainsUpdates())
 	}
 }
+
+// Statistics reports side effects the way Neo4j does, alongside the net
+// Counters.
+func TestResultSummaryStatistics(t *testing.T) {
+	ctx := context.Background()
+	db, err := charta.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close(ctx)
+
+	summary := func(q string) charta.ResultSummary {
+		t.Helper()
+		res, err := db.RunQuery(ctx, q, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		sum, err := res.Consume(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return sum
+	}
+
+	// Created and deleted in one statement: Counters nets it out, Statistics
+	// counts both, as Neo4j does.
+	s := summary("CREATE (n:A {a: 1, b: 2}) DELETE n")
+	if c := s.Counters(); c.NodesCreated() != 0 || c.NodesDeleted() != 0 || c.PropertiesSet() != 0 {
+		t.Errorf("Counters: created %d deleted %d properties %d, want a net of nothing",
+			c.NodesCreated(), c.NodesDeleted(), c.PropertiesSet())
+	}
+	st := s.Statistics()
+	if st.NodesCreated != 1 || st.NodesDeleted != 1 || st.PropertiesSet != 2 || st.LabelsAdded != 1 || !st.ContainsUpdates() {
+		t.Errorf("Statistics = %+v, want 1 node created and deleted, 2 properties, 1 label", st)
+	}
+
+	summary("CREATE (:A {a: 1})")
+	// Removing a property is a property set in Neo4j's statistics; the net
+	// counters call it a removal.
+	s = summary("MATCH (n:A) REMOVE n.a")
+	if got := s.Statistics().PropertiesSet; got != 1 {
+		t.Errorf("Statistics.PropertiesSet after REMOVE = %d, want 1", got)
+	}
+	if c := s.Counters(); c.PropertiesSet() != 0 || c.PropertiesRemoved() != 1 {
+		t.Errorf("Counters after REMOVE: set %d removed %d, want 0 and 1", c.PropertiesSet(), c.PropertiesRemoved())
+	}
+
+	// A read changes nothing.
+	if s := summary("MATCH (n:A) RETURN n"); s.Statistics().ContainsUpdates() {
+		t.Errorf("a read reported updates: %+v", s.Statistics())
+	}
+
+	// Schema changes are counted too.
+	if st := summary("CREATE INDEX FOR (n:A) ON (n.a)").Statistics(); st.IndexesAdded != 1 || !st.ContainsUpdates() {
+		t.Errorf("CREATE INDEX statistics = %+v", st)
+	}
+}

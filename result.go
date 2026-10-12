@@ -151,6 +151,7 @@ type queryCounters struct {
 	labelsRemoved        int
 	nodeLabelsAdded      int
 	nodeLabelsRemoved    int
+	events               Statistics // Neo4j-style event counts
 	indexesAdded         int
 	indexesRemoved       int
 	constraintsAdded     int
@@ -160,7 +161,50 @@ type queryCounters struct {
 // ResultSummary reports execution statistics and metadata for a completed query.
 type ResultSummary interface {
 	// Counters returns statistics about graph mutations performed by the query.
+	// They compare the graph before and after the statement (the openCypher
+	// TCK's side effects), so a node created and deleted in one statement
+	// leaves no trace.
 	Counters() Counters
+	// Statistics returns the same mutations counted the way a Neo4j server
+	// reports them: each one as it happens. Use it to give clients of a
+	// Neo4j-compatible service the numbers Neo4j would.
+	Statistics() Statistics
+}
+
+// Statistics counts a statement's side effects as Neo4j's query statistics do:
+// one count per change, at the moment it happens, not netted over the
+// statement. The differences from Counters:
+//
+//   - a node or relationship created and deleted in the same statement counts
+//     as both;
+//   - PropertiesSet counts every assignment, including setting a property to
+//     the value it already has and removing an existing property;
+//   - LabelsAdded and LabelsRemoved count one per node and label (the same
+//     numbers as Counters.NodeLabelsAdded and NodeLabelsRemoved);
+//   - deleting a node or relationship counts neither its properties nor its
+//     labels.
+type Statistics struct {
+	NodesCreated         int
+	NodesDeleted         int
+	RelationshipsCreated int
+	RelationshipsDeleted int
+	PropertiesSet        int
+	LabelsAdded          int
+	LabelsRemoved        int
+	IndexesAdded         int
+	IndexesRemoved       int
+	ConstraintsAdded     int
+	ConstraintsRemoved   int
+}
+
+// ContainsUpdates reports whether the statement changed anything: the
+// Neo4j containsUpdates flag.
+func (s Statistics) ContainsUpdates() bool {
+	return s.NodesCreated > 0 || s.NodesDeleted > 0 ||
+		s.RelationshipsCreated > 0 || s.RelationshipsDeleted > 0 ||
+		s.PropertiesSet > 0 || s.LabelsAdded > 0 || s.LabelsRemoved > 0 ||
+		s.IndexesAdded > 0 || s.IndexesRemoved > 0 ||
+		s.ConstraintsAdded > 0 || s.ConstraintsRemoved > 0
 }
 
 // Counters reports the number of graph mutations performed by a query.
@@ -210,6 +254,11 @@ type resultSummary struct {
 // Counters implements ResultSummary.
 func (s *resultSummary) Counters() Counters {
 	return &counters{c: s.counters}
+}
+
+// Statistics implements ResultSummary.
+func (s *resultSummary) Statistics() Statistics {
+	return s.counters.events
 }
 
 // counters is the concrete implementation of Counters.

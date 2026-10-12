@@ -163,10 +163,23 @@ func interpResult(res *interp.Result) *Result {
 		labelsRemoved:        c.LabelsRemoved,
 		nodeLabelsAdded:      c.NodeLabelsAdded,
 		nodeLabelsRemoved:    c.NodeLabelsRemoved,
-		indexesAdded:         c.IndexesAdded,
-		indexesRemoved:       c.IndexesRemoved,
-		constraintsAdded:     c.ConstraintsAdded,
-		constraintsRemoved:   c.ConstraintsRemoved,
+		events: Statistics{
+			NodesCreated:         c.Events.NodesCreated,
+			NodesDeleted:         c.Events.NodesDeleted,
+			RelationshipsCreated: c.Events.RelationshipsCreated,
+			RelationshipsDeleted: c.Events.RelationshipsDeleted,
+			PropertiesSet:        c.Events.PropertiesSet,
+			LabelsAdded:          c.NodeLabelsAdded,
+			LabelsRemoved:        c.NodeLabelsRemoved,
+			IndexesAdded:         c.IndexesAdded,
+			IndexesRemoved:       c.IndexesRemoved,
+			ConstraintsAdded:     c.ConstraintsAdded,
+			ConstraintsRemoved:   c.ConstraintsRemoved,
+		},
+		indexesAdded:       c.IndexesAdded,
+		indexesRemoved:     c.IndexesRemoved,
+		constraintsAdded:   c.ConstraintsAdded,
+		constraintsRemoved: c.ConstraintsRemoved,
 	})
 	return out
 }
