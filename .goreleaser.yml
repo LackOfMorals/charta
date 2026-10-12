@@ -7,21 +7,17 @@ before:
     - go mod tidy
     - go mod verify
 
-# charta is a Go library — there are no compiled binaries to release.
-# The release produces source archives and SHA256 checksums only.
+# charta is a Go library: there are no binaries to build or archive. The
+# release attaches a source archive (every tracked file at the tag, made with
+# git archive) and SHA256 checksums.
 builds:
   - skip: true
 
-archives:
-  - format: tar.gz
-    name_template: "{{ .ProjectName }}_{{ .Version }}_source"
-    files:
-      - src: "**/*.go"
-      - src: "go.mod"
-      - src: "go.sum"
-      - src: "README.md"
-      - src: "LICENSE"
-      - src: "CONTRIBUTING.md"
+source:
+  enabled: true
+  name_template: "{{ .ProjectName }}_{{ .Version }}_source"
+  prefix_template: "{{ .ProjectName }}_{{ .Version }}/"
+  format: tar.gz
 
 checksum:
   name_template: "checksums.txt"
