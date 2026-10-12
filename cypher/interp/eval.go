@@ -309,14 +309,14 @@ func (ex *exec) slice(e *syntax.Slice, r row) (any, error) {
 	n := int64(len(list))
 	lo, hi := int64(0), n
 	if e.From != nil {
-		i, ok := from.(int64)
+		i, ok := sliceBound(from)
 		if !ok {
 			return nil, typeErr("slice bounds must be integers")
 		}
 		lo = i
 	}
 	if e.To != nil {
-		i, ok := to.(int64)
+		i, ok := sliceBound(to)
 		if !ok {
 			return nil, typeErr("slice bounds must be integers")
 		}
@@ -333,6 +333,21 @@ func (ex *exec) slice(e *syntax.Slice, r row) (any, error) {
 		return []any{}, nil
 	}
 	return append([]any{}, list[lo:hi]...), nil
+}
+
+// sliceBound is a slice bound as an integer. A whole-valued float is accepted:
+// HTTP clients that cannot tell an integer from a float (Neo4j Bloom through
+// Neo4j Desktop sends its item limit as a Float) pass such values as parameters.
+func sliceBound(v any) (int64, bool) {
+	switch x := v.(type) {
+	case int64:
+		return x, true
+	case float64:
+		if x == math.Trunc(x) && math.Abs(x) < 1<<53 {
+			return int64(x), true
+		}
+	}
+	return 0, false
 }
 
 func clamp(v, lo, hi int64) int64 {
