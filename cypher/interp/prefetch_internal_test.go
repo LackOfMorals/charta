@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"math/rand"
 	"strings"
 	"testing"
 
@@ -62,6 +63,37 @@ func runWithPrefetch(t *testing.T, on bool, db *store.SQLiteStore, q string, par
 	return runCounted(t, db, q, params)
 }
 
+// randomGraphBatched builds the same kind of graph as randomGraph (nodes :N {i},
+// relationships of two types R and S, with parallel edges and self-loops) but
+// creates each type's relationships in one statement, picking the ends out of
+// the list of nodes by position. randomGraph runs an unindexed MATCH per
+// relationship, which is slow for graphs of a few hundred nodes (and 15-20 times
+// slower under the race detector).
+func randomGraphBatched(t *testing.T, seed int64, nodes, rels int) *store.SQLiteStore {
+	t.Helper()
+	db, err := store.Open(":memory:", store.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { db.Close() })
+	r := rand.New(rand.NewSource(seed))
+	runInternal(t, db, fmt.Sprintf("UNWIND range(1, %d) AS i CREATE (:N {i: i})", nodes), nil)
+	pairs := map[string][]string{}
+	for k := 0; k < rels; k++ {
+		typ := []string{"R", "S"}[r.Intn(2)]
+		pairs[typ] = append(pairs[typ], fmt.Sprintf("[%d, %d]", r.Intn(nodes), r.Intn(nodes)))
+	}
+	for _, typ := range []string{"R", "S"} {
+		if len(pairs[typ]) == 0 {
+			continue
+		}
+		runInternal(t, db, fmt.Sprintf(
+			"MATCH (n:N) WITH n ORDER BY n.i WITH collect(n) AS ns UNWIND [%s] AS p WITH ns[p[0]] AS a, ns[p[1]] AS b CREATE (a)-[:%s]->(b)",
+			strings.Join(pairs[typ], ","), typ), nil)
+	}
+	return db
+}
+
 // Prefetching the adjacency of start nodes must not change any result. The
 // graph is larger than startChunk, so chunk boundaries are crossed.
 func TestStartPrefetchAgrees(t *testing.T) {
@@ -87,7 +119,7 @@ func TestStartPrefetchAgrees(t *testing.T) {
 	}
 	before := prefetchUsed.Load()
 	for _, size := range []struct{ nodes, rels int }{{40, 90}, {700, 1500}} {
-		db := randomGraph(t, int64(size.nodes), size.nodes, size.rels)
+		db := randomGraphBatched(t, int64(size.nodes), size.nodes, size.rels)
 		for _, q := range queries {
 			got, _ := runWithPrefetch(t, true, db, q, nil)
 			want, _ := runWithPrefetch(t, false, db, q, nil)
@@ -134,11 +166,10 @@ func TestStartPrefetchWithWrites(t *testing.T) {
 }
 
 // A traversal over many start nodes costs a handful of statements, not one per
-// node, and a selective start is not made worse. (The engine evaluates a MATCH
-// fully before applying LIMIT, so prefetching never loads more than the lazy
-// walk would have.)
+// node, and a selective start is not made worse. (A query that stops early, a
+// LIMIT, now stops the matcher feeding it: see TestStreamLimitStopsTheMatcher.)
 func TestStartPrefetchRoundTrips(t *testing.T) {
-	db := randomGraph(t, 11, 700, 1500)
+	db := randomGraphBatched(t, 11, 700, 1500)
 
 	cases := []struct {
 		name, q  string
@@ -150,7 +181,6 @@ func TestStartPrefetchRoundTrips(t *testing.T) {
 		{"one hop over all nodes", "MATCH (a:N)-[:R]->(b:N) RETURN a.i AS a, b.i AS b", 30, 600},
 		{"two hops over all nodes", "MATCH (a:N)-[:R]->(b:N)-[:S]->(c:N) RETURN a.i AS a, c.i AS c", 40, 600},
 		{"variable length", "MATCH (a:N)-[:R*1..3]->(b:N) RETURN a.i AS a, b.i AS b", 200, 600},
-		{"limit 1", "MATCH (a:N)-[:R]->(b:N) RETURN b.i AS b LIMIT 1", 12, 600},
 		// One matching start node: nothing else is prefetched.
 		{"selective start", "MATCH (a:N {i: 5})-[:R]->(b:N) RETURN b.i AS b", 8, 0},
 	}

@@ -2,6 +2,7 @@ package interp
 
 import (
 	"github.com/LackOfMorals/charta/cypher/syntax"
+	"math"
 	"sync/atomic"
 )
 
@@ -145,10 +146,6 @@ func (ex *exec) forEachStart(np *syntax.NodePattern, rest []syntax.PatternElem, 
 			return fn(n, r)
 		}
 	}
-	cands, err := ex.g.scanNodes(scanLabel(np.Labels), ex.scanHints(np, r))
-	if err != nil {
-		return err
-	}
 	// visit binds a matching start node and runs the rest of the pattern.
 	visit := func(n *Node) error {
 		r2 := r
@@ -166,23 +163,9 @@ func (ex *exec) forEachStart(np *syntax.NodePattern, rest []syntax.PatternElem, 
 		}
 		return fn(n, r2)
 	}
-	if len(rest) == 0 || prefetchDisabled {
+	return ex.eachStartChunk(scanLabel(np.Labels), ex.scanHints(np, r), func(cands []*Node) error {
+		matched := make([]*Node, 0, len(cands))
 		for _, n := range cands {
-			ok, err := ex.nodeMatches(np, n, r)
-			if err != nil {
-				return err
-			}
-			if ok {
-				if err := visit(n); err != nil {
-					return err
-				}
-			}
-		}
-		return nil
-	}
-	for lo := 0; lo < len(cands); lo += startChunk {
-		matched := make([]*Node, 0, min(startChunk, len(cands)-lo))
-		for _, n := range cands[lo:min(lo+startChunk, len(cands))] {
 			ok, err := ex.nodeMatches(np, n, r)
 			if err != nil {
 				return err
@@ -192,13 +175,70 @@ func (ex *exec) forEachStart(np *syntax.NodePattern, rest []syntax.PatternElem, 
 			}
 		}
 		// Only nodes that will be walked from are prefetched.
-		if err := ex.prefetchChain(rest, matched, r); err != nil {
-			return err
+		if len(rest) > 0 && !prefetchDisabled {
+			if err := ex.prefetchChain(rest, matched, r); err != nil {
+				return err
+			}
 		}
 		for _, n := range matched {
 			if err := visit(n); err != nil {
 				return err
 			}
+		}
+		return nil
+	})
+}
+
+// scanPageSize is the most nodes a streaming scan reads per statement. The first
+// page is one chunk, so a query that stops early reads little; later pages are
+// larger, so a long scan does not pay for a statement every startChunk rows.
+const scanPageSize = 4 * startChunk
+
+// eachStartChunk calls fn with the candidate start nodes in chunks of
+// startChunk, in id order. Inside a streaming pipeline a scan that only
+// narrows by label or property equalities is read a page at a time, so a query
+// that stops early (a LIMIT) reads the first page, not everything that
+// matches. A page resumes after the last id of the one before, so the scan as a
+// whole is a single pass. (Nothing writes while a pipeline runs, so pages see a stable graph.)
+// When the statement only reads, the caches are trimmed between pages so a long
+// scan does not keep every node it has visited.
+func (ex *exec) eachStartChunk(label string, hints []propHint, fn func([]*Node) error) error {
+	g := ex.g
+	if ex.streaming > 0 {
+		for _, h := range hints {
+			g.eng.noteScan(g.ctx, g.db, h.key, g.readOnly)
+		}
+		ex.scanDepth++
+		defer func() { ex.scanDepth-- }()
+		after := int64(math.MinInt64)
+		size := startChunk
+		for {
+			if ex.scanDepth == 1 { // the outermost scan; inner ones run inside its chunk
+				g.trimCaches()
+			}
+			page, last, raw, err := g.scanPage(label, hints, after, size)
+			if err != nil {
+				return err
+			}
+			for lo := 0; lo < len(page); lo += startChunk {
+				if err := fn(page[lo:min(lo+startChunk, len(page))]); err != nil {
+					return err
+				}
+			}
+			if raw < size {
+				return nil
+			}
+			after = last
+			size = scanPageSize
+		}
+	}
+	cands, err := g.scanNodes(label, hints)
+	if err != nil {
+		return err
+	}
+	for lo := 0; lo < len(cands); lo += startChunk {
+		if err := fn(cands[lo:min(lo+startChunk, len(cands))]); err != nil {
+			return err
 		}
 	}
 	return nil

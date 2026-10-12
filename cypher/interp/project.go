@@ -210,6 +210,18 @@ func (ex *exec) projection(p *syntax.Projection, where syntax.Expr, st *qstate, 
 // finishProjection applies DISTINCT, ORDER BY, SKIP/LIMIT and the WITH's WHERE to
 // the projected rows and installs them as the query state.
 func (ex *exec) finishProjection(p *syntax.Projection, where syntax.Expr, st *qstate, names []string, aggregating bool, out, origs []row, substs []map[string]any) error {
+	out, err := ex.finishProjectionRows(p, where, names, aggregating, out, origs, substs)
+	if err != nil {
+		return err
+	}
+	st.rows = out
+	st.vars = names
+	return nil
+}
+
+// finishProjectionRows applies DISTINCT, ORDER BY, SKIP/LIMIT and the WITH's
+// WHERE to projected rows and returns the result.
+func (ex *exec) finishProjectionRows(p *syntax.Projection, where syntax.Expr, names []string, aggregating bool, out, origs []row, substs []map[string]any) ([]row, error) {
 	if p.Distinct {
 		seen := map[string]bool{}
 		var o2, g2 []row
@@ -231,7 +243,7 @@ func (ex *exec) finishProjection(p *syntax.Projection, where syntax.Expr, st *qs
 
 	if len(p.Order) > 0 {
 		if err := ex.sortRows(p, out, origs, substs, aggregating, p.Distinct); err != nil {
-			return err
+			return nil, err
 		}
 	}
 	// sortRows permutes out/origs together via an index permutation stored in
@@ -240,11 +252,11 @@ func (ex *exec) finishProjection(p *syntax.Projection, where syntax.Expr, st *qs
 	if p.Skip != nil || p.Limit != nil {
 		skip, err := ex.nonNegInt(p.Skip, "SKIP")
 		if err != nil {
-			return err
+			return nil, err
 		}
 		limit, err := ex.nonNegInt(p.Limit, "LIMIT")
 		if err != nil {
-			return err
+			return nil, err
 		}
 		if skip > 0 {
 			if skip >= int64(len(out)) {
@@ -270,7 +282,7 @@ func (ex *exec) finishProjection(p *syntax.Projection, where syntax.Expr, st *qs
 			}
 			c, err := ex.eval(where, scopeRow)
 			if err != nil {
-				return err
+				return nil, err
 			}
 			if c == true {
 				o2 = append(o2, r)
@@ -279,9 +291,7 @@ func (ex *exec) finishProjection(p *syntax.Projection, where syntax.Expr, st *qs
 		out = o2
 	}
 
-	st.rows = out
-	st.vars = names
-	return nil
+	return out, nil
 }
 
 // nonNegInt evaluates a SKIP/LIMIT expression; nil gives -1 (absent).

@@ -61,6 +61,7 @@ func run(ctx context.Context, db DB, st *syntax.Statement, params map[string]any
 	g := newGraph(ctx, db)
 	g.readOnly = opts.ReadOnly
 	g.vectorCache = opts.VectorCache
+	g.evictable = opts.ReadOnly || readOnlyBody(st.Body)
 	g.eng = eng
 	ex := &exec{g: g, params: params, clock: time.Now()}
 	if eng != nil {
@@ -205,6 +206,14 @@ func (ex *exec) runQuery(q *syntax.SingleQuery, in []row, scopeVars []string) ([
 				i++
 				continue
 			}
+		}
+		if rest := q.Clauses[i:]; !streamDisabled && streamable(rest) {
+			// The rest of the query only reads: run it as a pipeline.
+			cols, err := ex.runStream(rest, st, cols)
+			if err != nil {
+				return nil, nil, err
+			}
+			return cols, st.rows, nil
 		}
 		var err error
 		cols, err = ex.clause(cl, st, cols)
