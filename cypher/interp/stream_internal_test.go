@@ -100,14 +100,15 @@ func richGraph(t *testing.T, seed int64, nodes, rels int) *store.SQLiteStore {
 	runInternal(t, db, `MATCH (n:N) WHERE n.i % 11 = 0 REMOVE n.f`, nil)
 	runInternal(t, db, `MATCH (n:N) WHERE n.i % 13 = 0 REMOVE n.s`, nil)
 	r := rand.New(rand.NewSource(seed))
-	// Relationships in batches, so a large graph builds quickly.
-	const batch = 200
-	for lo := 0; lo < rels; lo += batch {
-		var pairs []string
-		for k := 0; k < batch && lo+k < rels; k++ {
-			pairs = append(pairs, fmt.Sprintf("[%d, %d, '%s', %d]", r.Intn(nodes)+1, r.Intn(nodes)+1, []string{"R", "S"}[r.Intn(2)], r.Intn(5)))
-		}
-		runInternal(t, db, fmt.Sprintf(`UNWIND [%s] AS p MATCH (a:N {i: p[0]}), (b:N {i: p[1]}) CREATE (a)-[:R2 {t: p[2], w: p[3]}]->(b)`, strings.Join(pairs, ",")), nil)
+	// All the relationships in one statement, picking the ends out of the list
+	// of nodes by position (node i is at index i-1), so building the graph is one
+	// scan, not one scan per relationship.
+	pairs := make([]string, rels)
+	for k := range pairs {
+		pairs[k] = fmt.Sprintf("[%d, %d, '%s', %d]", r.Intn(nodes), r.Intn(nodes), []string{"R", "S"}[r.Intn(2)], r.Intn(5))
+	}
+	if rels > 0 {
+		runInternal(t, db, fmt.Sprintf(`MATCH (n:N) WITH n ORDER BY n.i WITH collect(n) AS ns UNWIND [%s] AS p WITH ns[p[0]] AS a, ns[p[1]] AS b, p CREATE (a)-[:R2 {t: p[2], w: p[3]}]->(b)`, strings.Join(pairs, ",")), nil)
 	}
 	return db
 }
@@ -262,13 +263,22 @@ var streamQueries = []string{
 	"MATCH (n:N) WHERE n.i < 4 FOREACH (x IN [1] | SET n.tmp = x) RETURN count(n) AS c",
 }
 
+// bigNodes is the size of the graph the differential tests run on: more than
+// one chunk of start nodes (startChunk), so chunk boundaries are crossed.
+func bigNodes() int {
+	if raceEnabled {
+		return startChunk + 110
+	}
+	return 1300
+}
+
 // Streaming must give exactly the rows, in the order, and the errors the
 // clause-at-a-time executor gives.
 func TestStreamAgreesWithClauseAtATime(t *testing.T) {
 	for _, size := range []struct {
 		name        string
 		nodes, rels int
-	}{{"small", 70, 160}, {"across chunk boundaries", 1300, 1800}} {
+	}{{"small", 70, 160}, {"across chunk boundaries", bigNodes(), bigNodes() * 3 / 2}} {
 		t.Run(size.name, func(t *testing.T) {
 			db := richGraph(t, 7, size.nodes, size.rels)
 			before := streamUsed.Load()
@@ -298,7 +308,7 @@ func TestStreamWithConstantCacheTrimming(t *testing.T) {
 	old := cacheLimit
 	cacheLimit = 1
 	t.Cleanup(func() { cacheLimit = old })
-	db := richGraph(t, 11, 1300, 1800)
+	db := richGraph(t, 11, bigNodes(), bigNodes()*3/2)
 	for _, q := range streamQueries {
 		streamDisabled = false
 		got, gerr := runOrdered(t, db, q, nil)
