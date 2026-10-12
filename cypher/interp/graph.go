@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -52,9 +52,95 @@ type Counters struct {
 // whose relationships are deleted later in the same statement can still be
 // deleted).
 // entSnap is an existing entity's state before the statement changed it.
+// Properties are journalled key by key, so setting one property on each of
+// many nodes records one small entry per node, not a copy of all its
+// properties. Labels are copied only when a label actually changes.
 type entSnap struct {
-	props  map[string]any
-	labels []string
+	changed []propOld      // first state of every property the statement touched
+	index   map[string]int // key -> position in changed; built only for large journals
+	// labels are the node's labels before its first label change; valid only
+	// when labelsSnapped (otherwise the labels are unchanged).
+	labels        []string
+	labelsSnapped bool
+}
+
+// propOld is one property's state before the statement first changed it.
+type propOld struct {
+	key string
+	val any
+	had bool
+}
+
+// journalIndexAt is the journal length at which lookups switch from a linear
+// scan to a map.
+const journalIndexAt = 16
+
+// note records key's state before its first change; later changes to the same
+// key are ignored.
+func (s *entSnap) note(key string, val any, had bool) {
+	if s.index != nil {
+		if _, ok := s.index[key]; ok {
+			return
+		}
+		s.index[key] = len(s.changed)
+	} else {
+		for i := range s.changed {
+			if s.changed[i].key == key {
+				return
+			}
+		}
+		if len(s.changed) >= journalIndexAt {
+			s.index = make(map[string]int, 2*len(s.changed))
+			for i, o := range s.changed {
+				s.index[o.key] = i
+			}
+			s.index[key] = len(s.changed)
+		}
+	}
+	s.changed = append(s.changed, propOld{key, val, had})
+}
+
+// diff counts the properties added and removed between the snapshot and the
+// entity's current properties; a changed value counts as one of each.
+func (s *entSnap) diff(after map[string]any) (added, removed int) {
+	for _, o := range s.changed {
+		av, has := after[o.key]
+		switch {
+		case !o.had && has:
+			added++
+		case o.had && !has:
+			removed++
+		case o.had && has && groupKey(o.val) != groupKey(av):
+			added++
+			removed++
+		}
+	}
+	return
+}
+
+// origPropCount is how many properties the entity had before the statement,
+// given its current properties.
+func (s *entSnap) origPropCount(cur map[string]any) int {
+	n := len(cur)
+	for _, o := range s.changed {
+		_, has := cur[o.key]
+		switch {
+		case o.had && !has:
+			n++
+		case !o.had && has:
+			n--
+		}
+	}
+	return n
+}
+
+// origLabels returns the node's labels before the statement, given its
+// current ones.
+func (s *entSnap) origLabels(cur []string) []string {
+	if s.labelsSnapped {
+		return s.labels
+	}
+	return cur
 }
 
 type graph struct {
@@ -76,8 +162,8 @@ type graph struct {
 	// difference from a snapshot taken before their first change.
 	createdNodes map[*Node]bool
 	createdRels  map[*Rel]bool
-	nodeSnap     map[*Node]entSnap
-	relSnap      map[*Rel]entSnap
+	nodeSnap     map[*Node]*entSnap
+	relSnap      map[*Rel]*entSnap
 
 	counters Counters
 
@@ -101,7 +187,7 @@ func newGraph(ctx context.Context, db DB) *graph {
 		out: map[int64][]*Rel{}, in: map[int64][]*Rel{},
 		detach:       map[int64]bool{},
 		createdNodes: map[*Node]bool{}, createdRels: map[*Rel]bool{},
-		nodeSnap: map[*Node]entSnap{}, relSnap: map[*Rel]entSnap{},
+		nodeSnap: map[*Node]*entSnap{}, relSnap: map[*Rel]*entSnap{},
 	}
 }
 
@@ -139,18 +225,19 @@ func checkPropValue(key string, v any) error {
 
 func encodeProps(props map[string]any) (string, error) {
 	var sb strings.Builder
+	sb.Grow(2 + 24*len(props))
 	sb.WriteByte('{')
-	keys := make([]string, 0, len(props))
+	var small [16]string
+	keys := small[:0]
 	for k := range props {
 		keys = append(keys, k)
 	}
-	sort.Strings(keys)
+	slices.Sort(keys)
 	for i, k := range keys {
 		if i > 0 {
 			sb.WriteByte(',')
 		}
-		kb, _ := json.Marshal(k)
-		sb.Write(kb)
+		writeJSONString(&sb, k)
 		sb.WriteByte(':')
 		if err := encodeValue(&sb, props[k]); err != nil {
 			return "", err
@@ -158,6 +245,24 @@ func encodeProps(props map[string]any) (string, error) {
 	}
 	sb.WriteByte('}')
 	return sb.String(), nil
+}
+
+// writeJSONString writes s as a JSON string, byte for byte what json.Marshal
+// produces. Plain printable ASCII needs no escaping and is written directly;
+// anything else (quotes, backslashes, control characters, <, >, &, non-ASCII)
+// goes through json.Marshal, which also handles HTML escaping, U+2028/2029 and
+// invalid UTF-8.
+func writeJSONString(sb *strings.Builder, s string) {
+	for i := 0; i < len(s); i++ {
+		if c := s[i]; c < 0x20 || c >= 0x80 || c == '"' || c == '\\' || c == '<' || c == '>' || c == '&' {
+			b, _ := json.Marshal(s)
+			sb.Write(b)
+			return
+		}
+	}
+	sb.WriteByte('"')
+	sb.WriteString(s)
+	sb.WriteByte('"')
 }
 
 // encodeValue writes v as JSON, keeping floats distinguishable from integers
@@ -180,8 +285,7 @@ func encodeValue(sb *strings.Builder, v any) error {
 		}
 		sb.WriteString(s)
 	case string:
-		b, _ := json.Marshal(x)
-		sb.Write(b)
+		writeJSONString(sb, x)
 	case []any:
 		sb.WriteByte('[')
 		for i, e := range x {
@@ -841,7 +945,7 @@ func (g *graph) setNodeProp(n *Node, key string, v any) error {
 	}
 	if v == nil {
 		if _, had := n.Props[key]; had {
-			g.snapNode(n)
+			g.snapNodeProp(n, key)
 			delete(n.Props, key)
 			return g.persistNodeProps(n)
 		}
@@ -850,7 +954,7 @@ func (g *graph) setNodeProp(n *Node, key string, v any) error {
 	if err := checkPropValue(key, v); err != nil {
 		return err
 	}
-	g.snapNode(n)
+	g.snapNodeProp(n, key)
 	n.Props[key] = v
 	return g.persistNodeProps(n)
 }
@@ -861,7 +965,7 @@ func (g *graph) setRelProp(r *Rel, key string, v any) error {
 	}
 	if v == nil {
 		if _, had := r.Props[key]; had {
-			g.snapRel(r)
+			g.snapRelProp(r, key)
 			delete(r.Props, key)
 			return g.persistRelProps(r)
 		}
@@ -870,7 +974,7 @@ func (g *graph) setRelProp(r *Rel, key string, v any) error {
 	if err := checkPropValue(key, v); err != nil {
 		return err
 	}
-	g.snapRel(r)
+	g.snapRelProp(r, key)
 	r.Props[key] = v
 	return g.persistRelProps(r)
 }
@@ -882,7 +986,7 @@ func (g *graph) addLabels(n *Node, labels []string) error {
 	changed := false
 	for _, l := range labels {
 		if !n.hasLabel(l) {
-			g.snapNode(n)
+			g.snapNodeLabels(n)
 			n.Labels = append(n.Labels, l)
 			g.counters.NodeLabelsAdded++
 			changed = true
@@ -902,7 +1006,7 @@ func (g *graph) removeLabels(n *Node, labels []string) error {
 	for _, l := range labels {
 		for i, x := range n.Labels {
 			if x == l {
-				g.snapNode(n)
+				g.snapNodeLabels(n)
 				n.Labels = append(append([]string{}, n.Labels[:i]...), n.Labels[i+1:]...)
 				g.counters.NodeLabelsRemoved++
 				changed = true
@@ -916,43 +1020,49 @@ func (g *graph) removeLabels(n *Node, labels []string) error {
 	return nil
 }
 
-func (g *graph) snapNode(n *Node) {
+// snapNodeProp records a property's state before the statement first changes
+// it. Nodes the statement created have no earlier state.
+func (g *graph) snapNodeProp(n *Node, key string) {
 	if g.createdNodes[n] {
 		return
 	}
-	if _, ok := g.nodeSnap[n]; !ok {
-		g.nodeSnap[n] = entSnap{props: copyMap(n.Props), labels: append([]string(nil), n.Labels...)}
+	s := g.nodeSnap[n]
+	if s == nil {
+		s = &entSnap{}
+		g.nodeSnap[n] = s
+	}
+	v, had := n.Props[key]
+	s.note(key, v, had)
+}
+
+// snapNodeLabels records the node's labels before its first label change.
+func (g *graph) snapNodeLabels(n *Node) {
+	if g.createdNodes[n] {
+		return
+	}
+	s := g.nodeSnap[n]
+	if s == nil {
+		s = &entSnap{}
+		g.nodeSnap[n] = s
+	}
+	if !s.labelsSnapped {
+		s.labels = append([]string(nil), n.Labels...)
+		s.labelsSnapped = true
 	}
 }
 
-func (g *graph) snapRel(r *Rel) {
+// snapRelProp is snapNodeProp for a relationship.
+func (g *graph) snapRelProp(r *Rel, key string) {
 	if g.createdRels[r] {
 		return
 	}
-	if _, ok := g.relSnap[r]; !ok {
-		g.relSnap[r] = entSnap{props: copyMap(r.Props)}
+	s := g.relSnap[r]
+	if s == nil {
+		s = &entSnap{}
+		g.relSnap[r] = s
 	}
-}
-
-// diffProps counts the properties added and removed between two states; a
-// changed value counts as one of each.
-func diffProps(before, after map[string]any) (added, removed int) {
-	for k, av := range after {
-		bv, had := before[k]
-		switch {
-		case !had:
-			added++
-		case groupKey(bv) != groupKey(av):
-			added++
-			removed++
-		}
-	}
-	for k := range before {
-		if _, still := after[k]; !still {
-			removed++
-		}
-	}
-	return
+	v, had := r.Props[key]
+	s.note(key, v, had)
 }
 
 // netCounters fills in the property and label counters from the final state.
@@ -979,15 +1089,16 @@ func (g *graph) netCounters() error {
 		if n.Deleted {
 			continue
 		}
-		a, r := diffProps(s.props, n.Props)
+		a, r := s.diff(n.Props)
 		g.counters.PropertiesSet += a
 		g.counters.PropertiesRemoved += r
+		was := s.origLabels(n.Labels)
 		for _, l := range n.Labels {
-			if !containsStr(s.labels, l) {
+			if !containsStr(was, l) {
 				gained[l]++
 			}
 		}
-		for _, l := range s.labels {
+		for _, l := range was {
 			if !n.hasLabel(l) {
 				lost[l]++
 			}
@@ -997,7 +1108,7 @@ func (g *graph) netCounters() error {
 		if r.Deleted {
 			continue
 		}
-		a, rm := diffProps(s.props, r.Props)
+		a, rm := s.diff(r.Props)
 		g.counters.PropertiesSet += a
 		g.counters.PropertiesRemoved += rm
 	}
@@ -1008,11 +1119,11 @@ func (g *graph) netCounters() error {
 		if g.createdNodes[n] {
 			continue
 		}
-		props, labels := n.Props, n.Labels
-		if s, ok := g.nodeSnap[n]; ok {
-			props, labels = s.props, s.labels
+		nprops, labels := len(n.Props), n.Labels
+		if s := g.nodeSnap[n]; s != nil {
+			nprops, labels = s.origPropCount(n.Props), s.origLabels(n.Labels)
 		}
-		g.counters.PropertiesRemoved += len(props)
+		g.counters.PropertiesRemoved += nprops
 		for _, l := range labels {
 			lost[l]++
 		}
@@ -1021,11 +1132,11 @@ func (g *graph) netCounters() error {
 		if g.createdRels[r] {
 			continue
 		}
-		props := r.Props
-		if s, ok := g.relSnap[r]; ok {
-			props = s.props
+		nprops := len(r.Props)
+		if s := g.relSnap[r]; s != nil {
+			nprops = s.origPropCount(r.Props)
 		}
-		g.counters.PropertiesRemoved += len(props)
+		g.counters.PropertiesRemoved += nprops
 	}
 	affected := map[string]bool{}
 	for l := range gained {
