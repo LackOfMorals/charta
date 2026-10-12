@@ -146,3 +146,50 @@ func TestLabelsAddedCountsLabelsNotNodes(t *testing.T) {
 		}
 	}
 }
+
+// A slice bound given as a whole-valued float (how some HTTP clients send an
+// integer parameter) works; a fractional or non-numeric bound still fails.
+func TestSliceBoundsAcceptWholeFloats(t *testing.T) {
+	db, err := store.Open(":memory:", store.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	run := func(q string, params map[string]any) (string, bool) {
+		st, err := syntax.Parse(q)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := analyze.Check(st); err != nil {
+			t.Fatal(err)
+		}
+		tx, err := db.BeginExecTx(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer tx.Rollback()
+		res, err := RunWith(context.Background(), tx, st, params, nil)
+		if err != nil {
+			return err.Error(), false
+		}
+		return fmtVal(res.Rows[0][0]), true
+	}
+	for _, tc := range []struct {
+		q    string
+		p    any
+		want string
+		ok   bool
+	}{
+		{"RETURN [1,2,3][..$b] AS r", float64(2), "[int64:1,int64:2]", true},
+		{"RETURN [1,2,3][..$b] AS r", float64(1000), "[int64:1,int64:2,int64:3]", true},
+		{"RETURN [1,2,3][$b..] AS r", float64(1), "[int64:2,int64:3]", true},
+		{"RETURN [1,2,3][..$b] AS r", int64(2), "[int64:1,int64:2]", true},
+		{"RETURN [1,2,3][..$b] AS r", 1.5, "", false},
+		{"RETURN [1,2,3][..$b] AS r", "x", "", false},
+	} {
+		got, ok := run(tc.q, map[string]any{"b": tc.p})
+		if ok != tc.ok || (ok && got != tc.want) {
+			t.Errorf("%s with %v(%T) = %q ok=%v, want %q ok=%v", tc.q, tc.p, tc.p, got, ok, tc.want, tc.ok)
+		}
+	}
+}
