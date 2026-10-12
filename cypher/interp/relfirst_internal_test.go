@@ -35,6 +35,11 @@ func runInternal(t *testing.T, db *store.SQLiteStore, q string, params map[strin
 	if err := tx.Commit(); err != nil {
 		t.Fatal(err)
 	}
+	return formatRows(res)
+}
+
+// formatRows renders a result as sorted, comparable strings.
+func formatRows(res *Result) []string {
 	var rows []string
 	for _, r := range res.Rows {
 		parts := make([]string, len(r))
