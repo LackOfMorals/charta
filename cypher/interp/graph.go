@@ -168,7 +168,13 @@ func (s *entSnap) origLabels(cur []string) []string {
 type graph struct {
 	eng *Engine // per-database state; may be nil
 	ctx context.Context
+	// db is what the interpreter reads and writes through; it writes the
+	// buffered creates (see batch.go) before every call. raw is the DB itself.
 	db  DB
+	raw DB
+
+	pendNodes []pendingNode
+	pendRels  []pendingRel
 
 	nodes map[int64]*Node
 	rels  map[int64]*Rel
@@ -210,14 +216,16 @@ type graph struct {
 }
 
 func newGraph(ctx context.Context, db DB) *graph {
-	return &graph{
-		ctx: ctx, db: db,
+	g := &graph{
+		ctx: ctx, raw: db,
 		nodes: map[int64]*Node{}, rels: map[int64]*Rel{},
 		out: map[int64][]*Rel{}, in: map[int64][]*Rel{},
 		detach:       map[int64]bool{},
 		createdNodes: map[*Node]bool{}, createdRels: map[*Rel]bool{},
 		nodeSnap: map[*Node]*entSnap{}, relSnap: map[*Rel]*entSnap{},
 	}
+	g.db = &flushDB{g: g, raw: db}
+	return g
 }
 
 // ─── property encoding ───────────────────────────────────────────────────────
@@ -1000,15 +1008,19 @@ func (g *graph) createNode(labels []string, props map[string]any) (*Node, error)
 		return nil, err
 	}
 	labels = dedupe(labels)
-	res, err := g.db.ExecContext(g.ctx, `INSERT INTO nodes (labels, props) VALUES (?, ?)`, strings.Join(labels, ","), enc)
-	if err != nil {
-		return nil, err
-	}
-	id, err := res.LastInsertId()
-	if err != nil {
-		return nil, err
-	}
-	if err := g.writeNodeLabels(id, labels); err != nil {
+	var id int64
+	if batchDisabled {
+		res, err := g.db.ExecContext(g.ctx, `INSERT INTO nodes (labels, props) VALUES (?, ?)`, strings.Join(labels, ","), enc)
+		if err != nil {
+			return nil, err
+		}
+		if id, err = res.LastInsertId(); err != nil {
+			return nil, err
+		}
+		if err := g.writeNodeLabels(id, labels); err != nil {
+			return nil, err
+		}
+	} else if id, err = g.bufferNode(labels, enc); err != nil {
 		return nil, err
 	}
 	n := &Node{ID: id, Labels: labels, Props: props}
@@ -1030,12 +1042,16 @@ func (g *graph) createRel(typ string, start, end *Node, props map[string]any) (*
 	if err != nil {
 		return nil, err
 	}
-	res, err := g.db.ExecContext(g.ctx, `INSERT INTO edges (type, start_id, end_id, props) VALUES (?, ?, ?, ?)`, typ, start.ID, end.ID, enc)
-	if err != nil {
-		return nil, err
-	}
-	id, err := res.LastInsertId()
-	if err != nil {
+	var id int64
+	if batchDisabled {
+		res, err := g.db.ExecContext(g.ctx, `INSERT INTO edges (type, start_id, end_id, props) VALUES (?, ?, ?, ?)`, typ, start.ID, end.ID, enc)
+		if err != nil {
+			return nil, err
+		}
+		if id, err = res.LastInsertId(); err != nil {
+			return nil, err
+		}
+	} else if id, err = g.bufferRel(typ, start.ID, end.ID, enc); err != nil {
 		return nil, err
 	}
 	r := &Rel{ID: id, Type: typ, Start: start.ID, End: end.ID, Props: props}
@@ -1330,8 +1346,12 @@ func (g *graph) netCounters() error {
 		affected[l] = true
 	}
 	for l := range affected {
+		// Only whether the label was or is in use matters, so the count stops
+		// one past the number of assignments this statement made: a larger
+		// count changes neither answer, and counting a popular label in full
+		// would make every bulk-load statement cost the size of the database.
 		var after int
-		if err := g.queryRow(`SELECT count(*) FROM node_labels WHERE label = ?`, []any{l}, &after); err != nil {
+		if err := g.queryRow(`SELECT count(*) FROM (SELECT 1 FROM node_labels WHERE label = ? LIMIT ?)`, []any{l, gained[l] + lost[l] + 1}, &after); err != nil {
 			return err
 		}
 		before := after - gained[l] + lost[l]
@@ -1385,6 +1405,9 @@ func (g *graph) deleteNode(n *Node, detach bool) error {
 // finish applies the deletions. A node that still has a live relationship at
 // this point cannot be deleted.
 func (g *graph) finish() error {
+	if err := g.flushWrites(); err != nil {
+		return err
+	}
 	for _, n := range g.delNodes {
 		out, err := g.outRels(n.ID)
 		if err != nil {
