@@ -309,7 +309,10 @@ func TestStreamWithConstantCacheTrimming(t *testing.T) {
 	cacheLimit = 1
 	t.Cleanup(func() { cacheLimit = old })
 	db := richGraph(t, 11, bigNodes(), bigNodes()*3/2)
-	for _, q := range streamQueries {
+	for i, q := range streamQueries {
+		if raceEnabled && i%3 != 0 {
+			continue // a sample: the race detector makes every query 15-20 times slower
+		}
 		streamDisabled = false
 		got, gerr := runOrdered(t, db, q, nil)
 		streamDisabled = true
