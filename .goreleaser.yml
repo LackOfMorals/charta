@@ -32,3 +32,4 @@ changelog:
       - "^chore:"
       - "Merge pull request"
       - "Merge branch"
+      - "^Merge (remote-tracking branch|origin/)"
