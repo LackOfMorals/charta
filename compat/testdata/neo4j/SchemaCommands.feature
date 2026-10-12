@@ -386,3 +386,4 @@ Feature: SchemaCommands - indexes and constraints
       | 'db.labels'            |
       | 'db.propertyKeys'      |
       | 'db.relationshipTypes' |
+      | 'db.schema.visualization' |

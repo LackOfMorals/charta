@@ -380,3 +380,37 @@ func TestMaxPathHops(t *testing.T) {
 		t.Errorf("uncapped: %v %v", rows(res), err)
 	}
 }
+
+func TestSchemaVisualization(t *testing.T) {
+	db := newDB(t)
+	// An empty graph has an empty schema, still one row.
+	res, err := run(db, nil, "CALL db.schema.visualization() YIELD nodes, relationships RETURN size(nodes) AS n, size(relationships) AS r", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(rows(res), ","); got != "0|0" && got != "0, 0" {
+		t.Logf("empty schema row: %s", got)
+	}
+	if len(res.Rows) != 1 {
+		t.Fatalf("empty graph: %d rows, want 1", len(res.Rows))
+	}
+	if _, err := run(db, nil, "CREATE (:Person)-[:OWNS]->(:Pet), (:Person)-[:OWNS]->(:Pet), (:Person)-[:KNOWS]->(:Person)", nil); err != nil {
+		t.Fatal(err)
+	}
+	res, err = run(db, nil, "CALL db.schema.visualization() YIELD nodes, relationships RETURN nodes, relationships", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var labels, rels []string
+	nodes := res.Rows[0][0].([]any)
+	for _, n := range nodes {
+		labels = append(labels, n.(*interp.Node).Props["name"].(string))
+	}
+	for _, r := range res.Rows[0][1].([]any) {
+		rel := r.(*interp.Rel)
+		rels = append(rels, rel.Type+":"+labels[rel.Start]+">"+labels[rel.End])
+	}
+	if got := fmt.Sprint(labels, " ", rels); got != "[Person Pet] [KNOWS:Person>Person OWNS:Person>Pet]" {
+		t.Errorf("schema = %s", got)
+	}
+}
