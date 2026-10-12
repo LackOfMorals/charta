@@ -3,6 +3,7 @@ package interp
 import (
 	"math"
 	"strings"
+	"sync/atomic"
 
 	"github.com/LackOfMorals/charta/cypher/syntax"
 )
@@ -55,17 +56,88 @@ func whereEqualities(e syntax.Expr) []pushedEq {
 	return nil
 }
 
-// hintValue evaluates a pushable expression (a literal, a parameter or a bound
-// variable) to a scan hint value, or reports false. Anything else is left to
-// the Go-side check so no evaluation happens that the query would not do.
-func (ex *exec) hintValue(e syntax.Expr, r row) (any, bool) {
-	switch e.(type) {
-	case *syntax.IntLit, *syntax.FloatLit, *syntax.StringLit, *syntax.Param:
+// hintExprDisabled limits scan hints to literals, parameters and bound
+// variables, as they were before expressions were allowed; tests use it to
+// compare both ways on the same data.
+var hintExprDisabled bool
+
+// hintsUsed counts the scan hints taken from an expression that is more than a
+// literal, parameter or variable (for tests).
+var hintsUsed atomic.Int64
+
+// pureFuncs are the functions whose result depends only on their arguments, so
+// evaluating them once for a scan hint gives what evaluating them per candidate
+// would. (rand(), randomUUID() and the like are not here.)
+var pureFuncs = map[string]bool{
+	"tointeger": true, "tointegerornull": true, "tofloat": true, "tofloatornull": true,
+	"tostring": true, "tostringornull": true, "tolower": true, "toupper": true,
+	"trim": true, "ltrim": true, "rtrim": true, "replace": true, "substring": true,
+	"left": true, "right": true, "abs": true, "ceil": true, "floor": true,
+	"round": true, "sign": true, "sqrt": true, "size": true, "coalesce": true,
+	"head": true, "last": true,
+}
+
+// hintable reports whether e can be evaluated once, from the row alone, to
+// give the value a scan hint compares with: literals, parameters, variables
+// already bound in r, arithmetic and concatenation, property and index access,
+// and the pure functions above, nested as deep as the query likes. Anything
+// that could differ between two evaluations, or that this does not know, is
+// left to the check made on each candidate.
+func hintable(e syntax.Expr, r row) bool {
+	switch e := e.(type) {
+	case *syntax.IntLit, *syntax.FloatLit, *syntax.StringLit, *syntax.BoolLit, *syntax.NullLit, *syntax.Param:
+		return true
 	case *syntax.Ident:
-		if _, bound := r[e.(*syntax.Ident).Name]; !bound {
+		_, bound := r[e.Name]
+		return bound
+	case *syntax.Unary:
+		return (e.Op == syntax.OpMinus || e.Op == syntax.OpPlus) && hintable(e.X, r)
+	case *syntax.Binary:
+		switch e.Op {
+		case syntax.OpAdd, syntax.OpSub, syntax.OpMul, syntax.OpDiv, syntax.OpMod, syntax.OpPow, syntax.OpConcat:
+			return hintable(e.L, r) && hintable(e.R, r)
+		}
+	case *syntax.Property:
+		return hintable(e.Subject, r)
+	case *syntax.Subscript:
+		return hintable(e.Subject, r) && hintable(e.Index, r)
+	case *syntax.FuncCall:
+		if len(e.Namespace) != 0 || e.Distinct || e.Star || !pureFuncs[strings.ToLower(e.Name)] {
+			return false
+		}
+		for _, a := range e.Args {
+			if !hintable(a, r) {
+				return false
+			}
+		}
+		return true
+	}
+	return false
+}
+
+// simpleHint reports whether e is one of the forms hints were limited to
+// before expressions were allowed.
+func simpleHint(e syntax.Expr, r row) bool {
+	switch e := e.(type) {
+	case *syntax.IntLit, *syntax.FloatLit, *syntax.StringLit, *syntax.Param:
+		return true
+	case *syntax.Ident:
+		_, bound := r[e.Name]
+		return bound
+	}
+	return false
+}
+
+// hintValue evaluates a pushable expression to a scan hint value, or reports
+// false. An expression that fails to evaluate or gives a value SQLite's `=` would
+// not agree with is left to the Go-side check, so no error is raised that the
+// query would not raise.
+func (ex *exec) hintValue(e syntax.Expr, r row) (any, bool) {
+	if hintExprDisabled {
+		if !simpleHint(e, r) {
 			return nil, false
 		}
-	default:
+	} else if !hintable(e, r) {
 		return nil, false
 	}
 	v, err := ex.eval(e, r)
@@ -74,11 +146,17 @@ func (ex *exec) hintValue(e syntax.Expr, r row) (any, bool) {
 	}
 	switch x := v.(type) {
 	case string, int64:
-		return x, true
 	case float64:
-		return x, !math.IsNaN(x)
+		if math.IsNaN(x) {
+			return nil, false
+		}
+	default:
+		return nil, false
 	}
-	return nil, false
+	if !simpleHint(e, r) {
+		hintsUsed.Add(1)
+	}
+	return v, true
 }
 
 // scanHints collects the property equalities that restrict candidates for np,
