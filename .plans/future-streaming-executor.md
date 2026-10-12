@@ -56,8 +56,16 @@ and mmap_size made no difference.
 1. **Streaming executor: done for read-only queries** (see "What is done"). Still clause by clause: any query with an
    updating clause, `CALL`, `FOREACH` or `LOAD CSV`; relationship-first matching (`relfirst.go`) and `allRels` still read
    every relationship at once; ORDER BY buffers all its rows (a bounded top-N for ORDER BY ... LIMIT would not).
-2. **Lighter nodes.** Decode `Props` lazily (keep the raw JSON text, decode on first access, or extract only the keys the
-   query names, like `vector.StoredVector` does for vectors), and make `row` a slice indexed by variable slot instead of a map.
+2. **Lighter nodes: measured, mostly not worth it.** Decoding every node's properties is the largest single cost of a
+   scan-and-aggregate query (about 36% of `MATCH (c:Company) RETURN c.status, count(*)` over 1M nodes: 1,170 ms, against
+   745 ms with decoding skipped altogether), but most of it is not the JSON: decoding only the one key the query needs
+   (an experiment, not kept) saved 5% more. What was cheap and safe is kept: `decodeProps` no longer allocates a map it
+   discards or writes every scalar back through `reviveTemporal`, nodes with the same label list share one slice
+   (`graph.labelsOf`), and a read-only statement does not cache the nodes a scan returns (`readNode`): 445 -> 374 ns and
+   12 -> 10 allocations per node, -13% on those queries and -6% geomean on the benchmarks. A lazy `Props` accessor or
+   key-selective decoding would need partial nodes kept out of the shared cache and the 70-odd direct `.Props` uses
+   changed, for a few percent; the remaining time is SQLite reading the rows and allocating the node and its map.
+   `make row a slice indexed by variable slot instead of a map` is untried.
 3. **Bounded node/relationship cache for read-only statements: done** (`trimCaches`; the audit found no pointer
    comparison that matters for a read-only statement). A smarter policy than "drop everything past `cacheLimit`" (keep
    hot far nodes, evict start nodes as soon as their chunk is done) would recover most of the ~5% it costs on multi-hop

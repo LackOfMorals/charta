@@ -197,6 +197,8 @@ type graph struct {
 	// pointer (equality, ordering and grouping all go by id), so the caches may
 	// be dropped and refilled without changing any result.
 	evictable bool
+	// labelSets caches the split form of each distinct stored label list.
+	labelSets map[string][]string
 
 	// constraints are the schema constraints, loaded on first use.
 	constraints       []schemaDef
@@ -355,9 +357,8 @@ func encodeValue(sb *strings.Builder, v any) error {
 }
 
 func decodeProps(s string) (map[string]any, error) {
-	props := map[string]any{}
 	if s == "" || s == "{}" {
-		return props, nil
+		return map[string]any{}, nil
 	}
 	m, ok := fastDecodeObject(s)
 	if !ok {
@@ -366,8 +367,14 @@ func decodeProps(s string) (map[string]any, error) {
 			return nil, err
 		}
 	}
+	// Only a map or a list can hold a stored temporal, point or vector; a scalar
+	// comes back unchanged, so it is not written back (a hash and an assignment
+	// for every property of every node scanned).
 	for k, v := range m {
-		m[k] = reviveTemporal(v)
+		switch v.(type) {
+		case map[string]any, []any:
+			m[k] = reviveTemporal(v)
+		}
 	}
 	return m, nil
 }
@@ -478,7 +485,44 @@ func splitLabels(s string) []string {
 	return strings.Split(s, ",")
 }
 
+// labelsOf returns the labels in a stored label list. A graph reads the same few
+// lists many times (a million nodes with the label "Company"), so each distinct
+// text is split once and the slice shared. The shared slices have no spare
+// capacity, so adding a label to one node (append) copies instead of writing
+// into the others'; removing builds a new slice.
+func (g *graph) labelsOf(s string) []string {
+	if s == "" {
+		return nil
+	}
+	if l, ok := g.labelSets[s]; ok {
+		return l
+	}
+	l := strings.Split(s, ",")
+	l = l[:len(l):len(l)]
+	if g.labelSets == nil {
+		g.labelSets = map[string][]string{}
+	}
+	if len(g.labelSets) < 1024 { // bound the table against pathological label lists
+		g.labelSets[s] = l
+	}
+	return l
+}
+
 // ─── reads ───────────────────────────────────────────────────────────────────
+
+// readNode is internNode without remembering a node that is not already cached:
+// the cached node when there is one, otherwise a freshly decoded one that is
+// left out of the cache.
+func (g *graph) readNode(id int64, labels, props string) (*Node, error) {
+	if n, ok := g.nodes[id]; ok {
+		return n, nil
+	}
+	p, err := decodeProps(props)
+	if err != nil {
+		return nil, err
+	}
+	return &Node{ID: id, Labels: g.labelsOf(labels), Props: p}, nil
+}
 
 func (g *graph) internNode(id int64, labels, props string) (*Node, error) {
 	if n, ok := g.nodes[id]; ok {
@@ -488,7 +532,7 @@ func (g *graph) internNode(id int64, labels, props string) (*Node, error) {
 	if err != nil {
 		return nil, err
 	}
-	n := &Node{ID: id, Labels: splitLabels(labels), Props: p}
+	n := &Node{ID: id, Labels: g.labelsOf(labels), Props: p}
 	g.nodes[id] = n
 	return n, nil
 }
@@ -614,7 +658,14 @@ func (g *graph) scanPage(label string, hints []propHint, after int64, limit int)
 		}
 		raw++
 		last = id
-		n, err := g.internNode(id, labels, props)
+		var n *Node
+		if g.evictable {
+			// A statement that only reads never modifies a node and compares
+			// them by id, so a scanned node need not be remembered.
+			n, err = g.readNode(id, labels, props)
+		} else {
+			n, err = g.internNode(id, labels, props)
+		}
 		if err != nil {
 			rows.Close()
 			return nil, 0, 0, err
