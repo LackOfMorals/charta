@@ -186,7 +186,9 @@ func TestListenAddressInUse(t *testing.T) {
 	s := start(t, baseArgs...)
 	clearEnv(t)
 	err := run(context.Background(), []string{"--listen", s.addr, "--db", ":memory:", "--username", "u", "--password", "p"}, io.Discard, nil)
-	if err == nil || !strings.Contains(err.Error(), "address already in use") {
+	// Windows words the same failure differently.
+	if err == nil || !(strings.Contains(err.Error(), "address already in use") ||
+		strings.Contains(err.Error(), "Only one usage of each socket address")) {
 		t.Fatalf("err = %v, want address already in use", err)
 	}
 }

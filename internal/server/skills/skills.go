@@ -31,12 +31,12 @@ func List() []Skill {
 	}
 	var out []Skill
 	for _, e := range entries {
-		raw, err := files.ReadFile(e.Name() + "/SKILL.md")
+		raw, err := readSkill(e.Name())
 		if err != nil {
 			continue
 		}
 		s := Skill{Name: e.Name()}
-		for _, line := range strings.Split(frontmatter(string(raw)), "\n") {
+		for _, line := range strings.Split(frontmatter(raw), "\n") {
 			if v, ok := strings.CutPrefix(line, "description:"); ok {
 				s.Description = strings.TrimSpace(v)
 			}
@@ -54,11 +54,22 @@ func Render(name, baseURL string) (string, bool) {
 	if name == "" || strings.ContainsAny(name, `/\.`) {
 		return "", false
 	}
-	raw, err := files.ReadFile(name + "/SKILL.md")
+	raw, err := readSkill(name)
 	if err != nil {
 		return "", false
 	}
-	return strings.ReplaceAll(string(raw), BasePlaceholder, strings.TrimRight(baseURL, "/")), true
+	return strings.ReplaceAll(raw, BasePlaceholder, strings.TrimRight(baseURL, "/")), true
+}
+
+// readSkill returns a skill's SKILL.md with LF line endings. A Windows
+// checkout can convert the embedded file to CRLF, which would otherwise break
+// the frontmatter parsing and change the served document.
+func readSkill(name string) (string, error) {
+	raw, err := files.ReadFile(name + "/SKILL.md")
+	if err != nil {
+		return "", err
+	}
+	return strings.ReplaceAll(string(raw), "\r\n", "\n"), nil
 }
 
 // frontmatter returns the YAML block between the leading "---" lines.

@@ -1,0 +1,2 @@
+# The embedded skill is served as-is and parsed line by line: keep LF on every platform.
+internal/server/skills/**/SKILL.md text eol=lf

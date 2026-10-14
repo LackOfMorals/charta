@@ -29,3 +29,15 @@ func TestRenderRejectsPaths(t *testing.T) {
 		}
 	}
 }
+
+func TestFrontmatterIgnoresCRLF(t *testing.T) {
+	// readSkill is what turns a CRLF checkout back into the LF text that
+	// frontmatter expects.
+	doc := strings.ReplaceAll("---\nname: x\ndescription: d\n---\nbody", "\n", "\r\n")
+	if fm := frontmatter(strings.ReplaceAll(doc, "\r\n", "\n")); !strings.Contains(fm, "description: d") {
+		t.Errorf("frontmatter = %q", fm)
+	}
+	if got, _ := Render("graingraph-query", "http://x"); strings.Contains(got, "\r") {
+		t.Error("rendered skill contains a carriage return")
+	}
+}
