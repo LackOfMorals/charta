@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/LackOfMorals/charta-query/internal/auth"
-	"github.com/LackOfMorals/charta-query/internal/store"
+	"github.com/LackOfMorals/graingraph/internal/server/auth"
+	"github.com/LackOfMorals/graingraph/internal/server/store"
 )
 
 // captureLogs routes slog output to a JSON buffer for the test's duration

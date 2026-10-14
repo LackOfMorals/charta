@@ -1,4 +1,4 @@
-package charta_test
+package graingraph_test
 
 import (
 	"context"
@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/LackOfMorals/charta"
+	"github.com/LackOfMorals/graingraph"
 )
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -15,7 +15,7 @@ import (
 // ─────────────────────────────────────────────────────────────────────────────
 
 func TestNode_Fields(t *testing.T) {
-	n := charta.Node{
+	n := graingraph.Node{
 		ElementId: "1",
 		Labels:    []string{"Person", "Employee"},
 		Props:     map[string]any{"name": "Alice", "age": int64(30)},
@@ -37,7 +37,7 @@ func TestNode_Fields(t *testing.T) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 func TestRelationship_Fields(t *testing.T) {
-	r := charta.Relationship{
+	r := graingraph.Relationship{
 		ElementId:      "10",
 		Type:           "KNOWS",
 		StartElementId: "1",
@@ -68,7 +68,7 @@ func TestRelationship_Fields(t *testing.T) {
 
 // fetchRecord runs a MATCH query and returns the first record, failing the
 // test if the query or iteration fails.
-func fetchRecord(t *testing.T, db *charta.DB, query string, params map[string]any) *charta.Record {
+func fetchRecord(t *testing.T, db *graingraph.DB, query string, params map[string]any) *graingraph.Record {
 	t.Helper()
 	ctx := context.Background()
 	qr, err := db.RunQuery(ctx, query, params)
@@ -214,13 +214,13 @@ func TestRecord_Values(t *testing.T) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 func TestErrUnsupportedCypher_ErrorsAs(t *testing.T) {
-	err := &charta.ErrUnsupportedCypher{
+	err := &graingraph.ErrUnsupportedCypher{
 		Clause:   "UNION",
 		Position: 15,
 		Detail:   "UNION is not supported in v0.1",
 	}
 
-	var target *charta.ErrUnsupportedCypher
+	var target *graingraph.ErrUnsupportedCypher
 	if !errors.As(err, &target) {
 		t.Fatal("errors.As failed for ErrUnsupportedCypher")
 	}
@@ -233,7 +233,7 @@ func TestErrUnsupportedCypher_ErrorsAs(t *testing.T) {
 }
 
 func TestErrUnsupportedCypher_ErrorString_WithPosition(t *testing.T) {
-	err := &charta.ErrUnsupportedCypher{Clause: "CALL", Position: 5, Detail: "procedures not supported"}
+	err := &graingraph.ErrUnsupportedCypher{Clause: "CALL", Position: 5, Detail: "procedures not supported"}
 	s := err.Error()
 	if s == "" {
 		t.Error("Error() returned empty string")
@@ -244,7 +244,7 @@ func TestErrUnsupportedCypher_ErrorString_WithPosition(t *testing.T) {
 }
 
 func TestErrUnsupportedCypher_ErrorString_NoPosition(t *testing.T) {
-	err := &charta.ErrUnsupportedCypher{Clause: "UNION"}
+	err := &graingraph.ErrUnsupportedCypher{Clause: "UNION"}
 	s := err.Error()
 	if !strings.Contains(s, "UNION") {
 		t.Errorf("Error() does not mention clause name: %q", s)
@@ -252,10 +252,10 @@ func TestErrUnsupportedCypher_ErrorString_NoPosition(t *testing.T) {
 }
 
 func TestErrUnsupportedCypher_WrappedErrorsAs(t *testing.T) {
-	inner := &charta.ErrUnsupportedCypher{Clause: "MERGE", Position: 0}
+	inner := &graingraph.ErrUnsupportedCypher{Clause: "MERGE", Position: 0}
 	wrapped := fmt.Errorf("planner: %w", inner)
 
-	var target *charta.ErrUnsupportedCypher
+	var target *graingraph.ErrUnsupportedCypher
 	if !errors.As(wrapped, &target) {
 		t.Fatal("errors.As failed for wrapped ErrUnsupportedCypher")
 	}
@@ -269,8 +269,8 @@ func TestErrUnsupportedCypher_WrappedErrorsAs(t *testing.T) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 func TestErrMissingParameter_ErrorsAs(t *testing.T) {
-	err := &charta.ErrMissingParameter{Name: "minAge"}
-	var target *charta.ErrMissingParameter
+	err := &graingraph.ErrMissingParameter{Name: "minAge"}
+	var target *graingraph.ErrMissingParameter
 	if !errors.As(err, &target) {
 		t.Fatal("errors.As failed for ErrMissingParameter")
 	}

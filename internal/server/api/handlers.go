@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/LackOfMorals/charta-query/internal/store"
+	"github.com/LackOfMorals/graingraph/internal/server/store"
 )
 
 // query implements POST /db/{databaseName}/query/v2.
@@ -76,7 +76,7 @@ func (h *Handler) txOpen(w http.ResponseWriter, r *http.Request) {
 	}
 	tx, err := h.store.Begin(r.Context(), id, timeout, q.TxMetadata)
 	if err != nil {
-		writeFailure(w, mapChartaError(err))
+		writeFailure(w, mapGraingraphError(err))
 		return
 	}
 	note(w, slog.String("tx_id", id))
@@ -189,7 +189,7 @@ func (h *Handler) txCommit(w http.ResponseWriter, r *http.Request) {
 	}
 	bookmark, err := h.store.Commit(id)
 	if err != nil {
-		h.writeRunError(w, rt, mapChartaError(err))
+		h.writeRunError(w, rt, mapGraingraphError(err))
 		return
 	}
 
@@ -225,7 +225,7 @@ func (h *Handler) txRollback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.store.Rollback(id); err != nil {
-		h.reject(w, r, mapChartaError(err))
+		h.reject(w, r, mapGraingraphError(err))
 		return
 	}
 	writeJSON(w, http.StatusOK, struct{}{})
@@ -364,11 +364,11 @@ func txInfoOf(tx *store.OpenTx) *txInfo {
 	return info
 }
 
-// failure maps a failed run to a client error. charta executes a
+// failure maps a failed run to a client error. graingraph executes a
 // statement eagerly, so a runtime failure leaves no result columns; they
 // are recovered from the statement, as Neo4j reports them even then.
 func failure(statement string, err error) *apiError {
-	ae := mapChartaError(err)
+	ae := mapGraingraphError(err)
 	if ae.Runtime {
 		ae.Fields = columnsOf(statement)
 	}

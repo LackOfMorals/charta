@@ -1,7 +1,7 @@
 package interp
 
 import (
-	"github.com/LackOfMorals/charta/cypher/syntax"
+	"github.com/LackOfMorals/graingraph/cypher/syntax"
 )
 
 // labelNames flattens a conjunction of labels (`:A:B`, `A&B`, `$(expr)`) into

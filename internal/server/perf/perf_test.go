@@ -1,19 +1,19 @@
-// Package perf compares charta-query with a real Neo4j Query API server.
+// Package perf compares graingraph-query with a real Neo4j Query API server.
 //
 // It is a measurement harness, not a pass/fail test: it prints latency and
 // throughput tables and only fails if a request errors. It is skipped
 // unless a reference server is configured:
 //
-//	CHARTA_QUERY_PERF_NEO4J_URL       e.g. http://localhost:7474
-//	CHARTA_QUERY_PERF_NEO4J_USER      default "neo4j"
-//	CHARTA_QUERY_PERF_NEO4J_PASSWORD
-//	CHARTA_QUERY_PERF_NEO4J_DB        default "neo4j"
-//	CHARTA_QUERY_PERF_CHARTA_URL      a running charta-query (same credentials);
+//	GRAINGRAPH_QUERY_PERF_NEO4J_URL       e.g. http://localhost:7474
+//	GRAINGRAPH_QUERY_PERF_NEO4J_USER      default "neo4j"
+//	GRAINGRAPH_QUERY_PERF_NEO4J_PASSWORD
+//	GRAINGRAPH_QUERY_PERF_NEO4J_DB        default "neo4j"
+//	GRAINGRAPH_QUERY_PERF_GRAINGRAPH_URL      a running graingraph-query (same credentials);
 //	                                  default: an in-process one on a file database
 //
 //	go test ./internal/perf -v -timeout 30m
 //
-// For a fair comparison run charta-query as its own process (the default
+// For a fair comparison run graingraph-query as its own process (the default
 // in-process server shares the test's CPU and garbage collector).
 //
 // The reference database is never modified: data-dependent cases build
@@ -35,9 +35,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/LackOfMorals/charta-query/internal/api"
-	"github.com/LackOfMorals/charta-query/internal/auth"
-	"github.com/LackOfMorals/charta-query/internal/store"
+	"github.com/LackOfMorals/graingraph/internal/server/api"
+	"github.com/LackOfMorals/graingraph/internal/server/auth"
+	"github.com/LackOfMorals/graingraph/internal/server/store"
 )
 
 const (
@@ -71,16 +71,16 @@ func newClient() *http.Client {
 
 func targets(t *testing.T) (ref, cq target) {
 	t.Helper()
-	url := os.Getenv("CHARTA_QUERY_PERF_NEO4J_URL")
+	url := os.Getenv("GRAINGRAPH_QUERY_PERF_NEO4J_URL")
 	if url == "" {
-		t.Skip("CHARTA_QUERY_PERF_NEO4J_URL not set; skipping performance comparison")
+		t.Skip("GRAINGRAPH_QUERY_PERF_NEO4J_URL not set; skipping performance comparison")
 	}
 	ref = target{name: "neo4j", base: strings.TrimRight(url, "/"),
-		user: env("CHARTA_QUERY_PERF_NEO4J_USER", "neo4j"), pass: os.Getenv("CHARTA_QUERY_PERF_NEO4J_PASSWORD"),
-		db: env("CHARTA_QUERY_PERF_NEO4J_DB", "neo4j"), client: newClient()}
+		user: env("GRAINGRAPH_QUERY_PERF_NEO4J_USER", "neo4j"), pass: os.Getenv("GRAINGRAPH_QUERY_PERF_NEO4J_PASSWORD"),
+		db: env("GRAINGRAPH_QUERY_PERF_NEO4J_DB", "neo4j"), client: newClient()}
 
-	cq = target{name: "charta-query", user: ref.user, pass: ref.pass, db: ref.db, client: newClient()}
-	if u := os.Getenv("CHARTA_QUERY_PERF_CHARTA_URL"); u != "" {
+	cq = target{name: "graingraph-query", user: ref.user, pass: ref.pass, db: ref.db, client: newClient()}
+	if u := os.Getenv("GRAINGRAPH_QUERY_PERF_GRAINGRAPH_URL"); u != "" {
 		cq.base = strings.TrimRight(u, "/")
 		return ref, cq
 	}
@@ -155,7 +155,7 @@ var header sync.Once
 
 func report(name string, ref, cq stats) {
 	header.Do(func() {
-		fmt.Printf("\n%-34s %9s %9s %9s | %9s %9s %9s | %7s\n", "", "neo4j", "", "", "charta", "", "", "")
+		fmt.Printf("\n%-34s %9s %9s %9s | %9s %9s %9s | %7s\n", "", "neo4j", "", "", "graingraph", "", "", "")
 		fmt.Printf("%-34s %9s %9s %9s | %9s %9s %9s | %7s\n", "case (latency, ms)", "p50", "p95", "mean", "p50", "p95", "mean", "speedup")
 		fmt.Println(strings.Repeat("-", 112))
 	})
@@ -193,7 +193,7 @@ func measure(t *testing.T, ref, cq target, name, method, path, accept, body stri
 	rs, rb := run(ref)
 	cs, cb := run(cq)
 	if strings.Contains(rb, `"errors"`) || strings.Contains(cb, `"errors"`) {
-		t.Fatalf("%s: a response carried an error:\nneo4j: %.300s\ncharta: %.300s", name, rb, cb)
+		t.Fatalf("%s: a response carried an error:\nneo4j: %.300s\ngraingraph: %.300s", name, rb, cb)
 	}
 	report(name, rs, cs)
 }
@@ -247,7 +247,7 @@ func TestProtocolAndSerialization(t *testing.T) {
 	for _, w := range []int{1, 4, 16} {
 		r := throughput(t, ref, w, 3*time.Second)
 		c := throughput(t, cq, w, 3*time.Second)
-		fmt.Printf("%2d concurrent client(s):  neo4j %8.0f req/s   charta %8.0f req/s   (%.1fx)\n", w, r, c, c/r)
+		fmt.Printf("%2d concurrent client(s):  neo4j %8.0f req/s   graingraph %8.0f req/s   (%.1fx)\n", w, r, c, c/r)
 	}
 }
 
@@ -287,16 +287,16 @@ func TestQueriesOnData(t *testing.T) {
 		d1, c1, _, b1 := ref.call(t, "POST", inTx, "", q(s.stmt))
 		d2, c2, _, b2 := cq.call(t, "POST", inTx, "", q(s.stmt))
 		if c1 != 202 || c2 != 202 || strings.Contains(b1+b2, `"errors"`) {
-			t.Fatalf("fixture %q failed:\nneo4j: %d %.300s\ncharta: %d %.300s", s.name, c1, b1, c2, b2)
+			t.Fatalf("fixture %q failed:\nneo4j: %d %.300s\ngraingraph: %d %.300s", s.name, c1, b1, c2, b2)
 		}
-		fmt.Printf("%-24s neo4j %8s ms   charta %8s ms\n", s.name, ms(d1), ms(d2))
+		fmt.Printf("%-24s neo4j %8s ms   graingraph %8s ms\n", s.name, ms(d1), ms(d2))
 	}
 	// Both fixtures must agree before timing anything on them.
 	check := q(`MATCH (c:CqCo) OPTIONAL MATCH (c)-[n:NEXT]->() RETURN count(DISTINCT c) AS cos, count(n) AS nexts`)
 	_, _, _, rb := ref.call(t, "POST", inTx, "", check)
 	_, _, _, cb := cq.call(t, "POST", inTx, "", check)
 	if !strings.Contains(rb, `[[3000,2990]]`) || !strings.Contains(cb, `[[3000,2990]]`) {
-		t.Fatalf("fixtures differ: neo4j %.200s / charta %.200s", rb, cb)
+		t.Fatalf("fixtures differ: neo4j %.200s / graingraph %.200s", rb, cb)
 	}
 
 	fmt.Println("\n=== queries inside the transaction ===")

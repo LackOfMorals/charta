@@ -8,8 +8,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/LackOfMorals/charta/cypher/syntax"
-	"github.com/LackOfMorals/charta/cypher/vector"
+	"github.com/LackOfMorals/graingraph/cypher/syntax"
+	"github.com/LackOfMorals/graingraph/cypher/vector"
 )
 
 // Schema commands (CREATE/DROP INDEX|CONSTRAINT, SHOW INDEXES|CONSTRAINTS).
@@ -21,6 +21,8 @@ import (
 // enforced by the interpreter when a statement finishes, over the entities the
 // statement created or changed.
 
+// schemaTable keeps the project's former name: it is stored in database files,
+// and renaming it would make an existing database lose its definitions.
 const schemaTable = "charta_schema"
 
 // schemaDef is one index or constraint.
@@ -622,7 +624,7 @@ func (ex *exec) validateExisting(d schemaDef) error {
 //
 // The dimension is required (1 to vector.MaxDimension); the similarity function
 // is cosine (default) or euclidean. The HNSW tuning keys Neo4j accepts are
-// accepted and ignored, since charta searches exhaustively.
+// accepted and ignored, since graingraph searches exhaustively.
 func (ex *exec) vectorConfig(opts syntax.Expr) (dims int, sim string, err error) {
 	bad := func(format string, args ...any) (int, string, error) {
 		return 0, "", schemaError("InvalidOptions", format, args...)

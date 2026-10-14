@@ -12,7 +12,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/LackOfMorals/charta"
+	"github.com/LackOfMorals/graingraph"
 )
 
 // mediaTOON is the media type that selects TOON output (https://toonformat.dev),
@@ -362,7 +362,7 @@ func toonQuote(s string) string {
 // it cost more tokens than the JSON response it replaces. Only a path that
 // is itself a result column is written this way; one inside a list is JSON.
 func encodeTOONValue(v any) (any, error) {
-	p, ok := v.(charta.Path)
+	p, ok := v.(graingraph.Path)
 	if !ok {
 		return encodePlain(v)
 	}

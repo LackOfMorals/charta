@@ -1,10 +1,10 @@
-# AGENTS.md — charta
+# AGENTS.md — graingraph
 
 ## Project Overview
 
-charta is an embedded property graph database for Go, backed by SQLite and queryable via a subset of openCypher. The primary entry point is `charta.Open`; queries are executed with `db.RunQuery` or via explicit transactions started with `db.BeginTx`.
+graingraph is an embedded property graph database for Go, backed by SQLite and queryable via a subset of openCypher. The primary entry point is `graingraph.Open`; queries are executed with `db.RunQuery` or via explicit transactions started with `db.BeginTx`.
 
-- Module path: `github.com/LackOfMorals/charta`
+- Module path: `github.com/LackOfMorals/graingraph`
 - Go minimum version: 1.26
 - SQLite driver: `modernc.org/sqlite` (CGO-free, no mattn/go-sqlite3)
 
@@ -33,9 +33,9 @@ go vet ./...
 ## Package Layout
 
 ```
-charta/
+graingraph/
 ├── types.go        ← Node, Relationship, Record, error types
-├── driver.go       ← charta.Open, DB, RunQuery, BeginTx
+├── driver.go       ← graingraph.Open, DB, RunQuery, BeginTx
 ├── interfaces.go   ← exported interfaces (Driver, Session, Transaction, Result, …)
 ├── session.go      ← session, managedTx, Tx concrete types
 ├── result.go       ← QueryResult / Result cursor implementation
@@ -50,6 +50,8 @@ charta/
 │   └── proc/       ← procedure signatures, argument coercion and registry (stdlib only)
 ├── store/          ← Store interface + SQLite implementation + DDL
 ├── compat/         ← TCK harness (opt-in: -tags=tck)
+├── cmd/graingraph-query/  ← the Neo4j Query API server binary (see "Server" below)
+├── internal/server/       ← the server's packages: api, auth, config, store, skills, compat, perf
 └── testdata/       ← .cypher fixture files
 ```
 
@@ -94,7 +96,7 @@ WAL mode is enabled via `PRAGMA journal_mode=WAL` on every open.
 - Labels are stored as comma-separated text in the `labels` column.
 - `json_extract(props, '$.key')` is used for property access in SQLite queries.
 - `go.mod` `go` directive is 1.26.5 (raised from 1.24 so govulncheck is clean: `golang.org/x/text` >= 0.39 and the net/url fix need Go 1.25+); `modernc.org/sqlite v1.35.0` builds fine at it.
-- `testdata/` package is excluded from `./...` by Go design. Run explicitly: `CGO_ENABLED=0 go test github.com/LackOfMorals/charta/testdata`.
+- `testdata/` package is excluded from `./...` by Go design. Run explicitly: `CGO_ENABLED=0 go test github.com/LackOfMorals/graingraph/testdata`.
 - Only one file per package should have a `// Package foo ...` doc comment.
 - When deleting files that export methods used in `example_test.go`, also remove the corresponding `Example*` functions — otherwise `go build ./...` fails even if core tests pass.
 - neo4j driver fully removed in task-010 via `go mod tidy` + `go mod vendor` (both needed — the repo uses a vendor dir; `go build` fails with "inconsistent vendoring" if only tidy is run).
@@ -110,12 +112,12 @@ WAL mode is enabled via `PRAGMA journal_mode=WAL` on every open.
 - Task-009 adds test coverage for `Single`, `ErrNoRecords`, and `ErrMultipleRecords` — but task-007 already added it in `result_test.go`.
 - All formerly-exported internal helpers are now unexported (task-007): `newResultFromRows`, `newRecord`, `setCounters`, `queryCounters`. `MapColumnValue` and `SplitLabels` wrappers are deleted entirely.
 - `driver.go` increments `queryCounters` fields directly (e.g. `ctr.nodesCreated++`); no exported `QueryCounters` struct exists.
-- `result_test.go` and `types_test.go` use `charta.Open` + `db.RunQuery` to construct test fixtures — no raw `*sql.Rows` or `newResultFromRows` in tests.
+- `result_test.go` and `types_test.go` use `graingraph.Open` + `db.RunQuery` to construct test fixtures — no raw `*sql.Rows` or `newResultFromRows` in tests.
 - `testdata/integration_test.go` and `compat/tck_test.go` still reference `NewEagerResult` (removed in task-003) — they are out-of-scope for `go build ./...` and will be fixed in task-009.
 - `helpers.go` adds `PropertyValue`, `RecordValue`, `GetProperty[T]`, `GetRecordValue[T]`, `CollectT[T]`, `SingleT[T]`. The unexported `propsGetter` interface is implemented by `*Node` and `*Relationship` via `getProps()` methods added to `types.go`-adjacent declarations in `helpers.go`.
 - `convertTo[T]` uses `any(zero).(type)` type-switch (not reflection) to coerce JSON-decoded values; SQLite returns JSON numbers as `float64`, so `toInt64` converts `float64→int64` via truncation.
-- `charta.EagerResult` and `charta.NewEagerResult` are deleted in v2. Test packages that need eager collection define a local `eagerResult` struct + `collectResult` helper using `qr.Collect(ctx)` followed by `qr.Consume(ctx)` (idempotent) to get counters.
-- `types.go` had a second `// Package charta ...` doc block (v1-era text referencing Neo4j Aura); it was removed in task-011. Only `driver.go` carries the package doc comment.
+- `graingraph.EagerResult` and `graingraph.NewEagerResult` are deleted in v2. Test packages that need eager collection define a local `eagerResult` struct + `collectResult` helper using `qr.Collect(ctx)` followed by `qr.Consume(ctx)` (idempotent) to get counters.
+- `types.go` had a second `// Package graingraph ...` doc block (v1-era text referencing Neo4j Aura); it was removed in task-011. Only `driver.go` carries the package doc comment.
 - `testdata/integration_test.go` and `compat/tck_test.go` both define their own `eagerResult`/`collectResult` — they are separate packages and cannot share a common helper without a new exported type.
 - `DB.Close` still takes `context.Context` (only `Tx` methods are context-free); any test calling `db.Close()` without args must be fixed to `db.Close(context.Background())`.
 - `analyze.Check` reports only what it can prove (unknown types are accepted) and must have ZERO false positives: `cypher/analyze` `TestTCK_ValidScenariosPass` checks every valid TCK query and `TestTCK_CompileTimeErrors` requires the exact class and code for all 586 compile-time-error cases. Rules worth knowing: a path variable is bound AFTER its elements (so `p = (p)-->()` is "already bound" while a later node `r` after path `r` is a type conflict); in an aggregating item every variable/property leaf outside an aggregate must equal a projected non-aggregating item (so `me.age + you.age + count(*)` is ambiguous even if `me.age + you.age` is projected); `NoExpressionAlias` is reported after the other projection checks; `WITH *` with no variables is legal but `RETURN *` is `NoVariablesInScope`.
@@ -137,10 +139,10 @@ WAL mode is enabled via `PRAGMA journal_mode=WAL` on every open.
 - Interpreter performance (`cypher/interp`): node scans are narrowed in SQLite by property equalities from inline property maps and top-level `WHERE var.key = <literal|param|bound var>` conjuncts (`pushdown.go`); they are only a prefilter and Go re-checks every match. Hint values must be string/int64/float64 (SQLite would equate a boolean with 1/0) and keys must be plain `[A-Za-z0-9_]` identifiers because the JSON path is inlined in the SQL (needed for expression indexes to apply). `interp.Engine` (one per `DB`) creates `idx_auto_np_<hex key>` expression indexes on `json_extract(props, '$."key"')` after a key has narrowed 3 scans on a graph with >=500 nodes (max 32, never dropped), and caches parsed+analysed statements (cleared when procedures change). `decodeProps` uses a hand-written JSON decoder (`fastjson.go`) with an encoding/json fallback; `fastjson_test.go` checks they agree.
 - Query execution is `syntax.Parse` → `analyze.CheckWith` → `interp.RunWith` (`engine.go`); there is no SQL translator, planner or plan cache any more (removed after the interpreter reached parity and beat it on lookups/traversals). SQLite is the only store; the interpreter talks to it directly through `database/sql` and does not use `store.Store` for queries. Do not add a second storage backend.
 - `cypher/syntax` parses Cypher 25 including Neo4j's extensions (label expressions, `EXISTS/COUNT/COLLECT {}`, `CALL (a) {} IN TRANSACTIONS`, quantified path patterns and path selectors, map projections, dynamic labels/properties, `IS :: TYPE`, `FILTER`/`LET`/`FINISH`, schema commands, `LOAD CSV`, hints, server-only commands). The interpreter executes all of these except nested quantified path patterns, `SHOW FUNCTIONS`, `USE` and the other server-only commands (user/role/database management), which return an "unsupported" error naming the construct. `CYPHER 5` is rejected; `NEXT`, `INSERT` and standalone `ORDER BY` are deliberately not parsed (not documented in the Cypher Manual). Syntax was checked against the Neo4j Cypher Manual, not guessed.
-- Compile-time errors are `*syntax.SyntaxError` or `*analyze.Error`; `analyze.Describe(err)` returns the openCypher TCK class and detail code (`UndefinedVariable`, `VariableAlreadyBound`, `AmbiguousAggregationExpression`, `InvalidArgumentType`, …) through charta's `%w` wrapping. Lexer/parser errors carry a `Code` too (`IntegerOverflow`, `InvalidNumberLiteral`, …; default `UnexpectedSyntax`).
+- Compile-time errors are `*syntax.SyntaxError` or `*analyze.Error`; `analyze.Describe(err)` returns the openCypher TCK class and detail code (`UndefinedVariable`, `VariableAlreadyBound`, `AmbiguousAggregationExpression`, `InvalidArgumentType`, …) through graingraph's `%w` wrapping. Lexer/parser errors carry a `Code` too (`IntegerOverflow`, `InvalidNumberLiteral`, …; default `UnexpectedSyntax`).
 - TCK: `CGO_ENABLED=0 go test -count=1 -tags=tck ./compat/... -v`. Nothing is skipped and the harness requires 100% of the scenarios not listed in `compat/testdata/excluded.txt` (3,895 pass). `WithMaxPathHops` is an opt-in cap (default: none).
 - Benchmarks: `go test -run XXX -bench BenchmarkQueries .` (2,000-node graph).
-- Temporal values live in `cypher/temporal` and are returned to callers as `charta.Date`, `LocalTime`, `Time`, `LocalDateTime`, `DateTime` and `Duration` (aliases; `String()` is the canonical Cypher rendering, which the TCK compares). They are stored in the props JSON as `{"$t":<kind>,"v":"<canonical string>"}` (maps cannot be property values, so a nested object is unambiguous) and revived in `decodeProps`; they cannot be used as scan-pushdown hints. "Now" is fixed per statement (`exec.clock`) except `.realtime()`. Named zones need `time/tzdata`, which is embedded (about 450 KB of binary). A duration keeps months, days and seconds separately; fractional units cascade (month fraction -> days at 30.436875, day fraction -> seconds) using exact rational arithmetic in `duration.go`.
+- Temporal values live in `cypher/temporal` and are returned to callers as `graingraph.Date`, `LocalTime`, `Time`, `LocalDateTime`, `DateTime` and `Duration` (aliases; `String()` is the canonical Cypher rendering, which the TCK compares). They are stored in the props JSON as `{"$t":<kind>,"v":"<canonical string>"}` (maps cannot be property values, so a nested object is unambiguous) and revived in `decodeProps`; they cannot be used as scan-pushdown hints. "Now" is fixed per statement (`exec.clock`) except `.realtime()`. Named zones need `time/tzdata`, which is embedded (about 450 KB of binary). A duration keeps months, days and seconds separately; fractional units cascade (month fraction -> days at 30.436875, day fraction -> seconds) using exact rational arithmetic in `duration.go`.
 - Void procedures (no outputs) pass rows through an in-query CALL; procedures with outputs multiply rows by their results.
 - The TCK harness checks every side-effect counter exactly (`no side effects` means all zero; unlisted names in `the side effects should be` must be zero). Label counters follow the TCK: `+labels`/`-labels` count labels that came into or went out of use in the database (compared before and after the statement), not label assignments; a node created and deleted in one statement leaves no counters; deleting an existing entity counts its properties (and labels) as removed.
 - Neo4j-extension scenarios live in `compat/testdata/neo4j/*.feature` (run by `TestNeo4jExtensions`, which requires 100% except entries in `compat/testdata/neo4j-deferred.txt`). Add a scenario there with every extension construct you implement.
@@ -161,3 +163,102 @@ WAL mode is enabled via `PRAGMA journal_mode=WAL` on every open.
 - Scans in a pipeline (`eachStartChunk`, `graph.scanPage`): a label and/or property-equality scan is read a page at a time by keyset (`id > after ORDER BY id LIMIT n`, a single pass overall; the first page is `startChunk` rows, later ones `scanPageSize`), so a `LIMIT` reads one page, not the label. Outside a pipeline `scanNodes` still reads everything at once, which is what keeps a `MATCH ... CREATE` from seeing its own writes.
 - Cache bounding: when the whole statement only reads (`readOnlyBody`, or a read-only connection), `graph.evictable` is set and `trimCaches` drops the node, relationship and adjacency caches between pages of the outermost scan once they pass `cacheLimit`. This is safe because node and relationship equality, ordering and grouping all go by id (`value.go`), never by pointer. In a statement that writes it is NOT safe: `nodeSnap`, `createdNodes` and `delNodes` are keyed by `*Node`, so the caches stay. Measured on 1M companies / 1.5M relationships: `LIMIT 10` 1.3 s / 1.5 GB -> 1 ms / 27 MB; aggregations over every node 1.2-1.6 GB -> about 95 MB; a two-hop DISTINCT aggregation 1.6 GB -> 140 MB, at about 5% more time on a 3.6 s query (hot nodes are decoded again after a trim).
 - Batched creates (`cypher/interp/batch.go`): `createNode`/`createRel` do not INSERT one row at a time. They take the id SQLite would assign (next `sqlite_sequence` value for `nodes`/`edges`, re-read whenever the buffer was empty), buffer the row, and `flushWrites` writes the buffer as multi-row INSERTs with explicit ids (nodes, then `node_labels`, then edges; at most ~1000 bound variables per statement). `graph.db` is a `flushDB` that flushes before every query or exec, so nothing sees the database without the buffered rows; `graph.raw` is the unwrapped DB for the flush itself and the sequence read. Any new SQL must go through `g.db`, never `g.raw`. A failed statement drops the buffer with the rest of its effects (the caller rolls back). `batchDisabled`/`batchedRows` support `TestBatchedCreatesAgreeWithRowAtATime`, which compares ids, rows, counters, errors and the final graph with and without batching, with and without a constraint. `netCounters` counts a label's nodes only up to the statement's own assignments + 1 (`LIMIT`), so a bulk-load statement does not cost the size of the database.
+
+## Server: graingraph-query
+
+`graingraph-query` is an HTTP server that implements the Neo4j Query API (v2)
+on top of the embedded database. Any client that talks Query API to Neo4j
+should talk to this unchanged. It is single-user by design: one basic-auth
+credential, full access. It lives in this module: the binary is
+`cmd/graingraph-query` and everything else is under `internal/server/`. It
+adds no dependencies beyond the standard library.
+
+### Commands
+
+```sh
+go build ./...
+go vet ./...
+go test ./...       # CI runs this (with -race); also run by GoReleaser before a release
+go run ./cmd/graingraph-query --username admin --db :memory:   # needs GRAINGRAPH_QUERY_PASSWORD
+```
+
+`internal/server/compat` and `internal/server/perf` are skipped unless a real Neo4j
+is configured through `GRAINGRAPH_QUERY_COMPAT_NEO4J_*` / `GRAINGRAPH_QUERY_PERF_NEO4J_*`
+(see README). A plain `go test ./...` therefore does not exercise them. If you
+change a response shape, status code or error code, run the compat test when a
+Neo4j is available, and say so if it wasn't run.
+
+### Layout
+
+```
+cmd/graingraph-query/    flags, env, logging setup, server lifecycle, `skill` subcommand
+internal/server/api/     HTTP handlers, content negotiation, encoding, errors, CORS, logging
+internal/server/auth/    basic-auth middleware
+internal/server/config/  Config, env helpers, Version
+internal/server/store/   wraps graingraph: transactions, read-only, import dir, reaper
+internal/server/skills/  embedded agent skills (<name>/SKILL.md) served by CLI and HTTP
+internal/server/compat/  side-by-side tests against a real Neo4j
+internal/server/perf/    latency harness against a real Neo4j (measurement, not pass/fail)
+```
+
+### Conventions and constraints
+
+- **Neo4j parity is the contract.** Status codes, error codes
+  (`Neo.ClientError.…`), body shapes and `Accept`/`Content-Type` handling copy
+  what Neo4j returns. Known differences are listed in the README and marked in
+  `internal/server/compat`; add to both rather than diverging silently.
+- **Success is `202`.** A failure during execution (arithmetic, type errors) is
+  also `202` with `errors` beside an empty `data`; parse/semantic failures are
+  `400`. Use `writeRunFailure` / the helpers in `errors.go`, not ad hoc writes.
+- **`Accept: text/toon` is the one deliberate departure from Neo4j** (`toon.go`):
+  a flat table for agents, with every failure an error status. It never
+  applies to the other formats. The encoder is hand-written and was checked
+  against `@toon-format/toon`; if you change quoting or number rules, compare
+  against that library again.
+- **Responses are marshalled before anything is written** (`writeJSON`), so an
+  encoding failure is a clean 500, not a truncated body. Keep it that way.
+- **One transaction holds the database.** graingraph serialises on a single
+  connection, so the store waits `--tx-wait` then fails with
+  `DatabaseUnavailable`. Don't add code paths that take the connection without
+  going through the store.
+- **Never log parameters or passwords.** Statement text is logged only when
+  `--log-statements` is on.
+- **Don't trust request headers for URLs.** Use `Handler.baseURL`, which
+  prefers `--public-url` over `Host`/`X-Forwarded-Proto`.
+- **Auth:** `/db/...` is behind basic auth. Public by design: `/`, `/health`,
+  `/skills`, `/skills/{name}`. Anything new that is public must not return
+  secrets or database content.
+- **Config:** each flag has a `GRAINGRAPH_QUERY_*` env var (via `config.EnvOr` and
+  friends). Add both, validate in `Config.Validate`, and document in the README
+  table. Passwords are preferred via env, not flags.
+- `cmd/graingraph-query/main_test.go` blanks all `GRAINGRAPH_QUERY_*` variables so a
+  developer's shell can't leak in; do the same in any new test that calls `run`.
+- Tests are table-driven, use real servers via `httptest` (`newTestServer`,
+  `do` in `internal/server/api`), and avoid mocks of graingraph.
+
+### Agent skills
+
+The skill lives in `internal/server/skills/graingraph-query/SKILL.md` (Agent Skills format:
+YAML frontmatter with `name` and `description`, then Markdown). It is embedded
+with `go:embed` and served by `graingraph-query skill` and `GET /skills[/{name}]`.
+
+- `{{BASE_URL}}` in the text is replaced with the server's URL when rendered.
+- The skill is documentation for *other* agents. When behaviour changes
+  (endpoints, formats, error handling, supported Cypher, limits), update it in
+  the same change, and check every claim against a running server rather than
+  from memory. Do not put credentials or real hostnames in it.
+- A new skill is a new `internal/server/skills/<name>/SKILL.md`; the name must equal
+  its directory, with no dots or slashes.
+
+### Releases
+
+Tag-driven via GoReleaser (`.github/workflows/release.yml`, `.goreleaser.yaml`):
+`graingraph-query` binaries for linux/darwin/windows on amd64/arm64
+(`CGO_ENABLED=0`) plus a source archive. The tag is the version of the library
+and of the server; `config.Version` (in `internal/server/config`) is what
+discovery and `--version` report, so bump it with the release.
+
+## Git
+
+Don't commit or push unless asked. Keep commits focused, and run `go vet ./...`
+and `go test ./...` first.

@@ -5,7 +5,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/LackOfMorals/charta/cypher/syntax"
+	"github.com/LackOfMorals/graingraph/cypher/syntax"
 )
 
 // projItem is one output column of a WITH/RETURN.

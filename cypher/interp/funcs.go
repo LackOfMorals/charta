@@ -7,10 +7,10 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/LackOfMorals/charta/cypher/spatial"
-	"github.com/LackOfMorals/charta/cypher/syntax"
-	"github.com/LackOfMorals/charta/cypher/temporal"
-	"github.com/LackOfMorals/charta/cypher/vector"
+	"github.com/LackOfMorals/graingraph/cypher/spatial"
+	"github.com/LackOfMorals/graingraph/cypher/syntax"
+	"github.com/LackOfMorals/graingraph/cypher/temporal"
+	"github.com/LackOfMorals/graingraph/cypher/vector"
 )
 
 // aggregates are the aggregating function names (lower case).

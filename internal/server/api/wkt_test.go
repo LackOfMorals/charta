@@ -3,7 +3,7 @@ package api
 import (
 	"testing"
 
-	"github.com/LackOfMorals/charta/cypher/spatial"
+	"github.com/LackOfMorals/graingraph/cypher/spatial"
 )
 
 func TestParseWKT(t *testing.T) {

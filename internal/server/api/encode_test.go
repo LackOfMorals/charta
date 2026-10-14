@@ -5,9 +5,9 @@ import (
 	"math"
 	"testing"
 
-	"github.com/LackOfMorals/charta"
-	"github.com/LackOfMorals/charta/cypher/spatial"
-	"github.com/LackOfMorals/charta/cypher/vector"
+	"github.com/LackOfMorals/graingraph"
+	"github.com/LackOfMorals/graingraph/cypher/spatial"
+	"github.com/LackOfMorals/graingraph/cypher/vector"
 )
 
 // sameJSON reports whether two values marshal to the same JSON.
@@ -174,12 +174,12 @@ func TestEncodeVectorTyped(t *testing.T) {
 }
 
 func TestEncodeTypedPath(t *testing.T) {
-	p := charta.Path{
-		Nodes: []charta.Node{
+	p := graingraph.Path{
+		Nodes: []graingraph.Node{
 			{ElementId: "1", Labels: []string{"Person"}, Props: map[string]any{"name": "A"}},
 			{ElementId: "2", Labels: []string{"Person"}, Props: map[string]any{}},
 		},
-		Relationships: []charta.Relationship{
+		Relationships: []graingraph.Relationship{
 			{ElementId: "3", Type: "KNOWS", StartElementId: "1", EndElementId: "2", Props: map[string]any{}},
 		},
 	}

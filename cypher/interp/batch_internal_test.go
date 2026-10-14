@@ -6,9 +6,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/LackOfMorals/charta/cypher/analyze"
-	"github.com/LackOfMorals/charta/cypher/syntax"
-	"github.com/LackOfMorals/charta/store"
+	"github.com/LackOfMorals/graingraph/cypher/analyze"
+	"github.com/LackOfMorals/graingraph/cypher/syntax"
+	"github.com/LackOfMorals/graingraph/store"
 )
 
 // runWithEffects runs q in its own transaction (rolled back on error, as callers

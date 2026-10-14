@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/LackOfMorals/charta/cypher/analyze"
-	"github.com/LackOfMorals/charta/cypher/syntax"
-	"github.com/LackOfMorals/charta/store"
+	"github.com/LackOfMorals/graingraph/cypher/analyze"
+	"github.com/LackOfMorals/graingraph/cypher/syntax"
+	"github.com/LackOfMorals/graingraph/store"
 )
 
 // countingDB counts the SQL statements a query issues.

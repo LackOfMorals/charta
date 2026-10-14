@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/LackOfMorals/charta-query/internal/store"
+	"github.com/LackOfMorals/graingraph/internal/server/store"
 )
 
 // errorBody is one entry of a client-facing error document.
@@ -110,8 +110,8 @@ type resultResponse struct {
 	Transaction          *txInfo        `json:"transaction,omitempty"`
 }
 
-// countersBlock mirrors the charta mutation counters; system counters
-// are always zero because charta is a single embedded database.
+// countersBlock mirrors the graingraph mutation counters; system counters
+// are always zero because graingraph is a single embedded database.
 type countersBlock struct {
 	ContainsUpdates bool `json:"containsUpdates"`
 
@@ -151,7 +151,7 @@ func countersBlockOf(c *store.Counters) *countersBlock {
 	}
 }
 
-// encodeValues converts raw charta values into the response representation.
+// encodeValues converts raw graingraph values into the response representation.
 func encodeValues(vals [][]any, rt responseType) ([]any, error) {
 	out := make([]any, len(vals))
 	for i, row := range vals {

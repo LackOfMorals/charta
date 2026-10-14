@@ -1,4 +1,4 @@
-module github.com/LackOfMorals/charta
+module github.com/LackOfMorals/graingraph
 
 go 1.26.5
 

@@ -119,11 +119,11 @@ func TestSkillsEndpoints(t *testing.T) {
 		t.Fatalf("list: %d %v", code, body)
 	}
 	first := list[0].(map[string]any)
-	if first["name"] != "charta-query" || first["url"] != srv.URL+"/skills/charta-query" || first["description"] == "" {
+	if first["name"] != "graingraph-query" || first["url"] != srv.URL+"/skills/graingraph-query" || first["description"] == "" {
 		t.Errorf("entry: %v", first)
 	}
 
-	resp, err := http.Get(srv.URL + "/skills/charta-query")
+	resp, err := http.Get(srv.URL + "/skills/graingraph-query")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -132,7 +132,7 @@ func TestSkillsEndpoints(t *testing.T) {
 	if resp.StatusCode != http.StatusOK || !strings.HasPrefix(resp.Header.Get("Content-Type"), "text/markdown") {
 		t.Fatalf("get: %d %s", resp.StatusCode, resp.Header.Get("Content-Type"))
 	}
-	if !strings.HasPrefix(string(doc), "---\nname: charta-query\n") || !strings.Contains(string(doc), srv.URL+"/db/neo4j/query/v2") {
+	if !strings.HasPrefix(string(doc), "---\nname: graingraph-query\n") || !strings.Contains(string(doc), srv.URL+"/db/neo4j/query/v2") {
 		t.Errorf("document not rendered for this server: %.200q", doc)
 	}
 

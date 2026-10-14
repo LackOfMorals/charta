@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"math"
 
-	"github.com/LackOfMorals/charta"
-	"github.com/LackOfMorals/charta/cypher/spatial"
-	"github.com/LackOfMorals/charta/cypher/temporal"
-	"github.com/LackOfMorals/charta/cypher/vector"
+	"github.com/LackOfMorals/graingraph"
+	"github.com/LackOfMorals/graingraph/cypher/spatial"
+	"github.com/LackOfMorals/graingraph/cypher/temporal"
+	"github.com/LackOfMorals/graingraph/cypher/vector"
 )
 
 // nodeJSON is the Plain JSON representation of a graph node.
@@ -27,7 +27,7 @@ type relJSON struct {
 	Properties         map[string]any `json:"properties"`
 }
 
-// encodePlain converts a charta result value to its Plain JSON form
+// encodePlain converts a graingraph result value to its Plain JSON form
 // (accept: application/json).
 func encodePlain(v any) (any, error) {
 	switch x := v.(type) {
@@ -64,7 +64,7 @@ func encodePlain(v any) (any, error) {
 	case []byte:
 		return base64.StdEncoding.EncodeToString(x), nil
 
-	case *charta.Node:
+	case *graingraph.Node:
 		props, err := encodeProps(x.Props)
 		if err != nil {
 			return nil, err
@@ -75,7 +75,7 @@ func encodePlain(v any) (any, error) {
 		}
 		return nodeJSON{ElementId: x.ElementId, Labels: labels, Properties: props}, nil
 
-	case *charta.Relationship:
+	case *graingraph.Relationship:
 		props, err := encodeProps(x.Props)
 		if err != nil {
 			return nil, err
@@ -88,7 +88,7 @@ func encodePlain(v any) (any, error) {
 			Properties:         props,
 		}, nil
 
-	case charta.Path:
+	case graingraph.Path:
 		return encodePathPlain(x)
 
 	case temporal.Value:
@@ -164,7 +164,7 @@ func encodePlain(v any) (any, error) {
 	}
 }
 
-func encodePathPlain(p charta.Path) (any, error) {
+func encodePathPlain(p graingraph.Path) (any, error) {
 	out := make([]any, 0, len(p.Nodes)+len(p.Relationships))
 	for i, n := range p.Nodes {
 		enc, err := encodePlain(&n)

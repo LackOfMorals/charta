@@ -7,12 +7,12 @@ import (
 	"log/slog"
 	"net/http"
 
-	"github.com/LackOfMorals/charta"
-	"github.com/LackOfMorals/charta/cypher/analyze"
-	"github.com/LackOfMorals/charta/cypher/interp"
-	"github.com/LackOfMorals/charta/cypher/syntax"
+	"github.com/LackOfMorals/graingraph"
+	"github.com/LackOfMorals/graingraph/cypher/analyze"
+	"github.com/LackOfMorals/graingraph/cypher/interp"
+	"github.com/LackOfMorals/graingraph/cypher/syntax"
 
-	"github.com/LackOfMorals/charta-query/internal/store"
+	"github.com/LackOfMorals/graingraph/internal/server/store"
 )
 
 // Neo4j error codes used by the server. These match the codes a Neo4j
@@ -91,16 +91,16 @@ func interpCode(class string) string {
 	return "Neo.ClientError.Statement.ExternalResourceFailed"
 }
 
-// mapChartaError converts a charta (or store) execution error into a
+// mapGraingraphError converts a graingraph (or store) execution error into a
 // client-facing Neo4j-style error.
-func mapChartaError(err error) *apiError {
+func mapGraingraphError(err error) *apiError {
 	var txOpen *store.TransactionOpenError
 	switch {
 	case errors.Is(err, context.DeadlineExceeded):
 		return clientError(CodeTxTimedOut, "The query or transaction exceeded its time limit.")
 	case errors.Is(err, context.Canceled):
 		return serverError(CodeGeneralError, "The request was canceled before it completed.")
-	case errors.Is(err, charta.ErrReadOnly):
+	case errors.Is(err, graingraph.ErrReadOnly):
 		return clientError(CodeForbidden, "The database is read-only: write queries are not allowed.")
 	case errors.As(err, &txOpen):
 		return clientError(CodeDBUnavailable, "Transaction %s is open and holds the database; commit or roll it back (DELETE .../tx/%s) before running other queries.", txOpen.ID, txOpen.ID).
@@ -110,7 +110,7 @@ func mapChartaError(err error) *apiError {
 			withStatus(http.StatusNotFound)
 	}
 
-	var cv *charta.ErrConstraintViolation
+	var cv *graingraph.ErrConstraintViolation
 	if errors.As(err, &cv) {
 		return clientError(CodeConstraint, "%s", cv.Message)
 	}
@@ -132,12 +132,12 @@ func mapChartaError(err error) *apiError {
 		return out
 	}
 
-	var missing *charta.ErrMissingParameter
+	var missing *graingraph.ErrMissingParameter
 	if errors.As(err, &missing) {
 		return clientError(CodeParameterMissing, "Expected parameter(s): %s", missing.Name)
 	}
 
-	var unsupported *charta.ErrUnsupportedCypher
+	var unsupported *graingraph.ErrUnsupportedCypher
 	if errors.As(err, &unsupported) {
 		return clientError(CodeSyntaxError, "Unsupported Cypher construct %q: %s", unsupported.Clause, unsupported.Detail)
 	}

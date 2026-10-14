@@ -1,6 +1,6 @@
 package analyze
 
-import "github.com/LackOfMorals/charta/cypher/syntax"
+import "github.com/LackOfMorals/graingraph/cypher/syntax"
 
 // kind is a coarse static type. kAny means "unknown", and an unknown type never
 // causes an error: the analysis only reports what it can prove.

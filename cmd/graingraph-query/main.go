@@ -1,5 +1,5 @@
-// Command charta-query serves an HTTP API with the Neo4j Query API
-// contract on top of an embedded charta graph database.
+// Command graingraph-query serves an HTTP API with the Neo4j Query API
+// contract on top of an embedded graingraph graph database.
 package main
 
 import (
@@ -19,10 +19,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/LackOfMorals/charta-query/internal/api"
-	"github.com/LackOfMorals/charta-query/internal/auth"
-	"github.com/LackOfMorals/charta-query/internal/config"
-	"github.com/LackOfMorals/charta-query/internal/store"
+	"github.com/LackOfMorals/graingraph/internal/server/api"
+	"github.com/LackOfMorals/graingraph/internal/server/auth"
+	"github.com/LackOfMorals/graingraph/internal/server/config"
+	"github.com/LackOfMorals/graingraph/internal/server/store"
 )
 
 // shutdownTimeout bounds how long in-flight requests get to finish once
@@ -39,7 +39,7 @@ func main() {
 	case isUsageError(err):
 		os.Exit(2)
 	default:
-		slog.Error("charta-query exited", "error", err)
+		slog.Error("graingraph-query exited", "error", err)
 		os.Exit(1)
 	}
 }
@@ -91,26 +91,26 @@ func run(ctx context.Context, args []string, stdout io.Writer, ready func(addr s
 	if len(args) > 0 && args[0] == "skill" {
 		return runSkill(args[1:], stdout)
 	}
-	flags := flag.NewFlagSet("charta-query", flag.ContinueOnError)
+	flags := flag.NewFlagSet("graingraph-query", flag.ContinueOnError)
 	flags.SetOutput(os.Stderr)
 	var (
-		listen    = flags.String("listen", config.EnvOr("CHARTA_QUERY_LISTEN", ":7474"), "HTTP listen address")
-		dbPath    = flags.String("db", config.EnvOr("CHARTA_QUERY_DB", "charta.db"), `path to the charta SQLite database (":memory:" for a transient store)`)
-		database  = flags.String("database-name", config.EnvOr("CHARTA_QUERY_DATABASE_NAME", "neo4j"), "database name advertised in discovery")
-		readOnly  = flags.Bool("read-only", config.EnvBool("CHARTA_QUERY_READ_ONLY", false), "open the database read-only")
-		txTimeout = flags.Duration("tx-timeout", config.EnvDuration("CHARTA_QUERY_TX_TIMEOUT", 5*time.Minute), "idle timeout for explicit transactions (0 disables)")
-		txWait    = flags.Duration("tx-wait", config.EnvDuration("CHARTA_QUERY_TX_WAIT", 5*time.Second), "how long a request waits for an open transaction to end before failing (0 fails at once)")
-		importDir = flags.String("import-dir", config.EnvOr("CHARTA_QUERY_IMPORT_DIR", ""), "directory that enables LOAD CSV, restricted to files below it")
-		username  = flags.String("username", config.EnvOr("CHARTA_QUERY_USERNAME", ""), "basic-auth username")
-		password  = flags.String("password", config.EnvOr("CHARTA_QUERY_PASSWORD", ""), "basic-auth password (visible in the process list; prefer CHARTA_QUERY_PASSWORD)")
-		tlsCert   = flags.String("tls-cert", config.EnvOr("CHARTA_QUERY_TLS_CERT", ""), "TLS certificate file")
-		tlsKey    = flags.String("tls-key", config.EnvOr("CHARTA_QUERY_TLS_KEY", ""), "TLS private key file")
-		publicURL = flags.String("public-url", config.EnvOr("CHARTA_QUERY_PUBLIC_URL", ""), "externally visible base URL advertised by discovery (default: derived from the request)")
-		logLevel  = flags.String("log-level", config.EnvOr("CHARTA_QUERY_LOG_LEVEL", "info"), "log level: debug, info, warn or error")
-		logFormat = flags.String("log-format", config.EnvOr("CHARTA_QUERY_LOG_FORMAT", "text"), "log format: text or json")
-		logFile   = flags.String("log-file", config.EnvOr("CHARTA_QUERY_LOG_FILE", ""), "append logs to this file instead of stderr")
-		logStmts  = flags.Bool("log-statements", config.EnvBool("CHARTA_QUERY_LOG_STATEMENTS", true), "include Cypher statement text in request logs (parameters are never logged)")
-		cors      = flags.String("cors-origins", config.EnvOr("CHARTA_QUERY_CORS_ORIGINS", "*"), `comma-separated origins allowed by CORS, "*" for any, "none" to disable`)
+		listen    = flags.String("listen", config.EnvOr("GRAINGRAPH_QUERY_LISTEN", ":7474"), "HTTP listen address")
+		dbPath    = flags.String("db", config.EnvOr("GRAINGRAPH_QUERY_DB", "graingraph.db"), `path to the graingraph SQLite database (":memory:" for a transient store)`)
+		database  = flags.String("database-name", config.EnvOr("GRAINGRAPH_QUERY_DATABASE_NAME", "neo4j"), "database name advertised in discovery")
+		readOnly  = flags.Bool("read-only", config.EnvBool("GRAINGRAPH_QUERY_READ_ONLY", false), "open the database read-only")
+		txTimeout = flags.Duration("tx-timeout", config.EnvDuration("GRAINGRAPH_QUERY_TX_TIMEOUT", 5*time.Minute), "idle timeout for explicit transactions (0 disables)")
+		txWait    = flags.Duration("tx-wait", config.EnvDuration("GRAINGRAPH_QUERY_TX_WAIT", 5*time.Second), "how long a request waits for an open transaction to end before failing (0 fails at once)")
+		importDir = flags.String("import-dir", config.EnvOr("GRAINGRAPH_QUERY_IMPORT_DIR", ""), "directory that enables LOAD CSV, restricted to files below it")
+		username  = flags.String("username", config.EnvOr("GRAINGRAPH_QUERY_USERNAME", ""), "basic-auth username")
+		password  = flags.String("password", config.EnvOr("GRAINGRAPH_QUERY_PASSWORD", ""), "basic-auth password (visible in the process list; prefer GRAINGRAPH_QUERY_PASSWORD)")
+		tlsCert   = flags.String("tls-cert", config.EnvOr("GRAINGRAPH_QUERY_TLS_CERT", ""), "TLS certificate file")
+		tlsKey    = flags.String("tls-key", config.EnvOr("GRAINGRAPH_QUERY_TLS_KEY", ""), "TLS private key file")
+		publicURL = flags.String("public-url", config.EnvOr("GRAINGRAPH_QUERY_PUBLIC_URL", ""), "externally visible base URL advertised by discovery (default: derived from the request)")
+		logLevel  = flags.String("log-level", config.EnvOr("GRAINGRAPH_QUERY_LOG_LEVEL", "info"), "log level: debug, info, warn or error")
+		logFormat = flags.String("log-format", config.EnvOr("GRAINGRAPH_QUERY_LOG_FORMAT", "text"), "log format: text or json")
+		logFile   = flags.String("log-file", config.EnvOr("GRAINGRAPH_QUERY_LOG_FILE", ""), "append logs to this file instead of stderr")
+		logStmts  = flags.Bool("log-statements", config.EnvBool("GRAINGRAPH_QUERY_LOG_STATEMENTS", true), "include Cypher statement text in request logs (parameters are never logged)")
+		cors      = flags.String("cors-origins", config.EnvOr("GRAINGRAPH_QUERY_CORS_ORIGINS", "*"), `comma-separated origins allowed by CORS, "*" for any, "none" to disable`)
 		showVer   = flags.Bool("version", false, "print version and exit")
 	)
 	if err := flags.Parse(args); err != nil {
@@ -121,7 +121,7 @@ func run(ctx context.Context, args []string, stdout io.Writer, ready func(addr s
 	}
 
 	if *showVer {
-		fmt.Fprintln(stdout, "charta-query", config.Version)
+		fmt.Fprintln(stdout, "graingraph-query", config.Version)
 		return nil
 	}
 

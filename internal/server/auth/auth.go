@@ -1,4 +1,4 @@
-// Package auth implements HTTP basic authentication for the charta-query
+// Package auth implements HTTP basic authentication for the graingraph-query
 // server. Basic auth is the only supported authentication mechanism.
 package auth
 
@@ -72,7 +72,7 @@ func (a *Authenticator) Middleware(next http.Handler) http.Handler {
 }
 
 func (a *Authenticator) unauthorized(w http.ResponseWriter, r *http.Request, message string) {
-	w.Header().Set("WWW-Authenticate", `Basic realm="charta-query", charset="UTF-8"`)
+	w.Header().Set("WWW-Authenticate", `Basic realm="graingraph-query", charset="UTF-8"`)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusUnauthorized)
 	body, _ := json.Marshal(map[string]any{"errors": []map[string]string{

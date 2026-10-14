@@ -1,6 +1,6 @@
 package store
 
-// schemaDDL is the complete DDL for the charta SQLite schema.
+// schemaDDL is the complete DDL for the graingraph SQLite schema.
 // It is executed once when a new database is opened or created.
 //
 // Design notes:

@@ -1,17 +1,17 @@
-// Package compat checks charta-query against a real Neo4j server.
+// Package compat checks graingraph-query against a real Neo4j server.
 //
 // It sends identical Query API requests to a reference Neo4j and to an
-// in-process charta-query and requires the responses to match: HTTP
+// in-process graingraph-query and requires the responses to match: HTTP
 // status, content type and body, after scrubbing values that are
 // legitimately different per server (element IDs, bookmarks, timings,
 // transaction IDs, error message wording).
 //
 // The test is skipped unless a reference server is configured:
 //
-//	CHARTA_QUERY_COMPAT_NEO4J_URL       e.g. http://localhost:7474
-//	CHARTA_QUERY_COMPAT_NEO4J_USER      e.g. neo4j
-//	CHARTA_QUERY_COMPAT_NEO4J_PASSWORD
-//	CHARTA_QUERY_COMPAT_NEO4J_DB        database name (default "neo4j")
+//	GRAINGRAPH_QUERY_COMPAT_NEO4J_URL       e.g. http://localhost:7474
+//	GRAINGRAPH_QUERY_COMPAT_NEO4J_USER      e.g. neo4j
+//	GRAINGRAPH_QUERY_COMPAT_NEO4J_PASSWORD
+//	GRAINGRAPH_QUERY_COMPAT_NEO4J_DB        database name (default "neo4j")
 //
 //	go test ./internal/compat -v
 //
@@ -33,9 +33,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/LackOfMorals/charta-query/internal/api"
-	"github.com/LackOfMorals/charta-query/internal/auth"
-	"github.com/LackOfMorals/charta-query/internal/store"
+	"github.com/LackOfMorals/graingraph/internal/server/api"
+	"github.com/LackOfMorals/graingraph/internal/server/auth"
+	"github.com/LackOfMorals/graingraph/internal/server/store"
 )
 
 const (
@@ -210,7 +210,7 @@ func requireSame(t *testing.T, step string, ref, got response) {
 	if reflect.DeepEqual(r, g) {
 		return
 	}
-	t.Errorf("%s: responses differ\n--- neo4j\n%s\n--- charta-query\n%s", step, clip(pretty(r)), clip(pretty(g)))
+	t.Errorf("%s: responses differ\n--- neo4j\n%s\n--- graingraph-query\n%s", step, clip(pretty(r)), clip(pretty(g)))
 }
 
 func clip(s string) string {
@@ -220,19 +220,19 @@ func clip(s string) string {
 	return s
 }
 
-// servers starts charta-query in-process and returns it with the
+// servers starts graingraph-query in-process and returns it with the
 // reference server, both configured with the same credentials.
 func servers(t *testing.T) (ref, cq target) {
 	t.Helper()
-	url := os.Getenv("CHARTA_QUERY_COMPAT_NEO4J_URL")
+	url := os.Getenv("GRAINGRAPH_QUERY_COMPAT_NEO4J_URL")
 	if url == "" {
-		t.Skip("CHARTA_QUERY_COMPAT_NEO4J_URL not set; skipping comparison with a real Neo4j")
+		t.Skip("GRAINGRAPH_QUERY_COMPAT_NEO4J_URL not set; skipping comparison with a real Neo4j")
 	}
 	ref = target{
 		name: "neo4j", base: strings.TrimRight(url, "/"),
-		user: firstNonEmpty(os.Getenv("CHARTA_QUERY_COMPAT_NEO4J_USER"), "neo4j"),
-		pass: os.Getenv("CHARTA_QUERY_COMPAT_NEO4J_PASSWORD"),
-		db:   firstNonEmpty(os.Getenv("CHARTA_QUERY_COMPAT_NEO4J_DB"), "neo4j"),
+		user: firstNonEmpty(os.Getenv("GRAINGRAPH_QUERY_COMPAT_NEO4J_USER"), "neo4j"),
+		pass: os.Getenv("GRAINGRAPH_QUERY_COMPAT_NEO4J_PASSWORD"),
+		db:   firstNonEmpty(os.Getenv("GRAINGRAPH_QUERY_COMPAT_NEO4J_DB"), "neo4j"),
 	}
 	st, err := store.New(":memory:")
 	if err != nil {
@@ -242,7 +242,7 @@ func servers(t *testing.T) (ref, cq target) {
 	h := api.NewHandler(st, auth.New(ref.user, ref.pass), ref.db, 5*time.Minute)
 	srv := httptest.NewServer(h.Routes())
 	t.Cleanup(srv.Close)
-	cq = target{name: "charta-query", base: srv.URL, user: ref.user, pass: ref.pass, db: ref.db}
+	cq = target{name: "graingraph-query", base: srv.URL, user: ref.user, pass: ref.pass, db: ref.db}
 	return ref, cq
 }
 
@@ -286,7 +286,7 @@ func TestSingleRequests(t *testing.T) {
 		post("jsonl", jsonlCT, jsonCT, j(`UNWIND range(1,3) AS i RETURN i`)),
 		{name: "jsonl typed", method: "POST", path: queryURL,
 			req:   request{accept: typedJL, contentType: jsonCT, body: j(`UNWIND range(1,2) AS i RETURN i, date('2020-01-01') AS d`)},
-			known: "Neo4j 2026.07 answers 406 for Typed JSON over JSONL; charta-query supports it as an extension"},
+			known: "Neo4j 2026.07 answers 406 for Typed JSON over JSONL; graingraph-query supports it as an extension"},
 		post("accept list prefers neo4j typed", typedCT+", application/json;q=0.5", jsonCT, j(`RETURN 1 AS i`)),
 		post("accept wildcard", "*/*", jsonCT, j(`RETURN 1 AS i`)),
 		post("query field alias absent", "", jsonCT, `{"statement":"RETURN 1 AS i","includeCounters":false}`),
@@ -315,7 +315,7 @@ func TestSingleRequests(t *testing.T) {
 		post("malformed json", "", jsonCT, `{bad`),
 		{name: "statement not a string", method: "POST", path: queryURL,
 			req:   request{contentType: jsonCT, body: `{"statement":1}`},
-			known: "Neo4j reports a non-string statement as Statement.SyntaxError; charta-query as Request.Invalid"},
+			known: "Neo4j reports a non-string statement as Statement.SyntaxError; graingraph-query as Request.Invalid"},
 		post("empty statement typed", typedCT, jsonCT, `{"statement":""}`),
 		post("empty statement jsonl", jsonlCT, jsonCT, `{"statement":""}`),
 		post("malformed json typed", typedCT, jsonCT, `{bad`),
@@ -350,7 +350,7 @@ func TestSingleRequests(t *testing.T) {
 			g := cq.do(t, c.method, c.path, c.req)
 			if c.known != "" {
 				if !reflect.DeepEqual(r.scrubbed(), g.scrubbed()) {
-					t.Logf("known divergence (%s)\n--- neo4j\n%s\n--- charta-query\n%s", c.known, clip(pretty(r.scrubbed())), clip(pretty(g.scrubbed())))
+					t.Logf("known divergence (%s)\n--- neo4j\n%s\n--- graingraph-query\n%s", c.known, clip(pretty(r.scrubbed())), clip(pretty(g.scrubbed())))
 				}
 				return
 			}
@@ -432,7 +432,7 @@ func compareScenario(t *testing.T, ref, cq target, steps []step, known ...map[st
 		label := fmt.Sprintf("step %d (%s)", i+1, s.name)
 		if why, ok := accepted[s.name]; ok {
 			if !reflect.DeepEqual(r[i].scrubbed(), g[i].scrubbed()) {
-				t.Logf("%s: known divergence (%s)\n--- neo4j\n%s\n--- charta-query\n%s", label, why, clip(pretty(r[i].scrubbed())), clip(pretty(g[i].scrubbed())))
+				t.Logf("%s: known divergence (%s)\n--- neo4j\n%s\n--- graingraph-query\n%s", label, why, clip(pretty(r[i].scrubbed())), clip(pretty(g[i].scrubbed())))
 			}
 			continue
 		}
@@ -502,7 +502,7 @@ func TestTransactionWithData(t *testing.T) {
 		{"rollback again", "DELETE", inTx, request{}},
 	}
 	compareScenario(t, ref, cq, steps, map[string]string{
-		"jsonl nodes typed": "Neo4j 2026.07 answers 406 for Typed JSON over JSONL; charta-query supports it as an extension",
+		"jsonl nodes typed": "Neo4j 2026.07 answers 406 for Typed JSON over JSONL; graingraph-query supports it as an extension",
 	})
 }
 

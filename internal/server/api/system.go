@@ -10,12 +10,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/LackOfMorals/charta-query/internal/store"
+	"github.com/LackOfMorals/graingraph/internal/server/store"
 )
 
 // systemDatabase is the name of Neo4j's administration database. Tools such as
 // Neo4j Desktop and Browser query it to discover the databases of a server;
-// charta-query answers the read-only SHOW DATABASE commands and db.ping() there, from what it
+// graingraph-query answers the read-only SHOW DATABASE commands and db.ping() there, from what it
 // knows (one user database and the system database itself) and nothing else.
 const systemDatabase = "system"
 
@@ -61,7 +61,7 @@ var adminPrivileges = [][5]string{
 }
 
 // systemOutcome answers a statement sent to the system database: the commands
-// the Neo4j tools issue when they connect, answered from what charta-query
+// the Neo4j tools issue when they connect, answered from what graingraph-query
 // knows (one user database and the system database; no procedures or
 // functions to list). A YIELD clause selects and orders the columns.
 func (h *Handler) systemOutcome(statement, address, user string) (*store.Outcome, *apiError) {
@@ -118,12 +118,12 @@ func (h *Handler) systemOutcome(statement, address, user string) (*store.Outcome
 		rows = [][]any{{"Neo4j Kernel", []any{emulatedNeo4jVersion}, emulatedNeo4jEdition}}
 	case cmd == "CALL DBMS.INFO()" || cmd == "CALL DBMS.INFO":
 		fields = []string{"id", "name", "creationDate"}
-		rows = [][]any{{"charta-query", h.database, h.created.UTC().Format(time.RFC3339)}}
+		rows = [][]any{{"graingraph-query", h.database, h.created.UTC().Format(time.RFC3339)}}
 	case cmd == "CALL DBMS.LICENSEAGREEMENTDETAILS()" || cmd == "CALL DBMS.LICENSEAGREEMENTDETAILS":
 		fields, rows = []string{"status", "daysLeftOnTrial", "totalTrialDays"}, [][]any{{"yes", nil, nil}}
 	case strings.HasPrefix(cmd, "CALL DBMS.LISTCONFIG"):
 		// Tools read settings such as dbms.security.auth_enabled (Bloom refuses
-		// to start unless it is true). charta-query always requires auth.
+		// to start unless it is true). graingraph-query always requires auth.
 		search := ""
 		if open, end := strings.Index(statement, "("), strings.LastIndex(statement, ")"); open >= 0 && end > open {
 			search = strings.Trim(strings.TrimSpace(statement[open+1:end]), `'"`)
@@ -161,7 +161,7 @@ func (h *Handler) systemOutcome(statement, address, user string) (*store.Outcome
 		name := strings.TrimSuffix(strings.SplitN(head[1], "(", 2)[0], "()")
 		return nil, clientError("Neo.ClientError.Procedure.ProcedureNotFound", "There is no procedure with the name `%s` registered for this database instance. Please ensure you've spelled the procedure name correctly and that the procedure is properly deployed.", name)
 	default:
-		return nil, clientError(CodeSyntaxError, "charta-query supports only a few read-only administration commands on the system database (SHOW DATABASES, SHOW CURRENT USER, SHOW PROCEDURES, SHOW FUNCTIONS, CALL db.ping(), CALL dbms.components(), CALL dbms.info(), CALL dbms.clientConfig()).")
+		return nil, clientError(CodeSyntaxError, "graingraph-query supports only a few read-only administration commands on the system database (SHOW DATABASES, SHOW CURRENT USER, SHOW PROCEDURES, SHOW FUNCTIONS, CALL db.ping(), CALL dbms.components(), CALL dbms.info(), CALL dbms.clientConfig()).")
 	}
 
 	if len(yield) > 0 && !(len(yield) == 1 && yield[0] == "*") {

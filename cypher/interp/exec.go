@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/LackOfMorals/charta/cypher/syntax"
+	"github.com/LackOfMorals/graingraph/cypher/syntax"
 )
 
 // Result is the outcome of executing a statement.

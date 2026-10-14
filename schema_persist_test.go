@@ -1,4 +1,4 @@
-package charta_test
+package graingraph_test
 
 import (
 	"context"
@@ -6,10 +6,10 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/LackOfMorals/charta"
+	"github.com/LackOfMorals/graingraph"
 )
 
-func setupSchema(t *testing.T, db *charta.DB) {
+func setupSchema(t *testing.T, db *graingraph.DB) {
 	t.Helper()
 	ctx := context.Background()
 	for _, q := range []string{
@@ -25,7 +25,7 @@ func setupSchema(t *testing.T, db *charta.DB) {
 	}
 }
 
-func checkSchemaEnforced(t *testing.T, db *charta.DB) {
+func checkSchemaEnforced(t *testing.T, db *graingraph.DB) {
 	t.Helper()
 	ctx := context.Background()
 	info, err := db.ListSchema(ctx)
@@ -41,7 +41,7 @@ func checkSchemaEnforced(t *testing.T, db *charta.DB) {
 			t.Errorf("schema object %q is missing: %+v", want, info)
 		}
 	}
-	var cv *charta.ErrConstraintViolation
+	var cv *graingraph.ErrConstraintViolation
 	if _, err := db.RunQuery(ctx, "CREATE (:Person {name: 'B', email: 'a@x.com'})", nil); !errors.As(err, &cv) || cv.Kind != "UNIQUENESS" {
 		t.Errorf("uniqueness not enforced: %v", err)
 	}
@@ -60,7 +60,7 @@ func checkSchemaEnforced(t *testing.T, db *charta.DB) {
 func TestSchemaSurvivesReopen(t *testing.T) {
 	ctx := context.Background()
 	path := filepath.Join(t.TempDir(), "g.db")
-	db, err := charta.Open(path)
+	db, err := graingraph.Open(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,7 +70,7 @@ func TestSchemaSurvivesReopen(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	reopened, err := charta.Open(path)
+	reopened, err := graingraph.Open(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -81,7 +81,7 @@ func TestSchemaSurvivesReopen(t *testing.T) {
 func TestSchemaSurvivesSnapshot(t *testing.T) {
 	ctx := context.Background()
 	for _, src := range []string{":memory:", filepath.Join(t.TempDir(), "src.db")} {
-		db, err := charta.Open(src)
+		db, err := graingraph.Open(src)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -92,7 +92,7 @@ func TestSchemaSurvivesSnapshot(t *testing.T) {
 		}
 		db.Close(ctx)
 
-		copyDB, err := charta.Open(snap)
+		copyDB, err := graingraph.Open(snap)
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -1,5 +1,5 @@
 // Package api implements the Neo4j Query API (v2) HTTP contract on top
-// of an embedded charta database.
+// of an embedded graingraph database.
 //
 // Endpoints:
 //
@@ -20,9 +20,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/LackOfMorals/charta-query/internal/auth"
-	"github.com/LackOfMorals/charta-query/internal/config"
-	"github.com/LackOfMorals/charta-query/internal/store"
+	"github.com/LackOfMorals/graingraph/internal/server/auth"
+	"github.com/LackOfMorals/graingraph/internal/server/config"
+	"github.com/LackOfMorals/graingraph/internal/server/store"
 )
 
 // emulatedNeo4jVersion is the Neo4j version discovery reports. Neo4j tools
@@ -168,7 +168,7 @@ func notFound(w http.ResponseWriter, r *http.Request) {
 
 // health implements GET /health: an unauthenticated liveness check. It
 // deliberately does not query the database, which would block behind an
-// open explicit transaction (charta serialises on one connection).
+// open explicit transaction (graingraph serialises on one connection).
 func (h *Handler) health(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
@@ -189,7 +189,7 @@ func (h *Handler) discovery(w http.ResponseWriter, r *http.Request) {
 		"neo4j_version": emulatedNeo4jVersion,
 		"neo4j_edition": emulatedNeo4jEdition,
 		"database":      h.database,
-		"server":        "charta-query/" + h.version,
+		"server":        "graingraph-query/" + h.version,
 		"auth_config":   map[string]any{"oidc_providers": []any{}},
 	})
 }

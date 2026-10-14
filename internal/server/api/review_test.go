@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/LackOfMorals/charta-query/internal/auth"
-	"github.com/LackOfMorals/charta-query/internal/store"
+	"github.com/LackOfMorals/graingraph/internal/server/auth"
+	"github.com/LackOfMorals/graingraph/internal/server/store"
 )
 
 func TestUnsupportedContentTypeIs415(t *testing.T) {
@@ -66,7 +66,7 @@ func TestPanicIsRecoveredAs500(t *testing.T) {
 }
 
 func TestUnclassifiedErrorDetailIsNotLeaked(t *testing.T) {
-	ae := mapChartaError(errors.New("open /var/lib/secret/charta.db: permission denied"))
+	ae := mapGraingraphError(errors.New("open /var/lib/secret/graingraph.db: permission denied"))
 	if ae.Code != CodeGeneralError {
 		t.Fatalf("code = %s", ae.Code)
 	}

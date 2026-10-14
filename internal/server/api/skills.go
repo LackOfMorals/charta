@@ -3,7 +3,7 @@ package api
 import (
 	"net/http"
 
-	"github.com/LackOfMorals/charta-query/internal/skills"
+	"github.com/LackOfMorals/graingraph/internal/server/skills"
 )
 
 // skillList answers GET /skills with the available skills and where to

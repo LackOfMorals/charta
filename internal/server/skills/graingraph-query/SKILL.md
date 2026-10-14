@@ -1,12 +1,12 @@
 ---
-name: charta-query
-description: Run Cypher against a charta-query server, an embedded graph database that speaks the Neo4j Query API v2 over HTTP. Use when you need to read, write or explore a graph with Cypher, or when you are given a charta-query URL.
+name: graingraph-query
+description: Run Cypher against a graingraph-query server, an embedded graph database that speaks the Neo4j Query API v2 over HTTP. Use when you need to read, write or explore a graph with Cypher, or when you are given a graingraph-query URL.
 ---
 
-# charta-query
+# graingraph-query
 
-charta-query is an HTTP server with the Neo4j Query API (v2) contract on top of
-an embedded graph database (charta, Cypher over SQLite). Anything you can send
+graingraph-query is an HTTP server with the Neo4j Query API (v2) contract on top of
+an embedded graph database (graingraph, Cypher over SQLite). Anything you can send
 to a Neo4j Query API endpoint works here.
 
 Server: `{{BASE_URL}}`
@@ -135,7 +135,7 @@ are sent.
 
 ## Cypher support
 
-charta implements Cypher 25 (it passes the openCypher TCK). You can use:
+graingraph implements Cypher 25 (it passes the openCypher TCK). You can use:
 
 - `MATCH`, `OPTIONAL MATCH`, variable-length paths, `shortestPath()`,
   quantified path patterns, `WHERE`, `WITH`, `ORDER BY`, `SKIP`/`LIMIT`,

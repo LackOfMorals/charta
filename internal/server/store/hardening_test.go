@@ -86,7 +86,7 @@ func TestCloseDoesNotDeadlockWithCommit(t *testing.T) {
 		t.Fatalf("New: %v", err)
 	}
 	ctx := context.Background()
-	// charta serialises on one connection, so only one transaction can be
+	// graingraph serialises on one connection, so only one transaction can be
 	// open at a time; race Commit against Close repeatedly instead.
 	id, _ := NewTxID()
 	if _, err := st.Begin(ctx, id, time.Hour, nil); err != nil {

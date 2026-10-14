@@ -13,8 +13,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/LackOfMorals/charta/cypher/temporal"
-	"github.com/LackOfMorals/charta/cypher/vector"
+	"github.com/LackOfMorals/graingraph/cypher/temporal"
+	"github.com/LackOfMorals/graingraph/cypher/vector"
 )
 
 // maxBodyBytes bounds request bodies. Cypher statements plus parameters
@@ -34,7 +34,7 @@ type QueryRequest struct {
 	// explicit-transaction open request that only keeps the transaction
 	// alive.
 	Statement string
-	// Parameters are the Cypher parameters, as charta-native Go values.
+	// Parameters are the Cypher parameters, as graingraph-native Go values.
 	Parameters map[string]any
 	// IncludeCounters requests mutation counters in the response.
 	IncludeCounters bool
@@ -233,7 +233,7 @@ type typedParam struct {
 	Value json.RawMessage `json:"_value"`
 }
 
-// convert turns a typed parameter into a charta-native Go value.
+// convert turns a typed parameter into a graingraph-native Go value.
 func (tp typedParam) convert(ver int) (any, error) {
 	if len(tp.Type) == 0 {
 		return nil, errors.New("missing $type")
@@ -352,7 +352,7 @@ func (tp typedParam) convert(ver int) (any, error) {
 	}
 }
 
-// temporalKindName maps a Query API temporal type name to the charta
+// temporalKindName maps a Query API temporal type name to the graingraph
 // temporal kind name accepted by temporal.KindByName.
 func temporalKindName(apiType string) string {
 	switch apiType {
@@ -381,12 +381,12 @@ func decodeVector(raw json.RawMessage) (any, error) {
 	if err := json.Unmarshal(raw, &vv); err != nil {
 		return nil, fmt.Errorf("Vector: %w", err)
 	}
-	chartaType, ok := chartaVectorType(vv.CoordinatesType)
+	graingraphType, ok := graingraphVectorType(vv.CoordinatesType)
 	if !ok {
 		return nil, fmt.Errorf("Vector: unsupported coordinatesType %q", vv.CoordinatesType)
 	}
-	vec := vector.Vector{Type: chartaType}
-	if chartaType.IsInteger() {
+	vec := vector.Vector{Type: graingraphType}
+	if graingraphType.IsInteger() {
 		vec.Ints = make([]int64, len(vv.Coordinates))
 		for i, c := range vv.Coordinates {
 			n, err := strconv.ParseInt(c, 10, 64)
@@ -397,7 +397,7 @@ func decodeVector(raw json.RawMessage) (any, error) {
 		}
 	} else {
 		bits := 32
-		if chartaType == vector.Float64 {
+		if graingraphType == vector.Float64 {
 			bits = 64
 		}
 		vec.Floats = make([]float64, len(vv.Coordinates))
@@ -412,8 +412,8 @@ func decodeVector(raw json.RawMessage) (any, error) {
 	return vec, nil
 }
 
-// chartaVectorType maps a Query API vector type name to a charta type.
-func chartaVectorType(name string) (vector.Type, bool) {
+// graingraphVectorType maps a Query API vector type name to a graingraph type.
+func graingraphVectorType(name string) (vector.Type, bool) {
 	switch strings.ToUpper(name) {
 	case "INT64":
 		return vector.Integer64, true

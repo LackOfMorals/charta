@@ -7,21 +7,21 @@ import (
 	"io"
 	"os"
 
-	"github.com/LackOfMorals/charta-query/internal/config"
-	"github.com/LackOfMorals/charta-query/internal/skills"
+	"github.com/LackOfMorals/graingraph/internal/server/config"
+	"github.com/LackOfMorals/graingraph/internal/server/skills"
 )
 
-// runSkill implements "charta-query skill [--url URL] [--list] [name]": it
+// runSkill implements "graingraph-query skill [--url URL] [--list] [name]": it
 // prints a skill as Markdown (SKILL.md format) so an agent can load it
 // without a running server.
 func runSkill(args []string, stdout io.Writer) error {
-	flags := flag.NewFlagSet("charta-query skill", flag.ContinueOnError)
+	flags := flag.NewFlagSet("graingraph-query skill", flag.ContinueOnError)
 	flags.SetOutput(os.Stderr)
 	flags.Usage = func() {
-		fmt.Fprintln(os.Stderr, "usage: charta-query skill [--url URL] [--list] [name]")
+		fmt.Fprintln(os.Stderr, "usage: graingraph-query skill [--url URL] [--list] [name]")
 		flags.PrintDefaults()
 	}
-	url := flags.String("url", config.EnvOr("CHARTA_QUERY_PUBLIC_URL", "http://localhost:7474"), "server base URL written into the examples")
+	url := flags.String("url", config.EnvOr("GRAINGRAPH_QUERY_PUBLIC_URL", "http://localhost:7474"), "server base URL written into the examples")
 	list := flags.Bool("list", false, "list the available skills")
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -35,7 +35,7 @@ func runSkill(args []string, stdout io.Writer) error {
 		}
 		return nil
 	}
-	name := "charta-query"
+	name := "graingraph-query"
 	switch flags.NArg() {
 	case 0:
 	case 1:

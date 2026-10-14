@@ -3,11 +3,11 @@ package api
 import (
 	"strings"
 
-	"github.com/LackOfMorals/charta/cypher/temporal"
+	"github.com/LackOfMorals/graingraph/cypher/temporal"
 )
 
 // temporalString renders a temporal value the way a Neo4j server does in
-// a Query API response. charta's String is the shortest Cypher form
+// a Query API response. graingraph's String is the shortest Cypher form
 // ("12:30", "10:30:15.500"); Neo4j always writes the seconds, writes a
 // fraction with no trailing zeros ("15.5"), and in Plain JSON omits the
 // "[Region]" suffix of a zoned datetime (Typed JSON keeps it).

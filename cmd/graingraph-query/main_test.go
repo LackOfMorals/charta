@@ -31,12 +31,12 @@ import (
 // baseArgs run a transient server on a free port with credentials u:p.
 var baseArgs = []string{"--listen", "127.0.0.1:0", "--db", ":memory:", "--username", "u", "--password", "p"}
 
-// clearEnv blanks every CHARTA_QUERY_* variable so a developer's shell
+// clearEnv blanks every GRAINGRAPH_QUERY_* variable so a developer's shell
 // cannot leak into a test.
 func clearEnv(t *testing.T) {
 	t.Helper()
 	for _, kv := range os.Environ() {
-		if k, _, _ := strings.Cut(kv, "="); strings.HasPrefix(k, "CHARTA_QUERY_") {
+		if k, _, _ := strings.Cut(kv, "="); strings.HasPrefix(k, "GRAINGRAPH_QUERY_") {
 			t.Setenv(k, "")
 		}
 	}
@@ -138,7 +138,7 @@ func TestVersionFlag(t *testing.T) {
 	if err := run(context.Background(), []string{"--version"}, &out, nil); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasPrefix(out.String(), "charta-query ") {
+	if !strings.HasPrefix(out.String(), "graingraph-query ") {
 		t.Fatalf("output = %q", out.String())
 	}
 }
@@ -193,11 +193,11 @@ func TestListenAddressInUse(t *testing.T) {
 
 func TestEnvironmentConfiguresServer(t *testing.T) {
 	clearEnv(t)
-	t.Setenv("CHARTA_QUERY_LISTEN", "127.0.0.1:0")
-	t.Setenv("CHARTA_QUERY_DB", ":memory:")
-	t.Setenv("CHARTA_QUERY_USERNAME", "envuser")
-	t.Setenv("CHARTA_QUERY_PASSWORD", "envpass")
-	t.Setenv("CHARTA_QUERY_DATABASE_NAME", "envdb")
+	t.Setenv("GRAINGRAPH_QUERY_LISTEN", "127.0.0.1:0")
+	t.Setenv("GRAINGRAPH_QUERY_DB", ":memory:")
+	t.Setenv("GRAINGRAPH_QUERY_USERNAME", "envuser")
+	t.Setenv("GRAINGRAPH_QUERY_PASSWORD", "envpass")
+	t.Setenv("GRAINGRAPH_QUERY_DATABASE_NAME", "envdb")
 	restoreLogger(t)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -232,7 +232,7 @@ func TestEnvironmentConfiguresServer(t *testing.T) {
 
 func TestFlagOverridesEnvironment(t *testing.T) {
 	clearEnv(t)
-	t.Setenv("CHARTA_QUERY_DATABASE_NAME", "fromenv")
+	t.Setenv("GRAINGRAPH_QUERY_DATABASE_NAME", "fromenv")
 	restoreLogger(t)
 	// start() clears the environment, so run directly.
 	ctx, cancel := context.WithCancel(context.Background())
@@ -581,12 +581,12 @@ func TestSkillSubcommand(t *testing.T) {
 	if err := run(context.Background(), []string{"skill", "--url", "https://g.example.com"}, &out, nil); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasPrefix(out.String(), "---\nname: charta-query\n") || !strings.Contains(out.String(), "https://g.example.com/db/neo4j/query/v2") {
+	if !strings.HasPrefix(out.String(), "---\nname: graingraph-query\n") || !strings.Contains(out.String(), "https://g.example.com/db/neo4j/query/v2") {
 		t.Errorf("unexpected output: %.200q", out.String())
 	}
 
 	out.Reset()
-	if err := run(context.Background(), []string{"skill", "--list"}, &out, nil); err != nil || !strings.HasPrefix(out.String(), "charta-query\t") {
+	if err := run(context.Background(), []string{"skill", "--list"}, &out, nil); err != nil || !strings.HasPrefix(out.String(), "graingraph-query\t") {
 		t.Errorf("--list: %v %q", err, out.String())
 	}
 

@@ -1,4 +1,4 @@
-// Package store wraps a charta database with the request-scoped services
+// Package store wraps a graingraph database with the request-scoped services
 // the HTTP API needs: auto-commit queries, an explicit-transaction
 // registry with idle reaping, and Neo4j-style bookmark generation.
 package store
@@ -14,7 +14,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/LackOfMorals/charta"
+	"github.com/LackOfMorals/graingraph"
 )
 
 // bookmarkCounter produces opaque, unique bookmarks: a monotonically
@@ -42,7 +42,7 @@ type OpenTx struct {
 	// Meta is the optional client-supplied transaction metadata.
 	Meta map[string]any
 
-	tx *charta.Tx
+	tx *graingraph.Tx
 	mu sync.Mutex // serialises Run / Commit / Rollback
 
 	// timeout is the idle timeout (zero: none); it is immutable after Begin.
@@ -68,9 +68,9 @@ func (t *OpenTx) expired(now time.Time) bool {
 	return !t.expiresAt.IsZero() && now.After(t.expiresAt)
 }
 
-// Store wraps an open charta database.
+// Store wraps an open graingraph database.
 type Store struct {
-	db  *charta.DB
+	db  *graingraph.DB
 	mu  sync.Mutex
 	txs map[string]*OpenTx
 
@@ -90,7 +90,7 @@ type storeConfig struct {
 	importDir string
 }
 
-// WithReadOnly opens the charta database in read-only mode.
+// WithReadOnly opens the graingraph database in read-only mode.
 func WithReadOnly() Option { return func(c *storeConfig) { c.readOnly = true } }
 
 // WithTxWait makes a request that meets an open explicit transaction wait up
@@ -104,20 +104,20 @@ func WithImportDirectory(dir string) Option {
 	return func(c *storeConfig) { c.importDir = dir }
 }
 
-// New opens (or creates) the charta database at path.
+// New opens (or creates) the graingraph database at path.
 func New(path string, opts ...Option) (*Store, error) {
 	var cfg storeConfig
 	for _, o := range opts {
 		o(&cfg)
 	}
-	var dbOpts []charta.Option
+	var dbOpts []graingraph.Option
 	if cfg.readOnly {
-		dbOpts = append(dbOpts, charta.WithReadOnly())
+		dbOpts = append(dbOpts, graingraph.WithReadOnly())
 	}
 	if cfg.importDir != "" {
-		dbOpts = append(dbOpts, charta.WithImportDirectory(cfg.importDir))
+		dbOpts = append(dbOpts, graingraph.WithImportDirectory(cfg.importDir))
 	}
-	db, err := charta.Open(path, dbOpts...)
+	db, err := graingraph.Open(path, dbOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("store: open %q: %w", path, err)
 	}
@@ -153,14 +153,14 @@ func (s *Store) Close() error {
 }
 
 // Outcome is the materialised result of a query: fields, rows (as raw
-// charta values) and optional mutation counters.
+// graingraph values) and optional mutation counters.
 type Outcome struct {
 	Fields   []string
 	Values   [][]any
 	Counters *Counters
 }
 
-// Counters mirrors the charta mutation counters in the response shape.
+// Counters mirrors the graingraph mutation counters in the response shape.
 type Counters struct {
 	ContainsUpdates bool `json:"containsUpdates"`
 
@@ -180,12 +180,12 @@ type Counters struct {
 	SystemUpdates         int  `json:"systemUpdates"`
 }
 
-// countersOf reports a statement's side effects from charta's Statistics,
-// which count each change as it happens, as Neo4j does. (charta's Counters
+// countersOf reports a statement's side effects from graingraph's Statistics,
+// which count each change as it happens, as Neo4j does. (graingraph's Counters
 // net the changes out for the openCypher TCK: a node created and deleted in
 // one statement would leave no trace, and removing a property would not be a
 // property set.)
-func countersOf(sum charta.ResultSummary) *Counters {
+func countersOf(sum graingraph.ResultSummary) *Counters {
 	st := sum.Statistics()
 	return &Counters{
 		ContainsUpdates:      st.ContainsUpdates(),
@@ -206,7 +206,7 @@ func countersOf(sum charta.ResultSummary) *Counters {
 // Run executes statement in auto-commit mode and returns the
 // materialised outcome.
 //
-// charta serialises on one connection, so a query would otherwise wait
+// graingraph serialises on one connection, so a query would otherwise wait
 // behind an open explicit transaction until it ends. It fails fast with
 // a *TransactionOpenError instead.
 func (s *Store) Run(ctx context.Context, statement string, params map[string]any) (*Outcome, error) {
@@ -220,8 +220,8 @@ func (s *Store) Run(ctx context.Context, statement string, params map[string]any
 	return collect(ctx, res)
 }
 
-// collect drains a charta result into an Outcome.
-func collect(ctx context.Context, res *charta.Result) (*Outcome, error) {
+// collect drains a graingraph result into an Outcome.
+func collect(ctx context.Context, res *graingraph.Result) (*Outcome, error) {
 	recs, err := res.Collect(ctx)
 	if err != nil {
 		return nil, err
@@ -333,7 +333,7 @@ func (t *OpenTx) Touch() {
 }
 
 // Run executes statement within the transaction. The transaction
-// serialises its own queries, as charta cursors share one connection.
+// serialises its own queries, as graingraph cursors share one connection.
 func (t *OpenTx) Run(ctx context.Context, statement string, params map[string]any) (*Outcome, error) {
 	t.mu.Lock()
 	defer t.mu.Unlock()

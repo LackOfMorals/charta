@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/LackOfMorals/charta/cypher/syntax"
+	"github.com/LackOfMorals/graingraph/cypher/syntax"
 )
 
 // An equality on a property may use any expression that can be evaluated once,

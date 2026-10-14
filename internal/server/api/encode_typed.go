@@ -7,10 +7,10 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/LackOfMorals/charta"
-	"github.com/LackOfMorals/charta/cypher/spatial"
-	"github.com/LackOfMorals/charta/cypher/temporal"
-	"github.com/LackOfMorals/charta/cypher/vector"
+	"github.com/LackOfMorals/graingraph"
+	"github.com/LackOfMorals/graingraph/cypher/spatial"
+	"github.com/LackOfMorals/graingraph/cypher/temporal"
+	"github.com/LackOfMorals/graingraph/cypher/vector"
 )
 
 // typedValue is the Typed JSON representation of a single value:
@@ -20,7 +20,7 @@ type typedValue struct {
 	Value any    `json:"_value"`
 }
 
-// encodeTyped converts a charta result value to its Typed JSON form.
+// encodeTyped converts a graingraph result value to its Typed JSON form.
 // ver is the Typed JSON media-type version (0, 1 or 2) and controls which
 // optional types (Vector) are emitted natively.
 func encodeTyped(v any, ver int) (any, error) {
@@ -58,7 +58,7 @@ func encodeTyped(v any, ver int) (any, error) {
 	case []byte:
 		return typedValue{Type: "Base64", Value: base64.StdEncoding.EncodeToString(x)}, nil
 
-	case *charta.Node:
+	case *graingraph.Node:
 		props, err := encodeTypedProps(x.Props, ver)
 		if err != nil {
 			return nil, err
@@ -73,7 +73,7 @@ func encodeTyped(v any, ver int) (any, error) {
 			"_properties": props,
 		}}, nil
 
-	case *charta.Relationship:
+	case *graingraph.Relationship:
 		props, err := encodeTypedProps(x.Props, ver)
 		if err != nil {
 			return nil, err
@@ -86,7 +86,7 @@ func encodeTyped(v any, ver int) (any, error) {
 			"_properties":            props,
 		}}, nil
 
-	case charta.Path:
+	case graingraph.Path:
 		return encodePathTyped(x, ver)
 
 	case temporal.Date:
@@ -139,7 +139,7 @@ func encodeTyped(v any, ver int) (any, error) {
 	}
 }
 
-func encodePathTyped(p charta.Path, ver int) (any, error) {
+func encodePathTyped(p graingraph.Path, ver int) (any, error) {
 	out := make([]any, 0, len(p.Nodes)+len(p.Relationships))
 	for i, n := range p.Nodes {
 		enc, err := encodeTyped(&n, ver)
@@ -182,7 +182,7 @@ func encodeVectorTyped(x vector.Vector, ver int) (any, error) {
 	}}, nil
 }
 
-// neoVectorType maps a charta vector type to the Query API name.
+// neoVectorType maps a graingraph vector type to the Query API name.
 func neoVectorType(t vector.Type) string {
 	switch t {
 	case vector.Integer64:

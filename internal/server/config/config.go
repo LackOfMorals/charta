@@ -1,4 +1,4 @@
-// Package config defines the runtime configuration of the charta-query server.
+// Package config defines the runtime configuration of the graingraph-query server.
 package config
 
 import (
@@ -10,21 +10,21 @@ import (
 	"time"
 )
 
-// Version is the charta-query server version reported by discovery and -version.
-const Version = "1.1.1"
+// Version is the graingraph-query server version reported by discovery and -version.
+const Version = "0.2.0"
 
 // Config holds all runtime settings for the server.
 type Config struct {
 	// ListenAddr is the HTTP listen address, e.g. ":7474".
 	ListenAddr string
-	// DBPath is the charta (SQLite) database file. ":memory:" opens a
+	// DBPath is the graingraph (SQLite) database file. ":memory:" opens a
 	// transient in-memory database.
 	DBPath string
 	// DatabaseName is the name advertised in the discovery response. The
 	// <databaseName> path segment of requests is accepted for any value;
-	// charta is a single embedded database.
+	// graingraph is a single embedded database.
 	DatabaseName string
-	// ReadOnly opens the charta database in read-only mode.
+	// ReadOnly opens the graingraph database in read-only mode.
 	ReadOnly bool
 	// TxTimeout is the idle timeout applied to explicit transactions.
 	// Transactions idle for longer than this are rolled back by a reaper.
@@ -49,7 +49,7 @@ type Config struct {
 // without a basic-auth username and password.
 func (c Config) Validate() error {
 	if c.Username == "" || c.Password == "" {
-		return errors.New("no basic-auth credentials configured; set --username/--password or CHARTA_QUERY_USERNAME/CHARTA_QUERY_PASSWORD")
+		return errors.New("no basic-auth credentials configured; set --username/--password or GRAINGRAPH_QUERY_USERNAME/GRAINGRAPH_QUERY_PASSWORD")
 	}
 	if (c.TLSCert == "") != (c.TLSKey == "") {
 		return errors.New("--tls-cert and --tls-key must be set together")
