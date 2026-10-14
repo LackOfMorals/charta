@@ -81,6 +81,55 @@ curl -u admin:change-me -H 'Content-Type: application/json' -H 'Accept: text/too
 - Transactions work as usual: opening returns a `transaction:` block with the
   id, and commit answers `committed: true`.
 
+### The same query, JSON and TOON
+
+A statement that returns two nodes and the relationship between them, on the
+Neo4j movies graph:
+
+```cypher
+MATCH (p:Person {name: $name})-[r:ACTED_IN]->(m:Movie {title: $title})
+RETURN p, r, m
+```
+
+with parameters `{"name": "Tom Hanks", "title": "Cast Away"}`.
+
+**JSON** (the default, the same document Neo4j returns; reformatted here, the
+server sends it on one line):
+
+```json
+{
+  "data": {
+    "fields": ["p", "r", "m"],
+    "values": [
+      [
+        {"elementId": "57", "labels": ["Person"], "properties": {"born": 1956, "name": "Tom Hanks"}},
+        {"elementId": "97", "startNodeElementId": "57", "endNodeElementId": "165", "type": "ACTED_IN", "properties": {"roles": ["Chuck Noland"]}},
+        {"elementId": "165", "labels": ["Movie"], "properties": {"released": 2000, "tagline": "At the edge of the world, his journey begins.", "title": "Cast Away"}}
+      ]
+    ]
+  },
+  "bookmarks": ["FB:AAAAAAAAAA8vsraGnMfqiQ=="],
+  "queryType": "r",
+  "resultAvailableAfter": 1,
+  "resultConsumedAfter": 1
+}
+```
+
+**TOON** (`Accept: text/toon`):
+
+```
+rows[1]{p._id,p._labels,p.born,p.name,r._id,r._type,r._start,r._end,r.roles,m._id,m._labels,m.released,m.tagline,m.title}:
+  "57",Person,1956,Tom Hanks,"97",ACTED_IN,"57","165","[\"Chuck Noland\"]","165",Movie,2000,"At the edge of the world, his journey begins.",Cast Away
+```
+
+Each node and relationship is spread over columns: `p._id`, `p._labels`,
+`p.born`, `r._type`, `r._start`, `r._end` and so on. A property a row lacks is
+`null`, the `roles` list is a JSON string in its cell, and `"57"` is quoted
+because it is a string that looks like a number (an element ID), not a number.
+This one row is 147 tokens as JSON and 96 as TOON (GPT tokenizer); the header is
+written once, so the saving grows with the number of rows. The element IDs
+belong to this server and differ from Neo4j's.
+
 ### Token cost and accuracy
 
 Measured on a synthetic graph of 80 people and 12 companies. These are small
