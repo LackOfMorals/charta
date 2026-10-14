@@ -1,7 +1,9 @@
 package api
 
 import (
+	"io"
 	"net/http"
+	"strings"
 	"testing"
 )
 
@@ -104,5 +106,40 @@ func TestDatabaseIDStable(t *testing.T) {
 	}
 	if len(a.databaseID("system")) != 32 {
 		t.Errorf("want 32 hex digits, got %q", a.databaseID("system"))
+	}
+}
+
+func TestSkillsEndpoints(t *testing.T) {
+	srv, _ := newTestServer(t)
+
+	// No credentials: skills are public, like discovery.
+	code, body, _ := do(t, "GET", srv.URL+"/skills", "", "", "", "", "")
+	list, _ := body["skills"].([]any)
+	if code != http.StatusOK || len(list) != 1 {
+		t.Fatalf("list: %d %v", code, body)
+	}
+	first := list[0].(map[string]any)
+	if first["name"] != "charta-query" || first["url"] != srv.URL+"/skills/charta-query" || first["description"] == "" {
+		t.Errorf("entry: %v", first)
+	}
+
+	resp, err := http.Get(srv.URL + "/skills/charta-query")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	doc, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK || !strings.HasPrefix(resp.Header.Get("Content-Type"), "text/markdown") {
+		t.Fatalf("get: %d %s", resp.StatusCode, resp.Header.Get("Content-Type"))
+	}
+	if !strings.HasPrefix(string(doc), "---\nname: charta-query\n") || !strings.Contains(string(doc), srv.URL+"/db/neo4j/query/v2") {
+		t.Errorf("document not rendered for this server: %.200q", doc)
+	}
+
+	if code, _, _ := do(t, "GET", srv.URL+"/skills/nope", "", "", "", "", ""); code != http.StatusNotFound {
+		t.Errorf("unknown skill: %d", code)
+	}
+	if code, body, _ := do(t, "GET", srv.URL+"/", "", "", "", "", ""); code != http.StatusOK || body["skills"] != srv.URL+"/skills" {
+		t.Errorf("discovery: %d %v", code, body)
 	}
 }

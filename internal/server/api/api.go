@@ -114,9 +114,24 @@ func (h *Handler) Routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", h.discovery)
 	mux.HandleFunc("GET /health", h.health)
+	mux.HandleFunc("GET /skills", h.skillList)
+	mux.HandleFunc("GET /skills/{name}", h.skillGet)
 	mux.Handle("/db/", h.auth.Middleware(sub))
 	mux.HandleFunc("/", notFound)
 	return observe(withCORS(mux, h.corsOrigins), h.logStatements)
+}
+
+// baseURL is the externally visible base URL: the configured public URL,
+// else one derived from the request.
+func (h *Handler) baseURL(r *http.Request) string {
+	if h.publicURL != "" {
+		return h.publicURL
+	}
+	scheme := "http"
+	if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" {
+		scheme = "https"
+	}
+	return scheme + "://" + r.Host
 }
 
 // withDatabase answers 404 unless the {databaseName} path segment names
@@ -161,20 +176,14 @@ func (h *Handler) health(w http.ResponseWriter, r *http.Request) {
 // discovery implements GET /: an unauthenticated endpoint-advertisement
 // in the Neo4j discovery shape, adapted for a single embedded database.
 func (h *Handler) discovery(w http.ResponseWriter, r *http.Request) {
-	base := h.publicURL
-	if base == "" {
-		scheme := "http"
-		if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" {
-			scheme = "https"
-		}
-		base = scheme + "://" + r.Host
-	}
+	base := h.baseURL(r)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"query":                   base + "/db/{databaseName}/query/v2",
 		"query_api":               base + "/db/{databaseName}/query/v2",
 		"query_api_major_version": "2",
 		"query_api_versions":      []string{"2.0"},
 		"transaction":             base + "/db/{databaseName}/query/v2/tx",
+		"skills":                  base + "/skills",
 		// Clients such as Neo4j Desktop and Browser read the server's version
 		// and edition from discovery.
 		"neo4j_version": emulatedNeo4jVersion,

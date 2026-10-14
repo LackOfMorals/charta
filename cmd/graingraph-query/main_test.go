@@ -575,3 +575,23 @@ func TestShutdownRollsBackOpenTransaction(t *testing.T) {
 		t.Fatalf("after restart: Kept=%v Doomed=%v, want 1 and 0", k, d)
 	}
 }
+
+func TestSkillSubcommand(t *testing.T) {
+	var out bytes.Buffer
+	if err := run(context.Background(), []string{"skill", "--url", "https://g.example.com"}, &out, nil); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(out.String(), "---\nname: charta-query\n") || !strings.Contains(out.String(), "https://g.example.com/db/neo4j/query/v2") {
+		t.Errorf("unexpected output: %.200q", out.String())
+	}
+
+	out.Reset()
+	if err := run(context.Background(), []string{"skill", "--list"}, &out, nil); err != nil || !strings.HasPrefix(out.String(), "charta-query\t") {
+		t.Errorf("--list: %v %q", err, out.String())
+	}
+
+	err := run(context.Background(), []string{"skill", "nope"}, &out, nil)
+	if !isUsageError(err) {
+		t.Errorf("unknown skill: %v", err)
+	}
+}

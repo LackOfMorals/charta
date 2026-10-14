@@ -301,7 +301,7 @@ func (h *Handler) writeResult(w http.ResponseWriter, rt responseType, q *QueryRe
 		ResultConsumedAfter:  m.consumedAfter,
 		Transaction:          m.tx,
 	}
-	if q.IncludeCounters {
+	if q.IncludeCounters || rt.format == formatTOON {
 		resp.Counters = countersBlockOf(outcome.Counters)
 	}
 	writeAccepted(w, rt.contentType(), resp)

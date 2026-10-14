@@ -12,6 +12,7 @@ type format int
 const (
 	formatPlain format = iota // Plain JSON (application/json)
 	formatTyped               // Typed JSON (application/vnd.neo4j.query.v1.x)
+	formatTOON                // flat TOON table (text/toon); not part of the Neo4j contract
 )
 
 // responseType is the negotiated response representation.
@@ -25,6 +26,8 @@ type responseType struct {
 func (rt responseType) contentType() string {
 	base := "application/json"
 	switch {
+	case rt.format == formatTOON:
+		return mediaTOON + "; charset=utf-8"
 	case rt.format == formatTyped:
 		if rt.typedVer == 0 {
 			base = "application/vnd.neo4j.query"
@@ -98,6 +101,8 @@ func acceptType(media string) (responseType, bool) {
 		return responseType{format: formatPlain}, true
 	case "application/jsonl":
 		return responseType{format: formatPlain, jsonl: true}, true
+	case mediaTOON:
+		return responseType{format: formatTOON}, true
 	case "application/vnd.neo4j.query", "application/vnd.neo4j.query.v1.0":
 		return responseType{format: formatTyped, typedVer: 0}, true
 	case "application/vnd.neo4j.query.v1.1":

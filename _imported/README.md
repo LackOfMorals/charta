@@ -24,6 +24,8 @@ curl -u admin:change-me -H 'Content-Type: application/json' \
 |---|---|---|
 | GET | `/` | discovery (no auth) |
 | GET | `/health` | liveness (no auth) |
+| GET | `/skills` | list agent skills (no auth) |
+| GET | `/skills/{name}` | one skill as Markdown (no auth) |
 | POST | `/db/{db}/query/v2` | run a statement |
 | POST | `/db/{db}/query/v2/tx` | open a transaction |
 | POST | `/db/{db}/query/v2/tx/{id}` | run in a transaction |
@@ -42,6 +44,7 @@ Neo4j 2026.07:
 - Unknown databases answer `404`; authentication failures `401`.
 - Plain JSON, Typed JSON (`application/vnd.neo4j.query.v1.x`) and JSONL are
   supported via `Accept`, including comma-separated lists with q-values.
+- `Accept: text/toon` is an extension for agents, see below.
 - CORS is enabled and `OPTIONS` answers preflights (see `--cors-origins`).
 
 **One transaction at a time.** charta serialises on a single connection, so
@@ -51,6 +54,56 @@ queries, and attempts to open a second transaction, wait up to `--tx-wait`
 and then fail with `Neo.TransientError.General.DatabaseUnavailable` naming the
 open transaction, instead of hanging. Commit or roll it back; idle transactions are rolled back
 after `--tx-timeout`.
+
+## TOON output for agents
+
+`Accept: text/toon` answers with a [TOON](https://toonformat.dev) table instead
+of the Neo4j response document. It is an extension: Neo4j has no equivalent,
+so use JSON when you need parity with a real server.
+
+```sh
+curl -u admin:change-me -H 'Content-Type: application/json' -H 'Accept: text/toon' \
+  localhost:7474/db/neo4j/query/v2 \
+  -d '{"statement":"MATCH (p:Person) RETURN p.name AS name, p.age AS age"}'
+# rows[2]{name,age}:
+#   Alice,30
+#   Bob,null
+```
+
+- One flat table, `rows[N]{columns}:`. A node or relationship becomes columns
+  (`p._id`, `p._labels`, `p.name`, ... and `r._type`, `r._start`, `r._end`);
+  lists, maps and paths are a compact JSON string in one cell.
+- No bookmarks or timings. Non-zero mutation counters are always reported
+  (`counters:`), without `includeCounters`.
+- Every failure is an error status with an `errors[N]{code,message}:` table,
+  including one raised while producing rows, which JSON answers with `202`.
+- Transactions work as usual: opening returns a `transaction:` block with the
+  id, and commit answers `committed: true`.
+- Measured on a small graph it is about 10-20% fewer tokens than plain JSON for
+  flat results and about half for nodes and relationships (counted with a GPT
+  tokenizer, so approximate for other models).
+
+## Agent skills
+
+An agent can learn how to use the server (and the Cypher it supports) by
+fetching a skill: a `SKILL.md` document in the
+[Agent Skills](https://agentskills.io) format. The skill is embedded in the
+binary, so it always matches the version you run, and its examples point at
+your server.
+
+```sh
+# over HTTP (no authentication; also linked as "skills" in discovery)
+curl localhost:7474/skills                   # [{name, description, url}]
+curl localhost:7474/skills/charta-query      # Markdown
+
+# from the command line, no server needed
+charta-query skill --url https://graph.example.com > SKILL.md
+charta-query skill --list
+```
+
+For Claude Code, save it as `~/.claude/skills/charta-query/SKILL.md`. Behind a
+proxy, set `--public-url` so the HTTP version advertises the right address.
+The skill holds no credentials; it tells the agent to ask the user for them.
 
 ## Configuration
 

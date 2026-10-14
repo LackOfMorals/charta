@@ -33,6 +33,10 @@ func writeError(w http.ResponseWriter, status int, ae *apiError) {
 // answers failures in the negotiated Typed JSON type.
 func writeErrorAs(w http.ResponseWriter, contentType string, status int, ae *apiError) {
 	noteError(w, ae)
+	if isTOON(contentType) {
+		writeToon(w, status, toonErrors(docOf(ae).Errors))
+		return
+	}
 	w.Header().Set("Content-Type", contentType)
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(docOf(ae))
@@ -46,6 +50,12 @@ func writeFailure(w http.ResponseWriter, ae *apiError) {
 // writeAccepted responds 202 with a JSON body in the negotiated content
 // type.
 func writeAccepted(w http.ResponseWriter, contentType string, body any) {
+	if isTOON(contentType) {
+		if res, ok := toonOf(body); ok {
+			writeToon(w, http.StatusAccepted, res.String())
+			return
+		}
+	}
 	// Marshal first: a value json cannot encode (NaN, Inf) must not leave
 	// the client with a 202 and a truncated body.
 	data, err := json.Marshal(body)
@@ -63,7 +73,9 @@ func writeAccepted(w http.ResponseWriter, contentType string, body any) {
 // answers 202 with the error next to an empty result, as Neo4j does;
 // every other failure answers the error's own status.
 func writeRunFailure(w http.ResponseWriter, contentType string, ae *apiError) {
-	if !ae.Runtime {
+	// TOON is for agents that read the status line first: every failure
+	// is an error status there, even one raised while producing rows.
+	if !ae.Runtime || isTOON(contentType) {
 		writeErrorAs(w, contentType, ae.Status, ae)
 		return
 	}

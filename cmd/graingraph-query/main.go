@@ -88,6 +88,9 @@ func setupLogging(level, format, file string) (func(), error) {
 // shutdown, returns nil) or serving fails. ready, if non-nil, is called
 // with the bound address once the server accepts connections.
 func run(ctx context.Context, args []string, stdout io.Writer, ready func(addr string)) error {
+	if len(args) > 0 && args[0] == "skill" {
+		return runSkill(args[1:], stdout)
+	}
 	flags := flag.NewFlagSet("charta-query", flag.ContinueOnError)
 	flags.SetOutput(os.Stderr)
 	var (
