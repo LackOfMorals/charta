@@ -8,7 +8,7 @@ import (
 	"sync"
 	"unsafe"
 
-	"github.com/LackOfMorals/charta/cypher/vector"
+	"github.com/LackOfMorals/graingraph/cypher/vector"
 )
 
 // Vector search keeps one in-memory matrix per vector index (see

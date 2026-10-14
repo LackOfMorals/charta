@@ -1,13 +1,13 @@
-// Package charta is a zero-infrastructure embedded property graph database
+// Package graingraph is a zero-infrastructure embedded property graph database
 // for Go.
 //
-// charta stores a labelled property graph in a local SQLite file and
+// graingraph stores a labelled property graph in a local SQLite file and
 // accepts queries written in openCypher. There is no external process to run,
 // no driver dependency, and no network — just open a file and query.
 //
 // # Quick start
 //
-//	db, err := charta.Open(":memory:")
+//	db, err := graingraph.Open(":memory:")
 //	result, err := db.RunQuery(ctx, `MATCH (n:Person) RETURN n.name AS name`, nil)
 //	for result.Next(ctx) {
 //	    fmt.Println(result.Record().Values()[0])
@@ -22,17 +22,17 @@
 // In tests, use [NewTestDB] to open an in-memory database that is closed
 // automatically when the test ends:
 //
-//	db := charta.NewTestDB(t)
+//	db := graingraph.NewTestDB(t)
 //
 // # Options
 //
 // Pass functional options to [Open] to tune behaviour:
 //
-//	db, err := charta.Open("graph.db",
-//	    charta.WithBusyTimeout(5*time.Second),
-//	    charta.WithReadOnly(),
+//	db, err := graingraph.Open("graph.db",
+//	    graingraph.WithBusyTimeout(5*time.Second),
+//	    graingraph.WithReadOnly(),
 //	)
-package charta
+package graingraph
 
 import (
 	"context"
@@ -43,12 +43,12 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/LackOfMorals/charta/cypher/interp"
-	"github.com/LackOfMorals/charta/cypher/proc"
-	"github.com/LackOfMorals/charta/store"
+	"github.com/LackOfMorals/graingraph/cypher/interp"
+	"github.com/LackOfMorals/graingraph/cypher/proc"
+	"github.com/LackOfMorals/graingraph/store"
 )
 
-// DB is an open charta database. All methods are safe for concurrent use
+// DB is an open graingraph database. All methods are safe for concurrent use
 // from multiple goroutines.
 type DB struct {
 	st       store.Store
@@ -62,7 +62,7 @@ type DB struct {
 	eng    interp.Engine  // interpreter state: registered procedures, index advisor
 }
 
-// Open opens (or creates) a charta database at path and returns a *DB.
+// Open opens (or creates) a graingraph database at path and returns a *DB.
 //
 // Use ":memory:" for a transient in-memory database. A file path (absolute or
 // relative) opens (or creates) a persistent SQLite file. Pass Option values to
@@ -90,7 +90,7 @@ func Open(path string, opts ...Option) (*DB, error) {
 			cleaned = filepath.Join(dir, filepath.Base(cleaned))
 		}
 		if slices.Contains(strings.Split(cleaned, string(filepath.Separator)), "..") {
-			return nil, fmt.Errorf("charta: Open: path traversal not allowed: %q", path)
+			return nil, fmt.Errorf("graingraph: Open: path traversal not allowed: %q", path)
 		}
 	}
 
@@ -99,7 +99,7 @@ func Open(path string, opts ...Option) (*DB, error) {
 		ReadConns:   cfg.readConns,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("charta: open %q: %w", path, err)
+		return nil, fmt.Errorf("graingraph: open %q: %w", path, err)
 	}
 	d := &DB{st: st, readOnly: cfg.readOnly, hasReadPool: st.HasReadPool()}
 	d.eng.MaxPathHops = cfg.maxPathHops
@@ -118,11 +118,11 @@ func Open(path string, opts ...Option) (*DB, error) {
 // Returns an error if the backend does not support snapshots.
 func (d *DB) Snapshot(path string) error {
 	if _, err := os.Stat(path); err == nil {
-		return fmt.Errorf("charta: snapshot: %q already exists", path)
+		return fmt.Errorf("graingraph: snapshot: %q already exists", path)
 	}
 	sn, ok := d.st.(store.Snapshotter)
 	if !ok {
-		return fmt.Errorf("charta: snapshot: not supported by this backend")
+		return fmt.Errorf("graingraph: snapshot: not supported by this backend")
 	}
 	return sn.Snapshot(path)
 }
@@ -135,7 +135,7 @@ func (d *DB) Close(_ context.Context) error {
 	d.mu.Unlock()
 	d.bg.Wait() // let queued index builds finish before the connections go
 	if err := d.st.Close(); err != nil {
-		return fmt.Errorf("charta: close: %w", err)
+		return fmt.Errorf("graingraph: close: %w", err)
 	}
 	return nil
 }
@@ -196,7 +196,7 @@ func (d *DB) BeginTx(ctx context.Context) (*Tx, error) {
 	}
 	txEx, err := d.st.BeginExecTx(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("charta: begin transaction: %w", err)
+		return nil, fmt.Errorf("graingraph: begin transaction: %w", err)
 	}
 	return &Tx{rawTx: txEx, eng: &d.eng}, nil
 }

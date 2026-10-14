@@ -1,4 +1,4 @@
-package charta
+package graingraph
 
 import "context"
 

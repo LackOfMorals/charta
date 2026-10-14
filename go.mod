@@ -1,6 +1,6 @@
-module github.com/LackOfMorals/charta
+module github.com/LackOfMorals/graingraph
 
-go 1.26.5
+go 1.26.9
 
 require (
 	github.com/cucumber/godog v0.15.1

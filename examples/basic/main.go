@@ -1,4 +1,4 @@
-// Command basic shows the core charta workflow: create nodes and relationships,
+// Command basic shows the core graingraph workflow: create nodes and relationships,
 // query them, update them, and remove them again.
 //
 //	go run ./examples/basic
@@ -9,14 +9,14 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/LackOfMorals/charta"
+	"github.com/LackOfMorals/graingraph"
 )
 
 func main() {
 	ctx := context.Background()
 
 	// ":memory:" is a transient database; pass a file path to persist it.
-	db, err := charta.Open(":memory:")
+	db, err := graingraph.Open(":memory:")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -48,9 +48,9 @@ func main() {
 	}
 	for res.Next(ctx) {
 		rec := res.Record()
-		person, _, _ := charta.GetRecordValue[string](rec, "person")
-		friend, _, _ := charta.GetRecordValue[string](rec, "friend")
-		since, _, _ := charta.GetRecordValue[int64](rec, "since")
+		person, _, _ := graingraph.GetRecordValue[string](rec, "person")
+		friend, _, _ := graingraph.GetRecordValue[string](rec, "friend")
+		since, _, _ := graingraph.GetRecordValue[int64](rec, "since")
 		fmt.Printf("%s has known %s since %d\n", person, friend, since)
 	}
 
@@ -85,7 +85,7 @@ func main() {
 }
 
 // count prints how many people the graph holds.
-func count(ctx context.Context, db *charta.DB, when string) {
+func count(ctx context.Context, db *graingraph.DB, when string) {
 	res, err := db.RunQuery(ctx, `MATCH (p:Person) RETURN count(p) AS n`, nil)
 	if err != nil {
 		log.Fatal(err)
@@ -94,6 +94,6 @@ func count(ctx context.Context, db *charta.DB, when string) {
 	if err != nil {
 		log.Fatal(err)
 	}
-	n, _, _ := charta.GetRecordValue[int64](rec, "n")
+	n, _, _ := graingraph.GetRecordValue[int64](rec, "n")
 	fmt.Printf("%d people %s\n", n, when)
 }

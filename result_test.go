@@ -1,17 +1,17 @@
-package charta_test
+package graingraph_test
 
 import (
 	"context"
 	"errors"
 	"testing"
 
-	"github.com/LackOfMorals/charta"
+	"github.com/LackOfMorals/graingraph"
 )
 
-// openDB opens an in-memory charta database for use in result-layer tests.
-func openDB(t *testing.T) *charta.DB {
+// openDB opens an in-memory graingraph database for use in result-layer tests.
+func openDB(t *testing.T) *graingraph.DB {
 	t.Helper()
-	db, err := charta.Open(":memory:")
+	db, err := graingraph.Open(":memory:")
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
@@ -214,7 +214,7 @@ func TestResult_NodeProjection(t *testing.T) {
 	if !ok {
 		t.Fatal("expected key 'n' in record")
 	}
-	node, ok := val.(*charta.Node)
+	node, ok := val.(*graingraph.Node)
 	if !ok {
 		t.Fatalf("expected *Node got %T: %v", val, val)
 	}
@@ -253,7 +253,7 @@ func TestResult_RelationshipProjection(t *testing.T) {
 	if !ok {
 		t.Fatal("expected key 'r' in record")
 	}
-	rel, ok := val.(*charta.Relationship)
+	rel, ok := val.(*graingraph.Relationship)
 	if !ok {
 		t.Fatalf("expected *Relationship got %T: %v", val, val)
 	}
@@ -281,7 +281,7 @@ func TestResult_NoLabels(t *testing.T) {
 		t.Fatalf("expected one record; err=%v", qr.Err())
 	}
 	val, _ := qr.Record().Get("n")
-	node, ok := val.(*charta.Node)
+	node, ok := val.(*graingraph.Node)
 	if !ok {
 		t.Fatalf("expected *Node got %T", val)
 	}
@@ -385,7 +385,7 @@ func TestSingle_ErrNoRecords(t *testing.T) {
 		t.Fatalf("RunQuery: %v", err)
 	}
 	_, err = qr.Single(ctx)
-	if !errors.Is(err, charta.ErrNoRecords) {
+	if !errors.Is(err, graingraph.ErrNoRecords) {
 		t.Errorf("expected ErrNoRecords, got %v", err)
 	}
 }
@@ -403,7 +403,7 @@ func TestSingle_ErrMultipleRecords(t *testing.T) {
 		t.Fatalf("RunQuery: %v", err)
 	}
 	_, err = qr.Single(ctx)
-	if !errors.Is(err, charta.ErrMultipleRecords) {
+	if !errors.Is(err, graingraph.ErrMultipleRecords) {
 		t.Errorf("expected ErrMultipleRecords, got %v", err)
 	}
 }
@@ -527,13 +527,13 @@ func TestRecord_MissingKey(t *testing.T) {
 // label change even when no label appears in or vanishes from the graph.
 func TestNodeLabelCountersPublicAPI(t *testing.T) {
 	ctx := context.Background()
-	db, err := charta.Open(":memory:")
+	db, err := graingraph.Open(":memory:")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer db.Close(ctx)
 
-	counters := func(q string) charta.Counters {
+	counters := func(q string) graingraph.Counters {
 		t.Helper()
 		res, err := db.RunQuery(ctx, q, nil)
 		if err != nil {
@@ -570,13 +570,13 @@ func TestNodeLabelCountersPublicAPI(t *testing.T) {
 // Counters.
 func TestResultSummaryStatistics(t *testing.T) {
 	ctx := context.Background()
-	db, err := charta.Open(":memory:")
+	db, err := graingraph.Open(":memory:")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer db.Close(ctx)
 
-	summary := func(q string) charta.ResultSummary {
+	summary := func(q string) graingraph.ResultSummary {
 		t.Helper()
 		res, err := db.RunQuery(ctx, q, nil)
 		if err != nil {

@@ -1,4 +1,4 @@
-package charta_test
+package graingraph_test
 
 import (
 	"context"
@@ -9,13 +9,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/LackOfMorals/charta"
+	"github.com/LackOfMorals/graingraph"
 )
 
 func TestUnsupportedConstructIsErrUnsupportedCypher(t *testing.T) {
 	db := openMemDB(t)
 	_, err := db.RunQuery(context.Background(), "SHOW USERS", nil)
-	var target *charta.ErrUnsupportedCypher
+	var target *graingraph.ErrUnsupportedCypher
 	if !errors.As(err, &target) {
 		t.Fatalf("got %T %v, want *ErrUnsupportedCypher", err, err)
 	}
@@ -23,7 +23,7 @@ func TestUnsupportedConstructIsErrUnsupportedCypher(t *testing.T) {
 
 func TestMaxPathHopsOption(t *testing.T) {
 	ctx := context.Background()
-	db, err := charta.Open(":memory:", charta.WithMaxPathHops(2))
+	db, err := graingraph.Open(":memory:", graingraph.WithMaxPathHops(2))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -67,8 +67,8 @@ func TestTemporalValuesRoundTripThroughStorage(t *testing.T) {
 	}
 	if v, _ := rec.Get("d"); v == nil {
 		t.Fatal("missing d")
-	} else if _, ok := v.(charta.Date); !ok {
-		t.Errorf("d is %T, want charta.Date", v)
+	} else if _, ok := v.(graingraph.Date); !ok {
+		t.Errorf("d is %T, want graingraph.Date", v)
 	}
 	if v, _ := rec.Get("tz"); v != "Europe/Stockholm" {
 		t.Errorf("tz = %v", v)
@@ -90,7 +90,7 @@ func TestTemporalComparisonAndOrdering(t *testing.T) {
 	var got []string
 	for _, r := range recs {
 		v, _ := r.Get("d")
-		got = append(got, v.(charta.Date).String())
+		got = append(got, v.(graingraph.Date).String())
 	}
 	if want := "2019-12-31 2020-01-15 2020-03-01"; strings.Join(got, " ") != want {
 		t.Errorf("ordered %v, want %s", got, want)
@@ -128,7 +128,7 @@ func TestLoadCSV(t *testing.T) {
 		t.Fatal("LOAD CSV must be disabled by default")
 	}
 
-	db, err := charta.Open(":memory:", charta.WithImportDirectory(dir))
+	db, err := graingraph.Open(":memory:", graingraph.WithImportDirectory(dir))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -192,7 +192,7 @@ func TestLoadCSVRejectsSymlinkEscape(t *testing.T) {
 	if err := os.Symlink(outside, filepath.Join(dir, "link")); err != nil {
 		t.Skip("symlinks unavailable")
 	}
-	db, err := charta.Open(":memory:", charta.WithImportDirectory(dir))
+	db, err := graingraph.Open(":memory:", graingraph.WithImportDirectory(dir))
 	if err != nil {
 		t.Fatal(err)
 	}

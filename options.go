@@ -1,4 +1,4 @@
-package charta
+package graingraph
 
 import (
 	"context"
@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-// Option is a functional option for configuring a charta database.
+// Option is a functional option for configuring a graingraph database.
 // Pass one or more Options to [Open] to customise behaviour.
 type Option func(*dbConfig)
 
@@ -41,9 +41,9 @@ func WithBusyTimeout(d time.Duration) Option {
 // WithReadOnly opens the database in read-only mode. Write queries issued via
 // [DB.RunQuery] return [ErrReadOnly], and [DB.BeginTx] returns [ErrReadOnly]
 // before any transaction is opened. The database file must already exist and
-// contain the charta schema.
+// contain the graingraph schema.
 //
-// Read-only enforcement is applied in the charta API layer: any Cypher
+// Read-only enforcement is applied in the graingraph API layer: any Cypher
 // statement that would mutate the graph (CREATE, SET, DELETE, MERGE) is
 // rejected before reaching SQLite.
 func WithReadOnly() Option {
@@ -65,20 +65,20 @@ func WithMaxPathHops(n int) Option {
 	}
 }
 
-// NewTestDB opens an in-memory charta database, registers db.Close with
+// NewTestDB opens an in-memory graingraph database, registers db.Close with
 // t.Cleanup, and returns a ready-to-use *DB. t.Fatal is called on any error.
 //
-// This is the recommended way to create a charta database in tests:
+// This is the recommended way to create a graingraph database in tests:
 //
 //	func TestMyFeature(t *testing.T) {
-//	    db := charta.NewTestDB(t)
+//	    db := graingraph.NewTestDB(t)
 //	    // db is closed automatically when the test ends
 //	}
 func NewTestDB(t testing.TB, opts ...Option) *DB {
 	t.Helper()
 	db, err := Open(":memory:", opts...)
 	if err != nil {
-		t.Fatalf("charta.NewTestDB: %v", err)
+		t.Fatalf("graingraph.NewTestDB: %v", err)
 	}
 	t.Cleanup(func() { _ = db.Close(context.Background()) })
 	return db
@@ -118,7 +118,7 @@ func WithMaxVectorCacheBytes(n int64) Option {
 	}
 }
 
-// WithoutAutomaticIndexes stops charta creating property indexes on its own.
+// WithoutAutomaticIndexes stops graingraph creating property indexes on its own.
 // By default, once equality filters on a property have narrowed a few scans of a
 // graph with at least 500 nodes, an index on that property is created in the
 // background; use this option if you want to control the schema yourself and

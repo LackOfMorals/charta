@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/LackOfMorals/charta/store"
+	"github.com/LackOfMorals/graingraph/store"
 )
 
 // helper opens an in-memory store and registers cleanup.
@@ -184,10 +184,10 @@ func TestListNodesByLabel(t *testing.T) {
 	// Insert nodes with various label combinations.
 	ids := map[string]int64{}
 	for lbl, props := range map[string]string{
-		"Person":          `{"name":"Alice"}`,
-		"Person,Employee": `{"name":"Bob"}`,
-		"Employee,Person": `{"name":"Carol"}`,
-		"Employee":        `{"name":"Dave"}`,
+		"Person":               `{"name":"Alice"}`,
+		"Person,Employee":      `{"name":"Bob"}`,
+		"Employee,Person":      `{"name":"Carol"}`,
+		"Employee":             `{"name":"Dave"}`,
 		"Admin,Person,Manager": `{"name":"Eve"}`,
 	} {
 		id, err := s.InsertNode(ctx, store.DecodeLabels(lbl), props)

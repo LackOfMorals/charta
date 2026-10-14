@@ -1,13 +1,13 @@
-// Package testdata_test contains end-to-end integration tests for the charta
+// Package testdata_test contains end-to-end integration tests for the graingraph
 // v0.1 feature set. Each test runs real Cypher queries against an in-memory
-// charta database (no network, no Docker) and asserts results match expected
+// graingraph database (no network, no Docker) and asserts results match expected
 // values. Failures report the query, expected output, and actual output.
 //
 // Coverage: every row in the v0.1 compatibility table has at least one test.
 //
 // Run these tests with:
 //
-//	CGO_ENABLED=0 go test github.com/LackOfMorals/charta/testdata
+//	CGO_ENABLED=0 go test github.com/LackOfMorals/graingraph/testdata
 //
 // Note: Go's ./... pattern excludes directories named "testdata" by design.
 // Use the full import path above to run this package explicitly.
@@ -20,18 +20,18 @@ import (
 	"strings"
 	"testing"
 
-	charta "github.com/LackOfMorals/charta"
+	graingraph "github.com/LackOfMorals/graingraph"
 )
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Test harness helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-// openDB opens a fresh in-memory charta database and registers a cleanup
+// openDB opens a fresh in-memory graingraph database and registers a cleanup
 // function to close it when the test completes.
-func openDB(t *testing.T) *charta.DB {
+func openDB(t *testing.T) *graingraph.DB {
 	t.Helper()
-	db, err := charta.Open(":memory:")
+	db, err := graingraph.Open(":memory:")
 	if err != nil {
 		t.Fatalf("Open :memory: failed: %v", err)
 	}
@@ -39,18 +39,18 @@ func openDB(t *testing.T) *charta.DB {
 	return db
 }
 
-// eagerResult holds the fully-collected output of a charta query so that
+// eagerResult holds the fully-collected output of a graingraph query so that
 // tests can index into Records and inspect Summary counters without managing
 // the streaming cursor themselves.
 type eagerResult struct {
-	Records []*charta.Record
-	Summary charta.ResultSummary
+	Records []*graingraph.Record
+	Summary graingraph.ResultSummary
 }
 
 // collectResult drains qr into an eagerResult, failing the test on error.
 // It first collects all records, then calls Consume to obtain the summary
 // (Consume after Collect is idempotent and returns counters from the result).
-func collectResult(ctx context.Context, qr *charta.Result) (*eagerResult, error) {
+func collectResult(ctx context.Context, qr *graingraph.Result) (*eagerResult, error) {
 	recs, err := qr.Collect(ctx)
 	if err != nil {
 		return nil, err
@@ -61,7 +61,7 @@ func collectResult(ctx context.Context, qr *charta.Result) (*eagerResult, error)
 
 // setup runs one or more setup Cypher statements against db, failing the test
 // if any statement returns an error.
-func setup(t *testing.T, db *charta.DB, queries ...string) {
+func setup(t *testing.T, db *graingraph.DB, queries ...string) {
 	t.Helper()
 	ctx := context.Background()
 	for _, q := range queries {
@@ -78,7 +78,7 @@ func setup(t *testing.T, db *charta.DB, queries ...string) {
 // query runs a Cypher query, collects all records into an eagerResult, and
 // returns it. The failure message includes the original query string so test
 // output is self-explanatory.
-func query(t *testing.T, db *charta.DB, cypher string, params map[string]any) *eagerResult {
+func query(t *testing.T, db *graingraph.DB, cypher string, params map[string]any) *eagerResult {
 	t.Helper()
 	ctx := context.Background()
 	qr, err := db.RunQuery(ctx, cypher, params)
@@ -652,7 +652,7 @@ func TestIntegration_NamedParams_MissingParam(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for missing $x parameter, got nil")
 	}
-	var mp *charta.ErrMissingParameter
+	var mp *graingraph.ErrMissingParameter
 	if !errors.As(err, &mp) {
 		t.Errorf("expected *ErrMissingParameter in error chain, got: %v (%T)", err, err)
 	} else if mp.Name != "x" {
@@ -711,9 +711,9 @@ func TestIntegration_CreateNode_WholeNodeProjection(t *testing.T) {
 	if !ok {
 		t.Fatalf("record missing key 'n'")
 	}
-	node, ok := v.(*charta.Node)
+	node, ok := v.(*graingraph.Node)
 	if !ok {
-		t.Fatalf("expected *charta.Node, got %T", v)
+		t.Fatalf("expected *graingraph.Node, got %T", v)
 	}
 	if len(node.Labels) == 0 || node.Labels[0] != "Sensor" {
 		t.Errorf("node.Labels = %v, want [Sensor]", node.Labels)
@@ -946,9 +946,9 @@ func TestIntegration_WholeRelationshipProjection(t *testing.T) {
 	if !ok {
 		t.Fatalf("record missing key 'r'")
 	}
-	rel, ok := v.(*charta.Relationship)
+	rel, ok := v.(*graingraph.Relationship)
 	if !ok {
-		t.Fatalf("expected *charta.Relationship, got %T", v)
+		t.Fatalf("expected *graingraph.Relationship, got %T", v)
 	}
 	if rel.Type != "KNOWS" {
 		t.Errorf("rel.Type = %q, want KNOWS", rel.Type)
@@ -1276,9 +1276,9 @@ func TestIntegration_NodeElementId_IsStableString(t *testing.T) {
 	assertCount(t, cypher, result, 1)
 
 	v, _ := result.Records[0].Get("n")
-	node, ok := v.(*charta.Node)
+	node, ok := v.(*graingraph.Node)
 	if !ok {
-		t.Fatalf("expected *charta.Node, got %T", v)
+		t.Fatalf("expected *graingraph.Node, got %T", v)
 	}
 	if node.ElementId == "" {
 		t.Error("node.ElementId must be a non-empty string")
@@ -1514,7 +1514,7 @@ func TestIntegration_OptionalMatch_WholeNodeNullable(t *testing.T) {
 
 		switch name {
 		case "Alice":
-			node, ok := friend.(*charta.Node)
+			node, ok := friend.(*graingraph.Node)
 			if !ok {
 				t.Errorf("Alice's friend should be *Node, got %T %v", friend, friend)
 			} else if node.Props["name"] != "Bob" {
@@ -2284,7 +2284,7 @@ func TestIntegration_Case_MultipleWhen(t *testing.T) {
 
 // setupChain creates a 3-node chain: Alice -[:KNOWS]-> Bob -[:KNOWS]-> Carol
 // and returns the database.
-func setupChain(t *testing.T) *charta.DB {
+func setupChain(t *testing.T) *graingraph.DB {
 	t.Helper()
 	db := openDB(t)
 	// Use inline chain CREATE to avoid the comma-MATCH+CREATE limitation.

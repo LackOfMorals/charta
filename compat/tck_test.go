@@ -1,9 +1,9 @@
 //go:build tck
 
 // Package compat contains the openCypher TCK (Technology Compatibility Kit)
-// test harness for charta. It uses Godog (Cucumber for Go) to run Gherkin
+// test harness for graingraph. It uses Godog (Cucumber for Go) to run Gherkin
 // scenarios from the real openCypher TCK .feature files against a live
-// charta in-memory database.
+// graingraph in-memory database.
 //
 // Run with:
 //
@@ -32,8 +32,8 @@ import (
 
 	"github.com/cucumber/godog"
 
-	charta "github.com/LackOfMorals/charta"
-	"github.com/LackOfMorals/charta/cypher/analyze"
+	graingraph "github.com/LackOfMorals/graingraph"
+	"github.com/LackOfMorals/graingraph/cypher/analyze"
 )
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -42,12 +42,12 @@ import (
 
 // eagerResult holds a fully-collected result with records and execution summary.
 type eagerResult struct {
-	Records []*charta.Record
-	Summary charta.ResultSummary
+	Records []*graingraph.Record
+	Summary graingraph.ResultSummary
 }
 
 // collectResult drains qr into an eagerResult.
-func collectResult(ctx context.Context, qr *charta.Result) (*eagerResult, error) {
+func collectResult(ctx context.Context, qr *graingraph.Result) (*eagerResult, error) {
 	recs, err := qr.Collect(ctx)
 	if err != nil {
 		return nil, err
@@ -57,7 +57,7 @@ func collectResult(ctx context.Context, qr *charta.Result) (*eagerResult, error)
 }
 
 type tckState struct {
-	db         *charta.DB
+	db         *graingraph.DB
 	lastResult *eagerResult
 	lastError  error
 	// effects are the side effects of the last "executing query" step (setup
@@ -100,7 +100,7 @@ func (s *tckState) givenAnEmptyGraph(ctx context.Context) error {
 		return nil
 	}
 	s.reset()
-	db, err := charta.Open(":memory:")
+	db, err := graingraph.Open(":memory:")
 	if err != nil {
 		return fmt.Errorf("open in-memory db: %w", err)
 	}
@@ -441,7 +441,7 @@ func parseTCKValue(s string) any {
 const (
 	statusPassed   = "passed"
 	statusFailed   = "failed"
-	statusSkipped  = "skipped"  // uses a feature charta does not support yet
+	statusSkipped  = "skipped"  // uses a feature graingraph does not support yet
 	statusExcluded = "excluded" // needs syntax removed in Cypher 25 (testdata/excluded.txt)
 )
 
@@ -629,7 +629,7 @@ func TestTCK(t *testing.T) {
 	runFeatureSuite(t, "TCK", "testdata/tck", filepath.Join("testdata", "excluded.txt"))
 }
 
-// TestNeo4jExtensions runs charta's own scenarios for Neo4j's extensions to
+// TestNeo4jExtensions runs graingraph's own scenarios for Neo4j's extensions to
 // openCypher (label expressions, subqueries, quantified path patterns, …),
 // written in the TCK's Gherkin dialect. Scenarios for constructs that are not
 // executed yet are listed in testdata/neo4j-deferred.txt with a reason.
@@ -665,7 +665,7 @@ func runFeatureSuite(t *testing.T, label, dir, exclusionFile string) {
 	}
 
 	suite := godog.TestSuite{
-		Name: "charta-" + label,
+		Name: "graingraph-" + label,
 		TestSuiteInitializer: func(tsc *godog.TestSuiteContext) {
 			tsc.AfterSuite(func() {})
 		},

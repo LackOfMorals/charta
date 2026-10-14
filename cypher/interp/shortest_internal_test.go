@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/LackOfMorals/charta/cypher/syntax"
-	"github.com/LackOfMorals/charta/store"
+	"github.com/LackOfMorals/graingraph/cypher/syntax"
+	"github.com/LackOfMorals/graingraph/store"
 )
 
 func pathKey(p *Path) string {

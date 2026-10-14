@@ -3,7 +3,7 @@ package interp
 import (
 	"sync/atomic"
 
-	"github.com/LackOfMorals/charta/cypher/syntax"
+	"github.com/LackOfMorals/graingraph/cypher/syntax"
 )
 
 // reverseDisabled turns off starting a pattern from its last node; tests use it

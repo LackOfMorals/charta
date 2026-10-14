@@ -1,5 +1,7 @@
 # Binaries and build output
-/charta
+/graingraph
+/graingraph-query
+/bin/
 *.exe
 *.dll
 *.so

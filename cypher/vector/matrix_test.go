@@ -218,10 +218,10 @@ func BenchmarkSearchCosine100kDim768(b *testing.B) { benchSearch(b, 100000, 768,
 func BenchmarkSearchEuclid100k(b *testing.B)       { benchSearch(b, 100000, 384, Euclidean) }
 
 // BenchmarkSearchCosine1M needs about 1.6 GB of memory, so it only runs when
-// CHARTA_BIG is set.
+// GRAINGRAPH_BIG is set.
 func BenchmarkSearchCosine1M(b *testing.B) {
-	if os.Getenv("CHARTA_BIG") == "" {
-		b.Skip("set CHARTA_BIG=1 to run (about 1.6 GB)")
+	if os.Getenv("GRAINGRAPH_BIG") == "" {
+		b.Skip("set GRAINGRAPH_BIG=1 to run (about 1.6 GB)")
 	}
 	benchSearch(b, 1000000, 384, Cosine)
 }

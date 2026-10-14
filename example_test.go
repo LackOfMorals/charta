@@ -1,4 +1,4 @@
-package charta_test
+package graingraph_test
 
 import (
 	"context"
@@ -8,14 +8,14 @@ import (
 	"strings"
 	"time"
 
-	charta "github.com/LackOfMorals/charta"
+	graingraph "github.com/LackOfMorals/graingraph"
 )
 
 // ExampleOpen demonstrates opening an in-memory database and running a query.
 func ExampleOpen() {
 	ctx := context.Background()
 
-	db, err := charta.Open(":memory:")
+	db, err := graingraph.Open(":memory:")
 	if err != nil {
 		panic(err)
 	}
@@ -39,7 +39,7 @@ func ExampleOpen() {
 
 // ExampleWithBusyTimeout shows how to configure SQLite busy-wait behaviour.
 func ExampleWithBusyTimeout() {
-	db, err := charta.Open(":memory:", charta.WithBusyTimeout(5*time.Second))
+	db, err := graingraph.Open(":memory:", graingraph.WithBusyTimeout(5*time.Second))
 	if err != nil {
 		panic(err)
 	}
@@ -55,7 +55,7 @@ func ExampleWithReadOnly() {
 	ctx := context.Background()
 
 	// Seed data in a normal read-write database.
-	rw, err := charta.Open(":memory:")
+	rw, err := graingraph.Open(":memory:")
 	if err != nil {
 		panic(err)
 	}
@@ -66,14 +66,14 @@ func ExampleWithReadOnly() {
 	// Here we demonstrate WithReadOnly rejecting writes.
 	_ = rw.Close(ctx)
 
-	ro, err := charta.Open(":memory:", charta.WithReadOnly())
+	ro, err := graingraph.Open(":memory:", graingraph.WithReadOnly())
 	if err != nil {
 		panic(err)
 	}
 	defer func() { _ = ro.Close(ctx) }()
 
 	_, err = ro.RunQuery(ctx, `CREATE (n:Config)`, nil)
-	fmt.Println(err == charta.ErrReadOnly)
+	fmt.Println(err == graingraph.ErrReadOnly)
 
 	// Output:
 	// true
@@ -83,7 +83,7 @@ func ExampleWithReadOnly() {
 func ExampleDB_Import() {
 	ctx := context.Background()
 
-	db, err := charta.Open(":memory:")
+	db, err := graingraph.Open(":memory:")
 	if err != nil {
 		panic(err)
 	}
@@ -99,7 +99,7 @@ func ExampleDB_Import() {
 		]
 	}`
 
-	if err := db.Import(ctx, strings.NewReader(data), charta.FormatJSON); err != nil {
+	if err := db.Import(ctx, strings.NewReader(data), graingraph.FormatJSON); err != nil {
 		panic(err)
 	}
 
@@ -124,7 +124,7 @@ func ExampleDB_Import() {
 func ExampleDB_Snapshot() {
 	ctx := context.Background()
 
-	db, err := charta.Open(":memory:")
+	db, err := graingraph.Open(":memory:")
 	if err != nil {
 		panic(err)
 	}
@@ -135,7 +135,7 @@ func ExampleDB_Snapshot() {
 		panic(err)
 	}
 
-	dir, err := os.MkdirTemp("", "charta-snap-*")
+	dir, err := os.MkdirTemp("", "graingraph-snap-*")
 	if err != nil {
 		panic(err)
 	}
@@ -147,7 +147,7 @@ func ExampleDB_Snapshot() {
 	}
 
 	// Reopen the snapshot as a normal database.
-	snap, err := charta.Open(snapPath)
+	snap, err := graingraph.Open(snapPath)
 	if err != nil {
 		panic(err)
 	}

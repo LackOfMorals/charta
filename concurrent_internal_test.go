@@ -1,4 +1,4 @@
-package charta
+package graingraph
 
 import (
 	"context"
@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/LackOfMorals/charta/cypher/interp"
-	"github.com/LackOfMorals/charta/store"
+	"github.com/LackOfMorals/graingraph/cypher/interp"
+	"github.com/LackOfMorals/graingraph/store"
 )
 
 // Read-only statements run on read-only connections, which cannot create the

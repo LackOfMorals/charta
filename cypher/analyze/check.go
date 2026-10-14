@@ -5,8 +5,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/LackOfMorals/charta/cypher/proc"
-	"github.com/LackOfMorals/charta/cypher/syntax"
+	"github.com/LackOfMorals/graingraph/cypher/proc"
+	"github.com/LackOfMorals/graingraph/cypher/syntax"
 )
 
 // Check analyses a parsed statement and returns the first compile-time error
@@ -264,7 +264,7 @@ func (t typ) name() string {
 func sprintf(format string, args ...any) string { return fmt.Sprintf(format, args...) }
 
 // knownProcedure reports whether a procedure name is in a namespace the
-// database provides (db.*, dbms.*). charta has no user-defined procedures.
+// database provides (db.*, dbms.*). graingraph has no user-defined procedures.
 func knownProcedure(name []string) bool {
 	if len(name) < 2 {
 		return false

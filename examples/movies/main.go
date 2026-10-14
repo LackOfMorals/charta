@@ -15,7 +15,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/LackOfMorals/charta"
+	"github.com/LackOfMorals/graingraph"
 )
 
 func main() {
@@ -29,7 +29,7 @@ func main() {
 	}
 
 	ctx := context.Background()
-	db, err := charta.Open(":memory:")
+	db, err := graingraph.Open(":memory:")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -82,7 +82,7 @@ func main() {
 }
 
 // query runs a read query and prints each row.
-func query(ctx context.Context, db *charta.DB, title, cypher string) {
+func query(ctx context.Context, db *graingraph.DB, title, cypher string) {
 	fmt.Println(title)
 	res, err := db.RunQuery(ctx, cypher, nil)
 	if err != nil {
