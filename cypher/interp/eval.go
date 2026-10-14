@@ -1,16 +1,16 @@
 package interp
 
 import (
-	"github.com/LackOfMorals/graingraph/cypher/proc"
-	"github.com/LackOfMorals/graingraph/cypher/spatial"
-	"github.com/LackOfMorals/graingraph/cypher/temporal"
+	"github.com/graingraph/graingraph/cypher/proc"
+	"github.com/graingraph/graingraph/cypher/spatial"
+	"github.com/graingraph/graingraph/cypher/temporal"
 	"math"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/LackOfMorals/graingraph/cypher/syntax"
+	"github.com/graingraph/graingraph/cypher/syntax"
 )
 
 // row is the set of variables visible to an expression.

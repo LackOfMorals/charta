@@ -4,8 +4,8 @@ import (
 	"context"
 	"sort"
 
-	"github.com/LackOfMorals/graingraph/cypher/proc"
-	"github.com/LackOfMorals/graingraph/cypher/syntax"
+	"github.com/graingraph/graingraph/cypher/proc"
+	"github.com/graingraph/graingraph/cypher/syntax"
 )
 
 // resolve finds the procedure a CALL names: registered first, then built-in.

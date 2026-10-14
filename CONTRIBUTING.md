@@ -17,7 +17,7 @@ No Docker, no database server, no external services. Everything runs in-process.
 ## Getting started
 
 ```bash
-git clone https://github.com/LackOfMorals/graingraph.git
+git clone https://github.com/graingraph/graingraph.git
 cd graingraph
 
 # If vendor/ is absent, populate it and restore the neo4j vendor shim
@@ -41,7 +41,7 @@ CGO_ENABLED=0 go test -count=1 ./...
 This runs all unit tests (parser, analysis, interpreter, store) and the integration tests under each package. The `testdata/` package must be run explicitly:
 
 ```bash
-CGO_ENABLED=0 go test github.com/LackOfMorals/graingraph/testdata
+CGO_ENABLED=0 go test github.com/graingraph/graingraph/testdata
 ```
 
 ### Property-based tests (rapid)
@@ -143,7 +143,7 @@ When a change may affect query performance, capture a new baseline:
 
 Additions (new exported symbols) and bug fixes that correct documented-incorrect behaviour are not considered breaking changes.
 
-This commitment covers the root package (`github.com/LackOfMorals/graingraph`) and its sub-packages. Internal packages (sub-packages not documented for external use) are exempt.
+This commitment covers the root package (`github.com/graingraph/graingraph`) and its sub-packages. Internal packages (sub-packages not documented for external use) are exempt.
 
 For the compatibility table of supported Cypher features, see [README.md — Cypher Compatibility](README.md#cypher-compatibility).
 

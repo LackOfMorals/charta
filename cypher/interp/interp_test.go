@@ -8,11 +8,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/LackOfMorals/graingraph/cypher/analyze"
-	"github.com/LackOfMorals/graingraph/cypher/interp"
-	"github.com/LackOfMorals/graingraph/cypher/proc"
-	"github.com/LackOfMorals/graingraph/cypher/syntax"
-	"github.com/LackOfMorals/graingraph/store"
+	"github.com/graingraph/graingraph/cypher/analyze"
+	"github.com/graingraph/graingraph/cypher/interp"
+	"github.com/graingraph/graingraph/cypher/proc"
+	"github.com/graingraph/graingraph/cypher/syntax"
+	"github.com/graingraph/graingraph/store"
 )
 
 // newDB opens an empty in-memory graph.

@@ -7,7 +7,7 @@
 //
 // Run these tests with:
 //
-//	CGO_ENABLED=0 go test github.com/LackOfMorals/graingraph/testdata
+//	CGO_ENABLED=0 go test github.com/graingraph/graingraph/testdata
 //
 // Note: Go's ./... pattern excludes directories named "testdata" by design.
 // Use the full import path above to run this package explicitly.
@@ -20,7 +20,7 @@ import (
 	"strings"
 	"testing"
 
-	graingraph "github.com/LackOfMorals/graingraph"
+	graingraph "github.com/graingraph/graingraph"
 )
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/LackOfMorals/graingraph/internal/server/auth"
-	"github.com/LackOfMorals/graingraph/internal/server/store"
+	"github.com/graingraph/graingraph/internal/server/auth"
+	"github.com/graingraph/graingraph/internal/server/store"
 )
 
 const (

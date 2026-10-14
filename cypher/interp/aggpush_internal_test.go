@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/LackOfMorals/graingraph/cypher/analyze"
-	"github.com/LackOfMorals/graingraph/cypher/syntax"
-	"github.com/LackOfMorals/graingraph/store"
+	"github.com/graingraph/graingraph/cypher/analyze"
+	"github.com/graingraph/graingraph/cypher/syntax"
+	"github.com/graingraph/graingraph/store"
 )
 
 // typedRows runs a query and renders every value with its Go type, so 1 and 1.0

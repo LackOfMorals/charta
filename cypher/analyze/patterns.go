@@ -1,6 +1,6 @@
 package analyze
 
-import "github.com/LackOfMorals/graingraph/cypher/syntax"
+import "github.com/graingraph/graingraph/cypher/syntax"
 
 type patMode uint8
 

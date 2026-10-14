@@ -7,8 +7,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/LackOfMorals/graingraph/cypher/proc"
-	"github.com/LackOfMorals/graingraph/cypher/syntax"
+	"github.com/graingraph/graingraph/cypher/proc"
+	"github.com/graingraph/graingraph/cypher/syntax"
 )
 
 // Engine is the per-database state the interpreter keeps between statements:

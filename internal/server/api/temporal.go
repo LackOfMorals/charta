@@ -3,7 +3,7 @@ package api
 import (
 	"strings"
 
-	"github.com/LackOfMorals/graingraph/cypher/temporal"
+	"github.com/graingraph/graingraph/cypher/temporal"
 )
 
 // temporalString renders a temporal value the way a Neo4j server does in

@@ -32,8 +32,8 @@ import (
 
 	"github.com/cucumber/godog"
 
-	graingraph "github.com/LackOfMorals/graingraph"
-	"github.com/LackOfMorals/graingraph/cypher/analyze"
+	graingraph "github.com/graingraph/graingraph"
+	"github.com/graingraph/graingraph/cypher/analyze"
 )
 
 // ─────────────────────────────────────────────────────────────────────────────

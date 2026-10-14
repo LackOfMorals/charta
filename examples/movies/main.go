@@ -15,7 +15,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/LackOfMorals/graingraph"
+	"github.com/graingraph/graingraph"
 )
 
 func main() {

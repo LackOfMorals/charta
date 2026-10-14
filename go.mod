@@ -1,4 +1,4 @@
-module github.com/LackOfMorals/graingraph
+module github.com/graingraph/graingraph
 
 go 1.26.9
 

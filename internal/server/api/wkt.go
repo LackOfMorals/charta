@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/LackOfMorals/graingraph/cypher/spatial"
+	"github.com/graingraph/graingraph/cypher/spatial"
 )
 
 // wktOf renders a point in the WKT form used by the Query API, e.g.

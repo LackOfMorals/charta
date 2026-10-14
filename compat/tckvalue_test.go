@@ -9,10 +9,10 @@ import (
 	"strconv"
 	"strings"
 
-	graingraph "github.com/LackOfMorals/graingraph"
-	"github.com/LackOfMorals/graingraph/cypher/spatial"
-	"github.com/LackOfMorals/graingraph/cypher/temporal"
-	"github.com/LackOfMorals/graingraph/cypher/vector"
+	graingraph "github.com/graingraph/graingraph"
+	"github.com/graingraph/graingraph/cypher/spatial"
+	"github.com/graingraph/graingraph/cypher/temporal"
+	"github.com/graingraph/graingraph/cypher/vector"
 )
 
 // TCK result tables write values in a Cypher-like notation: 1, 1.5, 'text',

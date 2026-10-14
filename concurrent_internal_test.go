@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/LackOfMorals/graingraph/cypher/interp"
-	"github.com/LackOfMorals/graingraph/store"
+	"github.com/graingraph/graingraph/cypher/interp"
+	"github.com/graingraph/graingraph/store"
 )
 
 // Read-only statements run on read-only connections, which cannot create the

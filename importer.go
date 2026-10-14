@@ -12,9 +12,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/LackOfMorals/graingraph/cypher/interp"
-	"github.com/LackOfMorals/graingraph/cypher/syntax"
-	"github.com/LackOfMorals/graingraph/store"
+	"github.com/graingraph/graingraph/cypher/interp"
+	"github.com/graingraph/graingraph/cypher/syntax"
+	"github.com/graingraph/graingraph/store"
 )
 
 // Format identifies the file format accepted by Import.

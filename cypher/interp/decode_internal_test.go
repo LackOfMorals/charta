@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/LackOfMorals/graingraph/cypher/spatial"
-	"github.com/LackOfMorals/graingraph/cypher/temporal"
-	"github.com/LackOfMorals/graingraph/store"
+	"github.com/graingraph/graingraph/cypher/spatial"
+	"github.com/graingraph/graingraph/cypher/temporal"
+	"github.com/graingraph/graingraph/store"
 )
 
 func newDBInternal(t *testing.T) *store.SQLiteStore {

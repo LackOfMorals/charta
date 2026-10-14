@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/LackOfMorals/graingraph"
+	"github.com/graingraph/graingraph"
 )
 
 // openMem opens a fresh in-memory graingraph DB for testing.

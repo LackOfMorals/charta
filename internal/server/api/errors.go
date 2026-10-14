@@ -7,12 +7,12 @@ import (
 	"log/slog"
 	"net/http"
 
-	"github.com/LackOfMorals/graingraph"
-	"github.com/LackOfMorals/graingraph/cypher/analyze"
-	"github.com/LackOfMorals/graingraph/cypher/interp"
-	"github.com/LackOfMorals/graingraph/cypher/syntax"
+	"github.com/graingraph/graingraph"
+	"github.com/graingraph/graingraph/cypher/analyze"
+	"github.com/graingraph/graingraph/cypher/interp"
+	"github.com/graingraph/graingraph/cypher/syntax"
 
-	"github.com/LackOfMorals/graingraph/internal/server/store"
+	"github.com/graingraph/graingraph/internal/server/store"
 )
 
 // Neo4j error codes used by the server. These match the codes a Neo4j

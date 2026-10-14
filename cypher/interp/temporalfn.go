@@ -4,8 +4,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/LackOfMorals/graingraph/cypher/spatial"
-	"github.com/LackOfMorals/graingraph/cypher/temporal"
+	"github.com/graingraph/graingraph/cypher/spatial"
+	"github.com/graingraph/graingraph/cypher/temporal"
 )
 
 // spatialFunction evaluates point() and the point.* functions.

@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/LackOfMorals/graingraph/store"
+	"github.com/graingraph/graingraph/store"
 )
 
 // TestOpenMemory verifies that Open(":memory:") returns a usable store.

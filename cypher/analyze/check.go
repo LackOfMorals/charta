@@ -5,8 +5,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/LackOfMorals/graingraph/cypher/proc"
-	"github.com/LackOfMorals/graingraph/cypher/syntax"
+	"github.com/graingraph/graingraph/cypher/proc"
+	"github.com/graingraph/graingraph/cypher/syntax"
 )
 
 // Check analyses a parsed statement and returns the first compile-time error

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/LackOfMorals/graingraph/store"
+	"github.com/graingraph/graingraph/store"
 )
 
 // node_labels is written by the code that writes nodes.labels, not by triggers,

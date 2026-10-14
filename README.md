@@ -9,7 +9,7 @@ graingraph is a Go package that provides an embedded property graph accessible u
 Like this
 
 ```go
-import "github.com/LackOfMorals/graingraph"
+import "github.com/graingraph/graingraph"
 
 // In-memory — transient, great for tests
 db, err := graingraph.Open(":memory:")
@@ -62,7 +62,7 @@ Unsupported features return `ErrUnsupportedCypher` — they never silently produ
 ## Install
 
 ```bash
-go get github.com/LackOfMorals/graingraph
+go get github.com/graingraph/graingraph
 ```
 
 Requires Go 1.26.9+ (earlier 1.26 releases have a `net/http` vulnerability, GO-2026-6617, that affects `graingraph-query`). No CGO required. Works on Linux (amd64/arm64), macOS (arm64), and Windows (amd64).
@@ -74,7 +74,7 @@ Requires Go 1.26.9+ (earlier 1.26 releases have a `net/http` vulnerability, GO-2
 ### Opening a database
 
 ```go
-import "github.com/LackOfMorals/graingraph"
+import "github.com/graingraph/graingraph"
 
 // In-memory — transient, great for tests
 db, err := graingraph.Open(":memory:")
@@ -402,8 +402,8 @@ CREATE TABLE edges (
 `graingraph-query` is an HTTP server that speaks the Neo4j Query API (v2) on top
 of graingraph. Any client that can send Query API requests to Neo4j can send
 them here. Download a binary from the
-[Releases](https://github.com/LackOfMorals/graingraph/releases) page, or
-`go install github.com/LackOfMorals/graingraph/cmd/graingraph-query@latest`.
+[Releases](https://github.com/graingraph/graingraph/releases) page, or
+`go install github.com/graingraph/graingraph/cmd/graingraph-query@latest`.
 
 It is built for one person or agent at a time. There is a single basic-auth
 credential, and whoever holds it can do anything to the graph.

@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/LackOfMorals/graingraph"
+	"github.com/graingraph/graingraph"
 )
 
 func main() {

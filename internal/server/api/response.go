@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/LackOfMorals/graingraph/internal/server/store"
+	"github.com/graingraph/graingraph/internal/server/store"
 )
 
 // errorBody is one entry of a client-facing error document.

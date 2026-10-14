@@ -43,9 +43,9 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/LackOfMorals/graingraph/cypher/interp"
-	"github.com/LackOfMorals/graingraph/cypher/proc"
-	"github.com/LackOfMorals/graingraph/store"
+	"github.com/graingraph/graingraph/cypher/interp"
+	"github.com/graingraph/graingraph/cypher/proc"
+	"github.com/graingraph/graingraph/store"
 )
 
 // DB is an open graingraph database. All methods are safe for concurrent use

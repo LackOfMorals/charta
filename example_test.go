@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	graingraph "github.com/LackOfMorals/graingraph"
+	graingraph "github.com/graingraph/graingraph"
 )
 
 // ExampleOpen demonstrates opening an in-memory database and running a query.

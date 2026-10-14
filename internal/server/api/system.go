@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/LackOfMorals/graingraph/internal/server/store"
+	"github.com/graingraph/graingraph/internal/server/store"
 )
 
 // systemDatabase is the name of Neo4j's administration database. Tools such as

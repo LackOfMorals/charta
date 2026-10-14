@@ -3,7 +3,7 @@ package temporal_test
 import (
 	"testing"
 
-	"github.com/LackOfMorals/graingraph/cypher/temporal"
+	"github.com/graingraph/graingraph/cypher/temporal"
 )
 
 func str(t *testing.T, k temporal.Kind, arg any) string {

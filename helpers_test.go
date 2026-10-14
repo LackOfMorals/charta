@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/LackOfMorals/graingraph"
+	"github.com/graingraph/graingraph"
 )
 
 // ─────────────────────────────────────────────────────────────────────────────
