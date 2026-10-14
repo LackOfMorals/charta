@@ -735,3 +735,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, test suite commands, the 5-ste
 ## License
 
 Apache 2.0 — see [LICENSE](LICENSE).
+
+Neo4j is a registered trademark of Neo4j, Inc. graingraph is an independent
+project and is not affiliated with, endorsed by or sponsored by Neo4j, Inc.
+References to Neo4j describe compatibility.
