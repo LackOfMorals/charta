@@ -5,7 +5,7 @@
 graingraph is an embedded property graph database for Go, backed by SQLite and queryable via a subset of openCypher. The primary entry point is `graingraph.Open`; queries are executed with `db.RunQuery` or via explicit transactions started with `db.BeginTx`.
 
 - Module path: `github.com/LackOfMorals/graingraph`
-- Go minimum version: 1.26
+- Go minimum version: 1.26.9 (the `go` line in go.mod also selects the toolchain CI and releases build with; 1.26.9 fixes GO-2026-6617 in `net/http`)
 - SQLite driver: `modernc.org/sqlite` (CGO-free, no mattn/go-sqlite3)
 
 ## Feedback Instructions

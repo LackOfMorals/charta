@@ -65,7 +65,7 @@ Unsupported features return `ErrUnsupportedCypher` — they never silently produ
 go get github.com/LackOfMorals/graingraph
 ```
 
-Requires Go 1.26+. No CGO required. Works on Linux (amd64/arm64), macOS (arm64), and Windows (amd64).
+Requires Go 1.26.9+ (earlier 1.26 releases have a `net/http` vulnerability, GO-2026-6617, that affects `graingraph-query`). No CGO required. Works on Linux (amd64/arm64), macOS (arm64), and Windows (amd64).
 
 ---
 
