@@ -171,9 +171,12 @@ func encodeRow(row []any, rt responseType) (any, error) {
 			x   any
 			err error
 		)
-		if rt.format == formatTyped {
+		switch rt.format {
+		case formatTyped:
 			x, err = encodeTyped(v, rt.typedVer)
-		} else {
+		case formatTOON:
+			x, err = encodeTOONValue(v)
+		default:
 			x, err = encodePlain(v)
 		}
 		if err != nil {

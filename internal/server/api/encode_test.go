@@ -121,17 +121,21 @@ func TestEncodeTypedScalars(t *testing.T) {
 
 func TestFormatFloat(t *testing.T) {
 	cases := map[float64]string{
-		0:            "0.0",
-		4.56:         "4.56",
-		-0.2:         "-0.2",
-		123456:       "123456.0",
-		3.2e9:        "3.2E9",
-		2.0e-7:       "2E-7",
-		1e7:          "1E7",
-		-1e-5:        "-1E-5",
-		math.NaN():   "NaN",
-		math.Inf(1):  "Infinity",
-		math.Inf(-1): "-Infinity",
+		0:                    "0.0",
+		4.56:                 "4.56",
+		-0.2:                 "-0.2",
+		123456:               "123456.0",
+		3.2e9:                "3.2E9",
+		2.0e-7:               "2.0E-7",
+		1e7:                  "1.0E7",
+		-1e-5:                "-1.0E-5",
+		1e21:                 "1.0E21",
+		1.5e-300:             "1.5E-300",
+		5e-324:               "4.9E-324", // Java prints the closest two-digit decimal
+		math.Copysign(0, -1): "-0.0",
+		math.NaN():           "NaN",
+		math.Inf(1):          "Infinity",
+		math.Inf(-1):         "-Infinity",
 	}
 	for in, want := range cases {
 		if got := formatFloat(in); got != want {

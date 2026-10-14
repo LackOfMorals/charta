@@ -57,8 +57,11 @@ What TOON does with graph values:
   a relationship `r` gives `r._id,r._type,r._start,r._end,r.<property>`. Rows
   that lack a property get `null`. Use `_id` with `elementId(n) = "<id>"` to
   find the entity again.
-- **Lists, maps and paths are a JSON string in one cell**, e.g.
-  `"[1,2]"`. Return scalars (`RETURN p.name AS name`) when you can.
+- **A path column is a Cypher pattern**, e.g.
+  `(:Person {name:Keanu})-[:ACTED_IN {roles:[Neo]}]->(:Movie {title:The Matrix})`
+  (strings are bare unless they contain `{}[]"` or a newline). **Other lists
+  and maps are a JSON string in one cell**, e.g. `"[1,2]"`. Return scalars
+  (`RETURN p.name AS name`) when you can.
 - **Writes report what they changed**: a `counters:` block with the non-zero
   counts (`nodesCreated: 1`) after `rows[0]:`. You do not need
   `includeCounters`.

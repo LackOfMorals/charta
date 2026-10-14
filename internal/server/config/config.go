@@ -11,7 +11,7 @@ import (
 )
 
 // Version is the charta-query server version reported by discovery and -version.
-const Version = "1.1.0"
+const Version = "1.1.1"
 
 // Config holds all runtime settings for the server.
 type Config struct {

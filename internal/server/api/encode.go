@@ -92,7 +92,7 @@ func encodePlain(v any) (any, error) {
 		return encodePathPlain(x)
 
 	case temporal.Value:
-		return x.String(), nil
+		return temporalString(x, false), nil
 
 	case spatial.Point:
 		return wktOf(x), nil

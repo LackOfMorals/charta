@@ -72,16 +72,59 @@ curl -u admin:change-me -H 'Content-Type: application/json' -H 'Accept: text/too
 
 - One flat table, `rows[N]{columns}:`. A node or relationship becomes columns
   (`p._id`, `p._labels`, `p.name`, ... and `r._type`, `r._start`, `r._end`);
-  lists, maps and paths are a compact JSON string in one cell.
+  a path column is a Cypher pattern, `(:Person {name:Keanu})-[:ACTED_IN]->(:Movie {title:The Matrix})`;
+  other lists and maps are a compact JSON string in one cell.
 - No bookmarks or timings. Non-zero mutation counters are always reported
   (`counters:`), without `includeCounters`.
 - Every failure is an error status with an `errors[N]{code,message}:` table,
   including one raised while producing rows, which JSON answers with `202`.
 - Transactions work as usual: opening returns a `transaction:` block with the
   id, and commit answers `committed: true`.
-- Measured on a small graph it is about 10-20% fewer tokens than plain JSON for
-  flat results and about half for nodes and relationships (counted with a GPT
-  tokenizer, so approximate for other models).
+
+### Token cost and accuracy
+
+Measured on a synthetic graph of 80 people and 12 companies. These are small
+experiments, not guarantees; your data will differ.
+
+**Tokens** (GPT `o200k` tokenizer, so approximate for other models). Percentages
+are against plain JSON as the server returns it:
+
+| Result shape | TOON | Typed JSON |
+|---|---|---|
+| flat table, 25-50 rows | 81-90% | about 320% |
+| wide table, 12 columns | 84% | 350% |
+| 25 nodes | 51% | 246% |
+| 25 `(p)-[r]->(c)` rows | 47% | 225% |
+| `collect()` list cells | 93% | 300% |
+| mixed benchmark, all of the above | **58%** | 254% |
+
+Most of the saving comes from flattening nodes and relationships and dropping
+bookmarks and timings, not from the TOON syntax itself. For a tiny result such
+as a count, the fixed response metadata is most of the JSON.
+
+On the Neo4j movies graph (49 queries, from counts to nodes, relationships
+and paths) served TOON was 60% of the tokens of plain JSON; paths were 51%.
+
+**Accuracy.** Haiku and Sonnet, with no tools, were given the same query
+result as JSON or TOON and asked about 10 questions each (lookups, filtered
+counts, sums, maximums, nulls, list membership) over 3 seeded datasets of 80
+rows, with awkward values: numeric-looking strings such as `"007"`, text with
+commas, colons, quotes and newlines, empty strings against nulls. Answers were
+graded against the true values (246 questions per format):
+
+| | JSON | TOON |
+|---|---|---|
+| Haiku | 92.7% | 95.1% |
+| Sonnet | 96.7% | 97.6% |
+
+The difference is within noise, so read it as parity, not as TOON being more
+accurate. Lookups, joins, null handling and the tricky strings were correct in
+both formats apart from one wrong zip in TOON. Nearly every error was
+arithmetic over many rows (sums and counts), which models get wrong in either
+format; an agent with a shell should compute those instead of reading them.
+Limits: two models, one run per question, 80 rows, and the prompts included a
+short description of each format (the skill carries the same description for
+TOON).
 
 ## Agent skills
 
@@ -159,7 +202,8 @@ CHARTA_QUERY_COMPAT_NEO4J_PASSWORD=secret \
 `CHARTA_QUERY_COMPAT_NEO4J_USER` (default `neo4j`) and
 `CHARTA_QUERY_COMPAT_NEO4J_DB` (default `neo4j`) are optional. The reference
 database is never modified: writes happen in explicit transactions that are
-always rolled back, on private `Cq*` labels, and no schema is created.
+always rolled back, on private `Cq*` labels, and no schema is created (Neo4j
+does still register the property key names the writes used).
 
 Known differences, each marked in the test with its reason:
 
@@ -167,6 +211,18 @@ Known differences, each marked in the test with its reason:
   Neo4j 2026.07 answers 406.
 - A non-string `statement` is `Request.Invalid` here, `Statement.SyntaxError` in Neo4j.
 - Neo4j adds `notifications` (such as deprecation warnings); charta-query has none.
+
+Also seen when comparing 54 queries on the Neo4j movies graph (not covered by
+the compatibility test; the rest matched, including every temporal and float
+format):
+
+- `avg` and `stDev` can differ in the last digits (charta-query computes
+  `avg` more exactly; `stDev` is rounded to 15 significant digits).
+- `keys(n)` lists the properties sorted; Neo4j lists them in insertion order.
+- charta does not support `datetime({epochSeconds: ...})` (Neo4j does).
+- Functions that return strings, such as `toString(localtime('12:30'))`, use
+  charta's shortest form (`12:30`); only values returned as temporal types are
+  written the way Neo4j writes them (`12:30:00`).
 
 ### Performance against a real Neo4j
 

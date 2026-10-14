@@ -11,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/LackOfMorals/charta"
 )
 
 // mediaTOON is the media type that selects TOON output (https://toonformat.dev),
@@ -352,4 +354,84 @@ func toonQuote(s string) string {
 	}
 	sb.WriteByte('"')
 	return sb.String()
+}
+
+// encodeTOONValue is encodePlain, except that a path becomes its Cypher
+// pattern as a string: "(:Person {name:Keanu Reeves})-[:ACTED_IN
+// {roles:[Neo]}]->(:Movie {title:The Matrix})". As a JSON string in a cell
+// it cost more tokens than the JSON response it replaces. Only a path that
+// is itself a result column is written this way; one inside a list is JSON.
+func encodeTOONValue(v any) (any, error) {
+	p, ok := v.(charta.Path)
+	if !ok {
+		return encodePlain(v)
+	}
+	var sb strings.Builder
+	prev := ""
+	for i, n := range p.Nodes {
+		enc, err := encodePlain(&n)
+		if err != nil {
+			return nil, err
+		}
+		node := enc.(nodeJSON)
+		if i > 0 && i-1 < len(p.Relationships) {
+			renc, err := encodePlain(&p.Relationships[i-1])
+			if err != nil {
+				return nil, err
+			}
+			rel := renc.(relJSON)
+			body := "[:" + rel.Type + pathProps(rel.Properties) + "]"
+			if rel.StartNodeElementId == prev {
+				sb.WriteString("-" + body + "->")
+			} else {
+				sb.WriteString("<-" + body + "-")
+			}
+		}
+		sb.WriteString("(")
+		for _, l := range node.Labels {
+			sb.WriteString(":" + l)
+		}
+		sb.WriteString(pathProps(node.Properties) + ")")
+		prev = node.ElementId
+	}
+	return sb.String(), nil
+}
+
+// pathProps writes " {k:v,...}" with keys sorted, or nothing without
+// properties. Strings are bare unless that would be ambiguous.
+func pathProps(m map[string]any) string {
+	if len(m) == 0 {
+		return ""
+	}
+	parts := make([]string, 0, len(m))
+	for _, k := range sortedKeys(m) {
+		parts = append(parts, k+":"+pathValue(m[k]))
+	}
+	return " {" + strings.Join(parts, ",") + "}"
+}
+
+func pathValue(v any) string {
+	switch x := v.(type) {
+	case string:
+		if x == "" || strings.ContainsAny(x, "{}[]\"\\\n") || x != strings.TrimSpace(x) {
+			b, _ := json.Marshal(x)
+			return string(b)
+		}
+		return x
+	case []any:
+		parts := make([]string, len(x))
+		for i, e := range x {
+			parts[i] = pathValue(e)
+		}
+		return "[" + strings.Join(parts, ",") + "]"
+	case map[string]any:
+		parts := make([]string, 0, len(x))
+		for _, k := range sortedKeys(x) {
+			parts = append(parts, k+":"+pathValue(x[k]))
+		}
+		return "{" + strings.Join(parts, ",") + "}"
+	case nil:
+		return "null"
+	}
+	return toonCell(v)
 }

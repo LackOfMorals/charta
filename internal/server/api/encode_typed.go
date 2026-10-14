@@ -90,21 +90,21 @@ func encodeTyped(v any, ver int) (any, error) {
 		return encodePathTyped(x, ver)
 
 	case temporal.Date:
-		return typedValue{Type: "Date", Value: x.String()}, nil
+		return typedValue{Type: "Date", Value: temporalString(x, true)}, nil
 	case temporal.LocalTime:
-		return typedValue{Type: "LocalTime", Value: x.String()}, nil
+		return typedValue{Type: "LocalTime", Value: temporalString(x, true)}, nil
 	case temporal.Time:
-		return typedValue{Type: "Time", Value: x.String()}, nil
+		return typedValue{Type: "Time", Value: temporalString(x, true)}, nil
 	case temporal.LocalDateTime:
-		return typedValue{Type: "LocalDateTime", Value: x.String()}, nil
+		return typedValue{Type: "LocalDateTime", Value: temporalString(x, true)}, nil
 	case temporal.DateTime:
-		s := x.String()
+		s := temporalString(x, true)
 		if strings.Contains(s, "[") {
 			return typedValue{Type: "ZonedDateTime", Value: s}, nil
 		}
 		return typedValue{Type: "OffsetDateTime", Value: s}, nil
 	case temporal.Duration:
-		return typedValue{Type: "Duration", Value: x.String()}, nil
+		return typedValue{Type: "Duration", Value: temporalString(x, true)}, nil
 
 	case spatial.Point:
 		return typedValue{Type: "Point", Value: wktOf(x)}, nil
@@ -249,7 +249,7 @@ func uintTyped(u uint64) (any, error) {
 
 // formatFloat renders a float64 with the Query API's float string rules:
 // decimal notation when the magnitude is in [1e-3, 1e7), scientific
-// otherwise, and the words NaN / Infinity / -Infinity for specials.
+// otherwise (with Java's "1.0E21" mantissa), and the words NaN / Infinity / -Infinity for specials.
 func formatFloat(v float64) string {
 	switch {
 	case math.IsNaN(v):
@@ -259,6 +259,9 @@ func formatFloat(v float64) string {
 	case math.IsInf(v, -1):
 		return "-Infinity"
 	case v == 0:
+		if math.Signbit(v) {
+			return "-0.0"
+		}
 		return "0.0"
 	}
 	av := math.Abs(v)
@@ -272,6 +275,20 @@ func formatFloat(v float64) string {
 	s := strconv.FormatFloat(v, 'E', -1, 64)
 	i := strings.IndexByte(s, 'E')
 	mant, exp := s[:i], s[i+1:]
+	if !strings.Contains(mant, ".") {
+		// Java writes at least two digits and picks the closest two-digit
+		// decimal that still reads back as v (4.9E-324, not 5E-324).
+		if two := strconv.FormatFloat(v, 'E', 1, 64); two != "" {
+			if back, err := strconv.ParseFloat(two, 64); err == nil && back == v {
+				s = two
+				i = strings.IndexByte(s, 'E')
+				mant, exp = s[:i], s[i+1:]
+			}
+		}
+		if !strings.Contains(mant, ".") {
+			mant += ".0"
+		}
+	}
 	// strconv pads the exponent to two digits ("E+09", "E-07"); the Query
 	// API wants none ("E9", "E-7"). Split the sign off before trimming.
 	sign := ""
