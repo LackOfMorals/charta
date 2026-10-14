@@ -21,8 +21,8 @@ for result.Next(ctx) {
 
 > graingraph does not implement the Bolt wire protocol. To reach it over the
 > network, run [`graingraph-query`](#run-it-as-a-server-graingraph-query), an
-> HTTP server with the Neo4j Query API (v2) built on it, which also has a compact
-> output format and a skill for AI agents.
+> HTTP server compatible with Neo4j's Query API (v2) built on it, which also has
+> a compact output format and a skill for AI agents.
 
 
 
@@ -399,9 +399,9 @@ CREATE TABLE edges (
 
 ## Run it as a server (graingraph-query)
 
-`graingraph-query` is an HTTP server that speaks the Neo4j Query API (v2) on top
-of graingraph. Any client that can send Query API requests to Neo4j can send
-them here. Download a binary from the
+`graingraph-query` is an HTTP server on top of graingraph that is compatible
+with Neo4j's Query API (v2): most clients that send Query API requests to Neo4j
+work with it, and the differences are listed below. Download a binary from the
 [Releases](https://github.com/graingraph/graingraph/releases) page, or
 `go install github.com/graingraph/graingraph/cmd/graingraph-query@latest`.
 
