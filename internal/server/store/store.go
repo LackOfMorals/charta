@@ -14,7 +14,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/LackOfMorals/graingraph"
+	"github.com/graingraph/graingraph"
 )
 
 // bookmarkCounter produces opaque, unique bookmarks: a monotonically

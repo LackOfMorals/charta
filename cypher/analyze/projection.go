@@ -3,7 +3,7 @@ package analyze
 import (
 	"sort"
 
-	"github.com/LackOfMorals/graingraph/cypher/syntax"
+	"github.com/graingraph/graingraph/cypher/syntax"
 )
 
 // projectionClause analyses a WITH or RETURN: output names, grouping, ORDER BY,

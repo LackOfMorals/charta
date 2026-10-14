@@ -24,7 +24,7 @@ import (
 	"sync"
 	"testing"
 
-	graingraph "github.com/LackOfMorals/graingraph"
+	graingraph "github.com/graingraph/graingraph"
 )
 
 // bench1M is a flag that enables the 1M-node benchmark. Off by default because

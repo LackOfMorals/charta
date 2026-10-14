@@ -1,7 +1,7 @@
 package api
 
 import (
-	"github.com/LackOfMorals/graingraph/cypher/syntax"
+	"github.com/graingraph/graingraph/cypher/syntax"
 )
 
 // queryTypeOf classifies a statement the way the Query API reports it:

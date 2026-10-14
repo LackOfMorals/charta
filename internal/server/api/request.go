@@ -13,8 +13,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/LackOfMorals/graingraph/cypher/temporal"
-	"github.com/LackOfMorals/graingraph/cypher/vector"
+	"github.com/graingraph/graingraph/cypher/temporal"
+	"github.com/graingraph/graingraph/cypher/vector"
 )
 
 // maxBodyBytes bounds request bodies. Cypher statements plus parameters

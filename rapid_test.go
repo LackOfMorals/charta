@@ -15,7 +15,7 @@ import (
 	"strings"
 	"testing"
 
-	graingraph "github.com/LackOfMorals/graingraph"
+	graingraph "github.com/graingraph/graingraph"
 	"pgregory.net/rapid"
 )
 

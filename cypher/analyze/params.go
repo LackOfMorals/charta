@@ -1,8 +1,8 @@
 package analyze
 
 import (
-	"github.com/LackOfMorals/graingraph/cypher/proc"
-	"github.com/LackOfMorals/graingraph/cypher/syntax"
+	"github.com/graingraph/graingraph/cypher/proc"
+	"github.com/graingraph/graingraph/cypher/syntax"
 )
 
 // CheckParams reports a ParameterMissing error when a standalone CALL without

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/LackOfMorals/graingraph/store"
+	"github.com/graingraph/graingraph/store"
 )
 
 // recordingDB remembers the last query so a test can ask SQLite how it would run it.

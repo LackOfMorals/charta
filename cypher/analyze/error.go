@@ -10,7 +10,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/LackOfMorals/graingraph/cypher/syntax"
+	"github.com/graingraph/graingraph/cypher/syntax"
 )
 
 // Error classes, as used by the openCypher TCK.

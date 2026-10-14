@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/LackOfMorals/graingraph"
+	"github.com/graingraph/graingraph"
 )
 
 func setupSchema(t *testing.T, db *graingraph.DB) {

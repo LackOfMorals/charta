@@ -11,7 +11,7 @@ import (
 
 	"github.com/cucumber/godog"
 
-	"github.com/LackOfMorals/graingraph/cypher/proc"
+	"github.com/graingraph/graingraph/cypher/proc"
 )
 
 var procDecl = regexp.MustCompile(`^(\S+?)\((.*?)\)\s*::\s*\((.*?)\)\s*:?$`)

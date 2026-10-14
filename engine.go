@@ -7,9 +7,9 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/LackOfMorals/graingraph/cypher/analyze"
-	"github.com/LackOfMorals/graingraph/cypher/interp"
-	"github.com/LackOfMorals/graingraph/cypher/syntax"
+	"github.com/graingraph/graingraph/cypher/analyze"
+	"github.com/graingraph/graingraph/cypher/interp"
+	"github.com/graingraph/graingraph/cypher/syntax"
 )
 
 // parseSyntax parses and analyses a query, wrapping errors with %w so

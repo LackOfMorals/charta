@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/LackOfMorals/graingraph"
+	"github.com/graingraph/graingraph"
 )
 
 // ─────────────────────────────────────────────────────────────────────────────

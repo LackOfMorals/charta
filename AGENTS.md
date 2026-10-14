@@ -4,7 +4,7 @@
 
 graingraph is an embedded property graph database for Go, backed by SQLite and queryable via a subset of openCypher. The primary entry point is `graingraph.Open`; queries are executed with `db.RunQuery` or via explicit transactions started with `db.BeginTx`.
 
-- Module path: `github.com/LackOfMorals/graingraph`
+- Module path: `github.com/graingraph/graingraph`
 - Go minimum version: 1.26.9 (the `go` line in go.mod also selects the toolchain CI and releases build with; 1.26.9 fixes GO-2026-6617 in `net/http`)
 - SQLite driver: `modernc.org/sqlite` (CGO-free, no mattn/go-sqlite3)
 
@@ -96,7 +96,7 @@ WAL mode is enabled via `PRAGMA journal_mode=WAL` on every open.
 - Labels are stored as comma-separated text in the `labels` column.
 - `json_extract(props, '$.key')` is used for property access in SQLite queries.
 - `go.mod` `go` directive is 1.26.5 (raised from 1.24 so govulncheck is clean: `golang.org/x/text` >= 0.39 and the net/url fix need Go 1.25+); `modernc.org/sqlite v1.35.0` builds fine at it.
-- `testdata/` package is excluded from `./...` by Go design. Run explicitly: `CGO_ENABLED=0 go test github.com/LackOfMorals/graingraph/testdata`.
+- `testdata/` package is excluded from `./...` by Go design. Run explicitly: `CGO_ENABLED=0 go test github.com/graingraph/graingraph/testdata`.
 - Only one file per package should have a `// Package foo ...` doc comment.
 - When deleting files that export methods used in `example_test.go`, also remove the corresponding `Example*` functions — otherwise `go build ./...` fails even if core tests pass.
 - neo4j driver fully removed in task-010 via `go mod tidy` + `go mod vendor` (both needed — the repo uses a vendor dir; `go build` fails with "inconsistent vendoring" if only tidy is run).

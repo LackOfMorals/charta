@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/LackOfMorals/graingraph/cypher/analyze"
-	"github.com/LackOfMorals/graingraph/cypher/syntax"
+	"github.com/graingraph/graingraph/cypher/analyze"
+	"github.com/graingraph/graingraph/cypher/syntax"
 )
 
 // tckCase is one concrete (outline-expanded) TCK scenario.

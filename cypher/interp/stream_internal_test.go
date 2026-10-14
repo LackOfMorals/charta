@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/LackOfMorals/graingraph/cypher/analyze"
-	"github.com/LackOfMorals/graingraph/cypher/syntax"
-	"github.com/LackOfMorals/graingraph/store"
+	"github.com/graingraph/graingraph/cypher/analyze"
+	"github.com/graingraph/graingraph/cypher/syntax"
+	"github.com/graingraph/graingraph/store"
 )
 
 // fmtVal renders a result value for comparison: nodes, relationships and paths

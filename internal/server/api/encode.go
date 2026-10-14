@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"math"
 
-	"github.com/LackOfMorals/graingraph"
-	"github.com/LackOfMorals/graingraph/cypher/spatial"
-	"github.com/LackOfMorals/graingraph/cypher/temporal"
-	"github.com/LackOfMorals/graingraph/cypher/vector"
+	"github.com/graingraph/graingraph"
+	"github.com/graingraph/graingraph/cypher/spatial"
+	"github.com/graingraph/graingraph/cypher/temporal"
+	"github.com/graingraph/graingraph/cypher/vector"
 )
 
 // nodeJSON is the Plain JSON representation of a graph node.

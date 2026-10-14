@@ -3,7 +3,7 @@ package analyze
 import (
 	"strings"
 
-	"github.com/LackOfMorals/graingraph/cypher/syntax"
+	"github.com/graingraph/graingraph/cypher/syntax"
 )
 
 // env is the context an expression is checked in.

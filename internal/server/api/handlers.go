@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/LackOfMorals/graingraph/internal/server/store"
+	"github.com/graingraph/graingraph/internal/server/store"
 )
 
 // query implements POST /db/{databaseName}/query/v2.

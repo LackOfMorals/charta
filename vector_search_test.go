@@ -9,7 +9,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/LackOfMorals/graingraph"
+	"github.com/graingraph/graingraph"
 )
 
 const vecIndexDDL = "CREATE VECTOR INDEX docs FOR (d:Doc) ON (d.e) OPTIONS {indexConfig: {`vector.dimensions`: 3, `vector.similarity_function`: 'euclidean'}}"

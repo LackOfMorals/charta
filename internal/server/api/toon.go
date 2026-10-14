@@ -12,7 +12,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/LackOfMorals/graingraph"
+	"github.com/graingraph/graingraph"
 )
 
 // mediaTOON is the media type that selects TOON output (https://toonformat.dev),

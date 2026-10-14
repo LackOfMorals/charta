@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/LackOfMorals/graingraph/cypher/interp"
+	"github.com/graingraph/graingraph/cypher/interp"
 
-	"github.com/LackOfMorals/graingraph/store"
+	"github.com/graingraph/graingraph/store"
 )
 
 // Tx is an explicit graingraph transaction. All queries run via Run share the

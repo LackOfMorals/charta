@@ -5,8 +5,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/LackOfMorals/graingraph/cypher/temporal"
-	"github.com/LackOfMorals/graingraph/cypher/vector"
+	"github.com/graingraph/graingraph/cypher/temporal"
+	"github.com/graingraph/graingraph/cypher/vector"
 )
 
 // A value type as written after `IS ::` or reported by valueType(), reduced to

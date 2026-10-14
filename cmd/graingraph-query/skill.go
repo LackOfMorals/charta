@@ -7,8 +7,8 @@ import (
 	"io"
 	"os"
 
-	"github.com/LackOfMorals/graingraph/internal/server/config"
-	"github.com/LackOfMorals/graingraph/internal/server/skills"
+	"github.com/graingraph/graingraph/internal/server/config"
+	"github.com/graingraph/graingraph/internal/server/skills"
 )
 
 // runSkill implements "graingraph-query skill [--url URL] [--list] [name]": it

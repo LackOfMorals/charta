@@ -3,7 +3,7 @@ package interp
 import (
 	"strings"
 
-	"github.com/LackOfMorals/graingraph/cypher/vector"
+	"github.com/graingraph/graingraph/cypher/vector"
 )
 
 // vectorFunction evaluates vector(), vector_distance(), vector_norm(),

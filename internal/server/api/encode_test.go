@@ -5,9 +5,9 @@ import (
 	"math"
 	"testing"
 
-	"github.com/LackOfMorals/graingraph"
-	"github.com/LackOfMorals/graingraph/cypher/spatial"
-	"github.com/LackOfMorals/graingraph/cypher/vector"
+	"github.com/graingraph/graingraph"
+	"github.com/graingraph/graingraph/cypher/spatial"
+	"github.com/graingraph/graingraph/cypher/vector"
 )
 
 // sameJSON reports whether two values marshal to the same JSON.

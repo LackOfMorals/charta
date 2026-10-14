@@ -20,9 +20,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/LackOfMorals/graingraph/internal/server/auth"
-	"github.com/LackOfMorals/graingraph/internal/server/config"
-	"github.com/LackOfMorals/graingraph/internal/server/store"
+	"github.com/graingraph/graingraph/internal/server/auth"
+	"github.com/graingraph/graingraph/internal/server/config"
+	"github.com/graingraph/graingraph/internal/server/store"
 )
 
 // emulatedNeo4jVersion is the Neo4j version discovery reports. Neo4j tools

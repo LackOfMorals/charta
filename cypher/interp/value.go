@@ -17,9 +17,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/LackOfMorals/graingraph/cypher/spatial"
-	"github.com/LackOfMorals/graingraph/cypher/temporal"
-	"github.com/LackOfMorals/graingraph/cypher/vector"
+	"github.com/graingraph/graingraph/cypher/spatial"
+	"github.com/graingraph/graingraph/cypher/temporal"
+	"github.com/graingraph/graingraph/cypher/vector"
 )
 
 // Value types used at run time:

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/LackOfMorals/graingraph/store"
+	"github.com/graingraph/graingraph/store"
 )
 
 // helper opens an in-memory store and registers cleanup.

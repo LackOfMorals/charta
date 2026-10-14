@@ -3,7 +3,7 @@ package api
 import (
 	"testing"
 
-	"github.com/LackOfMorals/graingraph/cypher/temporal"
+	"github.com/graingraph/graingraph/cypher/temporal"
 )
 
 // The expectations were taken from a Neo4j 2026.07 server.

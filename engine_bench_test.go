@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/LackOfMorals/graingraph"
+	"github.com/graingraph/graingraph"
 )
 
 // BenchmarkQueries measures common query shapes on a 2,000-node chain graph.
