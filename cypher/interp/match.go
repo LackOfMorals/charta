@@ -486,6 +486,9 @@ func (ex *exec) walkVarLength(elems []syntax.PatternElem, i int, rp *syntax.RelP
 	var visited []*Node // the nodes reached along chain, in order
 	var dfs func(node *Node, depth int64) error
 	dfs = func(node *Node, depth int64) error {
+		if err := ex.tick(); err != nil {
+			return err
+		}
 		if depth >= min {
 			r2, ok, err := ex.bindVarLength(rp, np, chain, node, r)
 			if err != nil {
