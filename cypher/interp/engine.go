@@ -11,6 +11,20 @@ import (
 	"github.com/graingraph/graingraph/cypher/syntax"
 )
 
+// hardMaxHops is the deepest variable-length expansion the interpreter will
+// recurse into when no MaxPathHops is configured: each hop costs a few Go
+// frames, so an unlimited search over a long chain would overflow the stack,
+// which is fatal rather than an error.
+const hardMaxHops = 100000
+
+// maxHops is the effective cap on variable-length expansion.
+func (e *Engine) maxHops() int64 {
+	if e != nil && e.MaxPathHops > 0 {
+		return int64(e.MaxPathHops)
+	}
+	return hardMaxHops
+}
+
 // Engine is the per-database state the interpreter keeps between statements:
 // registered procedures and the property-index advisor.
 type Engine struct {
@@ -18,7 +32,8 @@ type Engine struct {
 	Procs proc.Set
 	// MaxPathHops, when positive, caps variable-length patterns: an unbounded
 	// pattern stops at this many hops and an explicit upper bound above it is
-	// an error. Zero means no cap.
+	// an error. Zero means the built-in limit of hardMaxHops, which keeps the
+	// recursive path search inside the goroutine stack.
 	MaxPathHops int
 	// NoAutoIndexes disables the automatic property indexes.
 	NoAutoIndexes bool

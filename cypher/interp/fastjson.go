@@ -22,9 +22,15 @@ func fastDecodeObject(s string) (map[string]any, bool) {
 	return m, d.i == len(d.s)
 }
 
+// maxFastDepth is the nesting the fast decoder follows; anything deeper is left
+// to encoding/json, which has its own depth limit. Stored properties are flat
+// (nested collections cannot be written), so only a damaged file gets near it.
+const maxFastDepth = 64
+
 type fastDecoder struct {
-	s string
-	i int
+	s     string
+	i     int
+	depth int
 }
 
 func (d *fastDecoder) ws() {
@@ -118,10 +124,18 @@ func (d *fastDecoder) value() (any, bool) {
 	}
 	switch c := d.s[d.i]; {
 	case c == '{':
+		if d.depth++; d.depth > maxFastDepth {
+			return nil, false
+		}
 		m, ok := d.object()
+		d.depth--
 		return m, ok
 	case c == '[':
+		if d.depth++; d.depth > maxFastDepth {
+			return nil, false
+		}
 		a, ok := d.array()
+		d.depth--
 		return a, ok
 	case c == '"':
 		str, ok := d.str()

@@ -452,7 +452,12 @@ func (ex *exec) applyDelete(cl *syntax.Delete, r row) error {
 	return nil
 }
 
-func (ex *exec) deleteValue(v any, detach bool) error {
+func (ex *exec) deleteValue(v any, detach bool) error { return ex.deleteValueD(v, detach, 0) }
+
+func (ex *exec) deleteValueD(v any, detach bool, d int) error {
+	if d > maxValueDepth {
+		panic(errValueTooDeep)
+	}
 	switch x := v.(type) {
 	case nil:
 		return nil
@@ -473,7 +478,7 @@ func (ex *exec) deleteValue(v any, detach bool) error {
 		return nil
 	case []any:
 		for _, el := range x {
-			if err := ex.deleteValue(el, detach); err != nil {
+			if err := ex.deleteValueD(el, detach, d+1); err != nil {
 				return err
 			}
 		}

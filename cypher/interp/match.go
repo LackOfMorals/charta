@@ -473,14 +473,13 @@ func (ex *exec) walkVarLength(elems []syntax.PatternElem, i int, rp *syntax.RelP
 	if rng.Max != nil {
 		max = *rng.Max
 	}
-	if hops := int64(0); ex.g.eng != nil {
-		if hops = int64(ex.g.eng.MaxPathHops); hops > 0 {
-			if max > hops {
-				return argErr("variable-length upper bound %d exceeds the configured maximum of %d hops", max, hops)
-			}
-			if max < 0 {
-				max = hops
-			}
+	{
+		hops := ex.g.eng.maxHops()
+		if max > hops {
+			return argErr("variable-length upper bound %d exceeds the configured maximum of %d hops", max, hops)
+		}
+		if max < 0 {
+			max = hops
 		}
 	}
 	var chain []*Rel
@@ -625,8 +624,8 @@ func (ex *exec) matchShortest(part *syntax.PatternPart, r row, used map[int64]bo
 // [min, max] (max < 0 is unbounded). all asks for every shortest path rather
 // than one.
 func (ex *exec) shortestPaths(rp *syntax.RelPattern, s, e *Node, min, max int64, all bool, r row, used map[int64]bool) ([]*Path, error) {
-	if ex.g.eng != nil && ex.g.eng.MaxPathHops > 0 {
-		hops := int64(ex.g.eng.MaxPathHops)
+	{
+		hops := ex.g.eng.maxHops()
 		if max > hops {
 			return nil, argErr("shortest path upper bound %d exceeds the configured maximum of %d hops", max, hops)
 		}
