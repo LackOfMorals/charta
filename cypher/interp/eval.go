@@ -816,6 +816,9 @@ func isNaNValue(v any) bool {
 	return ok && math.IsNaN(f)
 }
 
+// maxRegexCache bounds the compiled patterns kept for one statement.
+const maxRegexCache = 256
+
 func (ex *exec) regex(pattern string) (*regexp.Regexp, error) {
 	if re, ok := ex.regexCache[pattern]; ok {
 		return re, nil
@@ -823,6 +826,9 @@ func (ex *exec) regex(pattern string) (*regexp.Regexp, error) {
 	re, err := regexp.Compile(`^(?:` + pattern + `)$`)
 	if err != nil {
 		return nil, errorf("ArgumentError", "InvalidArgumentValue", "invalid regular expression %q: %v", pattern, err)
+	}
+	if len(ex.regexCache) >= maxRegexCache {
+		return re, nil // a pattern that changes per row is not worth keeping
 	}
 	if ex.regexCache == nil {
 		ex.regexCache = map[string]*regexp.Regexp{}

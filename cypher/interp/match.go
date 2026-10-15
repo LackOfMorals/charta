@@ -946,13 +946,27 @@ func (ex *exec) shortestPathsSlow(rp *syntax.RelPattern, s, e *Node, min, max in
 				}
 				if other.ID == e.ID && int64(len(p.Rels)) >= min {
 					found = append(found, p)
+					if !all {
+						return errStop // the first is the one returned
+					}
+					if len(found) > maxShortestPaths {
+						return unsupported("too many shortest paths")
+					}
 					return nil
+				}
+				// checked as states are added: parallel relationships multiply
+				// them without multiplying nodes
+				if len(next) >= 100000 {
+					return unsupported("shortest path search space is too large")
 				}
 				next = append(next, state{other, p})
 				return nil
 			})
-			if err != nil {
+			if err != nil && err != errStop {
 				return nil, err
+			}
+			if err == errStop {
+				break
 			}
 		}
 		if len(found) > 0 {

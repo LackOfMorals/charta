@@ -175,7 +175,11 @@ func (ex *exec) scanHints(np *syntax.NodePattern, r row) []propHint {
 		}
 	case *syntax.Param:
 		if m, ok := ex.params[p.Name].(map[string]any); ok {
-			for k, v := range m {
+			for _, k := range sortedKeys(m) {
+				if len(hints) >= maxScanHints {
+					break
+				}
+				v := m[k]
 				switch x := v.(type) {
 				case string, int64:
 					if pushableKey(k) {
@@ -196,5 +200,13 @@ func (ex *exec) scanHints(np *syntax.NodePattern, r row) []propHint {
 			}
 		}
 	}
+	if len(hints) > maxScanHints {
+		hints = hints[:maxScanHints] // only a prefilter: Go re-checks every property
+	}
 	return hints
 }
+
+// maxScanHints caps the property equalities pushed into one scan. A property
+// map parameter could otherwise carry millions of keys, each a bound variable
+// and an entry in the index advisor.
+const maxScanHints = 16

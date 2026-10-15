@@ -90,3 +90,39 @@ func TestValueGrowthIsBounded(t *testing.T) {
 		}
 	}
 }
+
+func TestResourceBoundsKeepStatementsWorking(t *testing.T) {
+	db := openDB(t)
+	ctx := context.Background()
+	collect := func(q string, params map[string]any) []any {
+		t.Helper()
+		res, err := db.RunQuery(ctx, q, params)
+		if err != nil {
+			t.Fatalf("%s: %v", q, err)
+		}
+		recs, err := res.Collect(ctx)
+		if err != nil {
+			t.Fatalf("%s: %v", q, err)
+		}
+		if len(recs) == 0 {
+			return nil
+		}
+		return recs[0].Values()
+	}
+	// many distinct regex patterns still match (the cache is only an optimisation)
+	if got := collect(`UNWIND range(1, 3000) AS i RETURN count(CASE WHEN 'x5' =~ ('x' + toString(i)) THEN 1 END)`, nil)[0]; got != int64(1) {
+		t.Fatalf("regex count = %v", got)
+	}
+	// a statement larger than the cacheable size runs fine, repeatedly
+	big := `RETURN 1 /* ` + strings.Repeat("c", 200000) + ` */`
+	for i := 0; i < 3; i++ {
+		collect(big, nil)
+	}
+	// shortestPath over parallel relationships returns promptly
+	collect(`CREATE (s:S)-[:R]->(m:M)-[:R]->(e:E)`, nil)
+	collect(`MATCH (s:S), (m:M) UNWIND range(1, 300) AS i CREATE (s)-[:R]->(m)`, nil)
+	collect(`MATCH (m:M), (e:E) UNWIND range(1, 300) AS i CREATE (m)-[:R]->(e)`, nil)
+	if got := collect(`MATCH (s:S), (e:E) MATCH p = shortestPath((s)-[*2..]->(e)) RETURN length(p)`, nil)[0]; got != int64(2) {
+		t.Fatalf("length = %v", got)
+	}
+}
