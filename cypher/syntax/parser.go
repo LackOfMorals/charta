@@ -18,6 +18,12 @@ type parser struct {
 	toks  []Token
 	i     int
 	depth int
+	// match[i] is the index of the ')' closing the '(' at token i, or -1. It
+	// lets tryPatternPart rule out a pattern without parsing it speculatively
+	// (which doubled the work at every nesting level).
+	match []int
+	// patterns memoises tryPatternPart by start position.
+	patterns map[patternKey]patternMemo
 }
 
 // bailout carries a syntax error out of the recursive descent.
@@ -28,7 +34,22 @@ func newParser(src string) (*parser, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &parser{src: src, toks: toks}, nil
+	p := &parser{src: src, toks: toks}
+	p.match = make([]int, len(toks))
+	var open []int
+	for i, t := range toks {
+		p.match[i] = -1
+		switch t.Kind {
+		case LPAREN:
+			open = append(open, i)
+		case RPAREN:
+			if n := len(open); n > 0 {
+				p.match[open[n-1]] = i
+				open = open[:n-1]
+			}
+		}
+	}
+	return p, nil
 }
 
 // run executes fn, converting a bailout panic into an error.

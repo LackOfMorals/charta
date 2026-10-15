@@ -109,10 +109,56 @@ func (p *parser) parsePatternPart() *PatternPart {
 // node pattern followed by a relationship arrow. Once a node and an arrow have
 // been seen the parse is committed and later errors propagate.
 func (p *parser) tryPatternPart(allowVar bool) *PatternPart {
+	// The same position is tried again when the caller rewinds (a list of
+	// pattern predicates is first tried as a comprehension), so results are
+	// memoised; without this nested input re-parses its interior at every level.
+	key := patternKey{p.i, allowVar}
+	if m, ok := p.patterns[key]; ok {
+		if m.part != nil {
+			p.i = m.end
+		}
+		return m.part
+	}
+	part := p.tryPatternPart1(allowVar)
+	if p.patterns == nil {
+		p.patterns = map[patternKey]patternMemo{}
+	}
+	p.patterns[key] = patternMemo{part, p.i}
+	return part
+}
+
+type patternKey struct {
+	at       int
+	allowVar bool
+}
+
+type patternMemo struct {
+	part *PatternPart
+	end  int
+}
+
+func (p *parser) tryPatternPart1(allowVar bool) *PatternPart {
 	start, depth := p.i, p.depth
 	part := &PatternPart{Loc: Loc{p.cur().Pos}}
 	p.patternPrefix(part, allowVar)
 	var first *NodePattern
+	if p.at(LPAREN) {
+		// A node pattern ends at its matching ')', and the part is only a
+		// pattern if a relationship arrow follows it.
+		save := p.i
+		if m := p.match[p.i]; m < 0 {
+			p.i, p.depth = start, depth
+			return nil
+		} else {
+			p.i = m + 1
+		}
+		arrow := p.atRelStart()
+		p.i = save
+		if !arrow {
+			p.i, p.depth = start, depth
+			return nil
+		}
+	}
 	if !p.try(func() { first = p.parseNodePattern() }) || !p.atRelStart() {
 		p.i, p.depth = start, depth
 		return nil

@@ -660,7 +660,7 @@ func (ex *exec) aggregateStage(p *syntax.Projection, where syntax.Expr, items []
 		},
 		finish: func() error {
 			var out, origs []row
-			var substs []map[string]any
+			var substs []map[uint64]any
 			for _, g := range groups {
 				first := g.first
 				if first == nil {
@@ -676,7 +676,7 @@ func (ex *exec) aggregateStage(p *syntax.Projection, where syntax.Expr, items []
 					ex.agg[f] = v
 				}
 				nr := make(row, len(items))
-				subst := map[string]any{}
+				subst := map[uint64]any{}
 				for i, it := range items {
 					var v any
 					if slim && !aggItem[i] {
@@ -689,7 +689,7 @@ func (ex *exec) aggregateStage(p *syntax.Projection, where syntax.Expr, items []
 						}
 					}
 					nr[it.name] = v
-					subst[syntax.Dump(it.expr)] = v
+					subst[ex.hasher.Hash(it.expr)] = v
 				}
 				ex.agg = nil
 				out = append(out, nr)

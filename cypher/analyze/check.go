@@ -35,6 +35,7 @@ type checker struct {
 	reg proc.Registry
 	// standalone is true when the statement is a lone CALL.
 	standalone bool
+	hasher     syntax.Hasher // structural hashes for same()
 }
 
 // fail aborts the analysis with a SyntaxError.

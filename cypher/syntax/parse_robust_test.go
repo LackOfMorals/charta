@@ -1,6 +1,10 @@
 package syntax
 
-import "testing"
+import (
+	"strings"
+	"testing"
+	"time"
+)
 
 func TestParseNeverPanicsOnSchemaListComprehension(t *testing.T) {
 	for _, q := range []string{
@@ -35,5 +39,51 @@ func TestDeepChainsAreRejected(t *testing.T) {
 	}
 	if _, err := Parse("RETURN 1" + rep("+1", 5000)); err != nil {
 		t.Errorf("a 5000-term sum must still parse: %v", err)
+	}
+}
+
+func TestNestedParenMapsParseInLinearTime(t *testing.T) {
+	q := "RETURN "
+	for i := 0; i < 60; i++ {
+		q += "({a:"
+	}
+	q += "1"
+	for i := 0; i < 60; i++ {
+		q += "})"
+	}
+	done := make(chan struct{})
+	go func() { _, _ = Parse(q); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("parse took exponential time")
+	}
+}
+
+func TestLongTypeAndShowWordRunsAreLinear(t *testing.T) {
+	start := time.Now()
+	_, _ = Parse("SHOW " + strings.Repeat("a ", 500000))
+	_, _ = Parse("RETURN 1 IS :: " + strings.Repeat("INT ", 500000))
+	_, _ = Parse("RETURN '" + strings.Repeat(`\n`, 2000000) + "'")
+	if d := time.Since(start); d > 5*time.Second {
+		t.Fatalf("took %v", d)
+	}
+}
+
+func TestNestedPatternPredicateListsAreLinear(t *testing.T) {
+	q := "RETURN "
+	for i := 0; i < 40; i++ {
+		q += "[(a)-->(b {x: "
+	}
+	q += "1"
+	for i := 0; i < 40; i++ {
+		q += "})]"
+	}
+	done := make(chan struct{})
+	go func() { _, _ = Parse(q); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("parse took exponential time")
 	}
 }

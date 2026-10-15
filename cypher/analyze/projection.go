@@ -112,7 +112,7 @@ func (c *checker) projectionClause(pos syntax.Pos, p *syntax.Projection, where s
 			ev = env{sc: mergedScope(ns, sc)}
 		}
 		for _, s := range p.Order {
-			if aggregating && hasAggregate(s.Expr) && !equalsAny(s.Expr, all) {
+			if aggregating && hasAggregate(s.Expr) && !c.equalsAny(s.Expr, all) {
 				// An ORDER BY expression that combines an aggregation with other
 				// terms follows the grouping rule leaf by leaf: a projected
 				// compound expression does not make its parts grouping keys.
@@ -151,7 +151,7 @@ func mergedScope(projected, before *scope) *scope {
 func (c *checker) checkGrouping(e syntax.Expr, keys []syntax.Expr) {
 	matches := func(x syntax.Expr) bool {
 		for _, k := range keys {
-			if sameExpr(k, x) {
+			if c.same(k, x) {
 				return true
 			}
 		}
@@ -211,9 +211,9 @@ func (c *checker) constantArg(e syntax.Expr, what string) {
 	}
 }
 
-func equalsAny(e syntax.Expr, list []syntax.Expr) bool {
+func (c *checker) equalsAny(e syntax.Expr, list []syntax.Expr) bool {
 	for _, x := range list {
-		if sameExpr(x, e) {
+		if c.same(x, e) {
 			return true
 		}
 	}
@@ -234,7 +234,7 @@ func (c *checker) checkSortGrouping(e syntax.Expr, keys []syntax.Expr, ns *scope
 			}
 		case *syntax.Ident, *syntax.Property:
 			if r := rootIdent(x); r != nil {
-				if equalsAny(x, keys) {
+				if c.equalsAny(x, keys) {
 					return
 				}
 				if _, projected := ns.vars[r.Name]; projected {

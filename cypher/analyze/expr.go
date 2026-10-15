@@ -413,7 +413,7 @@ func (c *checker) checkSchemaOptions(e syntax.Expr) {
 // aggregate call is checked against the scope before the projection.
 func (c *checker) sortSpecial(e syntax.Expr, ev env) (typ, bool) {
 	for _, p := range ev.sort.projected {
-		if sameExpr(p, e) {
+		if c.same(p, e) {
 			return tAny, true
 		}
 	}

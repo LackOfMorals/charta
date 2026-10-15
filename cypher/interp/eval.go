@@ -53,7 +53,9 @@ type exec struct {
 	agg map[*syntax.FuncCall]any
 	// subst replaces whole sub-expressions by value (ORDER BY on projected
 	// expressions).
-	subst map[string]any
+	subst map[uint64]any
+	// hasher gives the structural hash that keys subst; memoised per node.
+	hasher syntax.Hasher
 	// regexCache avoids recompiling regular expressions.
 	procs *proc.Set
 	// clock is the instant temporal functions report for "now", fixed for the
@@ -86,7 +88,7 @@ func (ex *exec) overBudget(n int) bool {
 
 func (ex *exec) eval(e syntax.Expr, r row) (any, error) {
 	if ex.subst != nil {
-		if v, ok := ex.subst[syntax.Dump(e)]; ok {
+		if v, ok := ex.subst[ex.hasher.Hash(e)]; ok {
 			return v, nil
 		}
 	}
