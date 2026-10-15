@@ -171,6 +171,14 @@ MATCH (n:Label) RETURN n LIMIT 5          // sample properties
   nested quantified path patterns, APOC and other plugin procedures. There is
   one database and one user.
 - `LOAD CSV` works only if the server was started with an import directory.
+- Size limits, each reported as an error rather than a crash: a statement may
+  nest expressions and patterns at most 10,000 levels and have at most 10,000
+  comma-separated pattern parts in one clause; lists and maps may nest at most
+  10,000 levels; a string may reach 64 MiB and a list 10,000,000 elements;
+  `range()` builds at most 10,000,000 elements (`UNWIND range(...)` in a
+  read-only query is not limited); variable-length paths stop at 100,000 hops;
+  typed parameters nest at most 32 levels.
+- Request bodies need `Content-Type: application/json` (or a Typed JSON type).
 - Sessions, routing and bookmark-based causal consistency do nothing. There is
   a single embedded database.
 

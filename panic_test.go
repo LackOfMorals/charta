@@ -68,7 +68,7 @@ func TestInterpreterInputValidation(t *testing.T) {
 		`RETURN abs()`, `RETURN head()`, `RETURN toInteger()`, `RETURN labels()`,
 		`RETURN duration({days: 1}) / (1.0/0.0)`,
 		`RETURN point({x: 0.0/0.0, y: 1.0})`,
-		`CREATE (:`+"`A,B`"+`)`,
+		`CREATE (:` + "`A,B`" + `)`,
 	}
 	for _, q := range bad[:4] {
 		if _, err := db.RunQuery(ctx, q, nil); err == nil {

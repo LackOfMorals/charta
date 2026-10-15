@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/graingraph/graingraph"
@@ -73,5 +74,22 @@ func TestCorruptSchemaRowsAreSkippedAndDroppable(t *testing.T) {
 	}
 	if _, err := db.RunQuery(ctx, `MATCH ()-[r]->() RETURN count(r)`, nil); err != nil {
 		t.Fatalf("edges table damaged: %v", err)
+	}
+}
+
+func TestImportSchemaCannotRunSubqueries(t *testing.T) {
+	db := openDB(t)
+	ctx := context.Background()
+	if _, err := db.RunQuery(ctx, `CREATE (:Keep)`, nil); err != nil {
+		t.Fatal(err)
+	}
+	doc := `{"nodes":[],"edges":[],"schema":["CREATE INDEX i IF NOT EXISTS FOR (n:X) ON (n.y) OPTIONS {a: EXISTS { MATCH (m) DETACH DELETE m }}"]}`
+	if err := db.Import(ctx, strings.NewReader(doc), graingraph.FormatJSON); err == nil {
+		t.Fatal("expected the import to be rejected")
+	}
+	res, _ := db.RunQuery(ctx, `MATCH (n) RETURN count(n)`, nil)
+	recs, _ := res.Collect(ctx)
+	if recs[0].Values()[0] != int64(1) {
+		t.Fatal("existing data was changed by an import schema entry")
 	}
 }
