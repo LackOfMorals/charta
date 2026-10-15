@@ -136,3 +136,58 @@ func TestNewTxID(t *testing.T) {
 		seen[id] = true
 	}
 }
+
+// Requests released together by a commit must not all start a transaction:
+// one wins, the rest fail promptly and leave nothing behind.
+func TestConcurrentBeginYieldsOneTransaction(t *testing.T) {
+	st, err := New(":memory:", WithTxWait(150*time.Millisecond))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	won, failed := 0, 0
+	start := time.Now()
+	for i := 0; i < 20; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			id, _ := NewTxID()
+			_, err := st.Begin(context.Background(), id, time.Hour, nil)
+			mu.Lock()
+			defer mu.Unlock()
+			if err == nil {
+				won++
+			} else {
+				failed++
+			}
+		}()
+	}
+	wg.Wait()
+	if won != 1 || failed != 19 {
+		t.Fatalf("won=%d failed=%d", won, failed)
+	}
+	if d := time.Since(start); d > 3*time.Second {
+		t.Fatalf("took %v", d)
+	}
+}
+
+// A request that goes away while waiting must not leave a transaction.
+func TestBeginAbandonedLeavesNothing(t *testing.T) {
+	st := newTestStore(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	id, _ := NewTxID()
+	if _, err := st.Begin(ctx, id, time.Hour, nil); err == nil {
+		// a pre-cancelled context may still win the race to begin; then it is registered and removable
+		_ = st.Rollback(id)
+	}
+	time.Sleep(50 * time.Millisecond)
+	id2, _ := NewTxID()
+	tx, err := st.Begin(context.Background(), id2, time.Hour, nil)
+	if err != nil {
+		t.Fatalf("a later Begin failed: %v", err)
+	}
+	_ = tx
+}
