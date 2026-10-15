@@ -2,6 +2,7 @@ package graingraph
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/graingraph/graingraph/cypher/interp"
@@ -38,7 +39,12 @@ func (t *Tx) Run(ctx context.Context, cypherStr string, params map[string]any) (
 	if t.done {
 		return nil, fmt.Errorf("graingraph: transaction already closed")
 	}
-	return runInterp(ctx, t.rawTx, cypherStr, params, nil, nil, false, t.eng, &t.deltas)
+	res, err := runInterp(ctx, t.rawTx, cypherStr, params, nil, nil, false, t.eng, &t.deltas)
+	if errors.Is(err, errInterpPanic) {
+		t.done = true // runInterp rolled the transaction back; it can no longer commit
+		t.deltas = nil
+	}
+	return res, err
 }
 
 // Commit commits the transaction.
