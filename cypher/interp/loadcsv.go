@@ -4,9 +4,11 @@ import (
 	"encoding/csv"
 	"errors"
 	"io"
+	"io/fs"
 	neturl "net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/graingraph/graingraph/cypher/syntax"
@@ -50,6 +52,13 @@ func (ex *exec) resolveCSVPath(raw string) (string, error) {
 	root, err := filepath.Abs(ex.g.eng.ImportDir)
 	if err != nil {
 		return "", err
+	}
+	if runtime.GOOS == "windows" {
+		for _, part := range strings.FieldsFunc(path, func(r rune) bool { return r == '/' || r == '\\' }) {
+			if isReservedDeviceName(part) {
+				return "", errorf("ConfigurationError", "LoadCSVUnsupportedURL", "%q is not a file name", raw)
+			}
+		}
 	}
 	full := filepath.Join(root, filepath.Clean("/"+path))
 	rel, err := filepath.Rel(root, full)
@@ -99,7 +108,20 @@ func (ex *exec) execLoadCSV(cl *syntax.LoadCSV, st *qstate) error {
 		}
 		f, err := os.Open(path)
 		if err != nil {
-			return errorf("ArgumentError", "LoadCSVFileNotFound", "cannot open %q: %v", raw, err)
+			// The OS error names the resolved server path, which is not the
+			// client's to see.
+			reason := "cannot be opened"
+			switch {
+			case errors.Is(err, fs.ErrNotExist):
+				reason = "was not found"
+			case errors.Is(err, fs.ErrPermission):
+				reason = "is not readable"
+			}
+			return errorf("ArgumentError", "LoadCSVFileNotFound", "%q %s", raw, reason)
+		}
+		if fi, err := f.Stat(); err != nil || !fi.Mode().IsRegular() {
+			f.Close() // a directory, or a device such as CON or COM1 that would block
+			return errorf("ArgumentError", "LoadCSVFileNotFound", "%q is not a regular file", raw)
 		}
 		rd := csv.NewReader(f)
 		rd.Comma = comma
@@ -114,7 +136,11 @@ func (ex *exec) execLoadCSV(cl *syntax.LoadCSV, st *qstate) error {
 			}
 			if err != nil {
 				f.Close()
-				return errorf("ArgumentError", "LoadCSVMalformed", "%q: %v", raw, err)
+				var pe *csv.ParseError
+				if errors.As(err, &pe) {
+					return errorf("ArgumentError", "LoadCSVMalformed", "%q: %v", raw, err)
+				}
+				return errorf("ArgumentError", "LoadCSVMalformed", "%q could not be read", raw)
 			}
 			line++
 			cell := func(s string) any {
@@ -161,3 +187,19 @@ const (
 	csvFileKey = "\x00csvfile"
 	csvLineKey = "\x00csvline"
 )
+
+// isReservedDeviceName reports whether name is one of the Windows device names
+// (CON, PRN, AUX, NUL, COM1-9, LPT1-9), with or without an extension: opening
+// such a name under any directory opens the device, not a file.
+func isReservedDeviceName(name string) bool {
+	stem, _, _ := strings.Cut(name, ".")
+	stem = strings.ToUpper(strings.TrimRight(stem, " "))
+	switch stem {
+	case "CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$":
+		return true
+	}
+	if len(stem) == 4 && (strings.HasPrefix(stem, "COM") || strings.HasPrefix(stem, "LPT")) && stem[3] >= '1' && stem[3] <= '9' {
+		return true
+	}
+	return false
+}

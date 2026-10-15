@@ -228,9 +228,48 @@ func (ex *exec) matchStage(cl *syntax.Match, next *stage) *stage {
 	}
 }
 
+// lazyRange recognises `range(a, b[, c])` so UNWIND can walk it without
+// building the list. ok is false for any other expression.
+func (ex *exec) lazyRange(e syntax.Expr, r row) (start, end, step int64, ok bool, err error) {
+	f, isCall := e.(*syntax.FuncCall)
+	if !isCall || len(f.Namespace) != 0 || !strings.EqualFold(f.Name, "range") || f.Distinct || f.Star || len(f.Args) < 2 || len(f.Args) > 3 {
+		return 0, 0, 0, false, nil
+	}
+	args := make([]any, len(f.Args))
+	for i, a := range f.Args {
+		if args[i], err = ex.eval(a, r); err != nil {
+			return 0, 0, 0, false, err
+		}
+	}
+	start, end, step, null, err := rangeSpec(args)
+	if err != nil {
+		return 0, 0, 0, false, err
+	}
+	if null {
+		return 1, 0, 1, true, nil // end < start with step 1: no rows
+	}
+	return start, end, step, true, nil
+}
+
 func (ex *exec) unwindStage(cl *syntax.Unwind, next *stage) *stage {
 	return &stage{
 		push: func(r row) error {
+			if start, end, step, ok, err := ex.lazyRange(cl.Expr, r); err != nil {
+				return err
+			} else if ok {
+				n := rangeLen(start, end, step)
+				for i, k := start, uint64(0); k < n; i, k = i+step, k+1 {
+					if k&1023 == 0 {
+						if err := ex.g.ctx.Err(); err != nil {
+							return err
+						}
+					}
+					if err := next.push(r.with(cl.Var, i)); err != nil {
+						return err
+					}
+				}
+				return nil
+			}
 			v, err := ex.eval(cl.Expr, r)
 			if err != nil {
 				return err
@@ -660,7 +699,7 @@ func (ex *exec) aggregateStage(p *syntax.Projection, where syntax.Expr, items []
 		},
 		finish: func() error {
 			var out, origs []row
-			var substs []map[string]any
+			var substs []map[uint64]any
 			for _, g := range groups {
 				first := g.first
 				if first == nil {
@@ -676,7 +715,7 @@ func (ex *exec) aggregateStage(p *syntax.Projection, where syntax.Expr, items []
 					ex.agg[f] = v
 				}
 				nr := make(row, len(items))
-				subst := map[string]any{}
+				subst := map[uint64]any{}
 				for i, it := range items {
 					var v any
 					if slim && !aggItem[i] {
@@ -689,7 +728,7 @@ func (ex *exec) aggregateStage(p *syntax.Projection, where syntax.Expr, items []
 						}
 					}
 					nr[it.name] = v
-					subst[syntax.Dump(it.expr)] = v
+					subst[ex.hasher.Hash(it.expr)] = v
 				}
 				ex.agg = nil
 				out = append(out, nr)

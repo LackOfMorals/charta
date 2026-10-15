@@ -2,6 +2,7 @@ package api
 
 import (
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 
@@ -79,7 +80,7 @@ func parseWKT(s string) (spatial.Point, error) {
 	nums := make([]float64, 0, len(coords))
 	for _, c := range coords {
 		f, err := strconv.ParseFloat(c, 64)
-		if err != nil {
+		if err != nil || math.IsNaN(f) || math.IsInf(f, 0) {
 			return spatial.Point{}, fmt.Errorf("point: invalid coordinate %q", c)
 		}
 		nums = append(nums, f)

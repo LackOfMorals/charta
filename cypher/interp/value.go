@@ -95,7 +95,12 @@ func typeName(v any) string {
 
 // normalize converts Go values of other numeric/list/map types into the
 // canonical run-time representation.
-func normalize(v any) any {
+func normalize(v any) any { return normalizeD(v, 0) }
+
+func normalizeD(v any, d int) any {
+	if d > maxValueDepth {
+		panic(errValueTooDeep)
+	}
 	switch x := v.(type) {
 	case nil, bool, int64, float64, string, *Node, *Rel, *Path, temporal.Value, spatial.Point, vector.Vector:
 		return v
@@ -118,7 +123,7 @@ func normalize(v any) any {
 	case []any:
 		out := make([]any, len(x))
 		for i, e := range x {
-			out[i] = normalize(e)
+			out[i] = normalizeD(e, d+1)
 		}
 		return out
 	case []string:
@@ -154,7 +159,7 @@ func normalize(v any) any {
 	case map[string]any:
 		out := make(map[string]any, len(x))
 		for k, e := range x {
-			out[k] = normalize(e)
+			out[k] = normalizeD(e, d+1)
 		}
 		return out
 	}
@@ -209,7 +214,12 @@ func toFloat(v any) float64 {
 
 // equals implements Cypher's `=`: null with anything is null, values of
 // different types are false.
-func equals(a, b any) tri {
+func equals(a, b any) tri { return equalsD(a, b, 0) }
+
+func equalsD(a, b any, d int) tri {
+	if d > maxValueDepth {
+		panic(errValueTooDeep)
+	}
 	if a == nil || b == nil {
 		return triNull
 	}
@@ -243,7 +253,7 @@ func equals(a, b any) tri {
 		}
 		result := triTrue
 		for i := range x {
-			switch equals(x[i], y[i]) {
+			switch equalsD(x[i], y[i], d+1) {
 			case triFalse:
 				return triFalse
 			case triNull:
@@ -262,7 +272,7 @@ func equals(a, b any) tri {
 			if !present {
 				return triFalse
 			}
-			switch equals(xv, yv) {
+			switch equalsD(xv, yv, d+1) {
 			case triFalse:
 				return triFalse
 			case triNull:
@@ -308,7 +318,12 @@ func equals(a, b any) tri {
 // compare implements the ordering comparisons (<, <=, >, >=): it returns the
 // sign of a-b and ok=false when the values are not comparable (the result is
 // then null).
-func compare(a, b any) (int, bool) {
+func compare(a, b any) (int, bool) { return compareD(a, b, 0) }
+
+func compareD(a, b any, d int) (int, bool) {
+	if d > maxValueDepth {
+		panic(errValueTooDeep)
+	}
 	if a == nil || b == nil {
 		return 0, false
 	}
@@ -353,7 +368,7 @@ func compare(a, b any) (int, bool) {
 			return 0, false
 		}
 		for i := 0; i < len(x) && i < len(y); i++ {
-			c, ok := compare(x[i], y[i])
+			c, ok := compareD(x[i], y[i], d+1)
 			if !ok {
 				return 0, false
 			}
@@ -449,7 +464,12 @@ func orderRank(v any) int {
 }
 
 // orderCompare is a total order over all values (null sorts last ascending).
-func orderCompare(a, b any) int {
+func orderCompare(a, b any) int { return orderCompareD(a, b, 0) }
+
+func orderCompareD(a, b any, d int) int {
+	if d > maxValueDepth {
+		panic(errValueTooDeep)
+	}
 	ra, rb := orderRank(a), orderRank(b)
 	if ra != rb {
 		return cmpInt(int64(ra), int64(rb))
@@ -462,7 +482,7 @@ func orderCompare(a, b any) int {
 			if c := strings.Compare(kx[i], ky[i]); c != 0 {
 				return c
 			}
-			if c := orderCompare(x[kx[i]], y[ky[i]]); c != 0 {
+			if c := orderCompareD(x[kx[i]], y[ky[i]], d+1); c != 0 {
 				return c
 			}
 		}
@@ -474,7 +494,7 @@ func orderCompare(a, b any) int {
 	case []any:
 		y := b.([]any)
 		for i := 0; i < len(x) && i < len(y); i++ {
-			if c := orderCompare(x[i], y[i]); c != 0 {
+			if c := orderCompareD(x[i], y[i], d+1); c != 0 {
 				return c
 			}
 		}
@@ -493,9 +513,17 @@ func orderCompare(a, b any) int {
 		}
 		return cmpInt(int64(len(x.Nodes)), int64(len(y.Nodes)))
 	case spatial.Point:
-		return spatial.Compare(x, b.(spatial.Point))
+		y, ok := b.(spatial.Point)
+		if !ok { // a point and a vector share a rank; points sort first
+			return -1
+		}
+		return spatial.Compare(x, y)
 	case vector.Vector:
-		return strings.Compare(x.String(), b.(vector.Vector).String())
+		y, ok := b.(vector.Vector)
+		if !ok {
+			return 1
+		}
+		return strings.Compare(x.String(), y.String())
 	case temporal.Value:
 		if c, ok := temporal.Compare(x, b.(temporal.Value)); ok {
 			return c
@@ -547,7 +575,12 @@ func groupKey(v any) string {
 	return sb.String()
 }
 
-func writeKey(sb *strings.Builder, v any) {
+func writeKey(sb *strings.Builder, v any) { writeKeyD(sb, v, 0) }
+
+func writeKeyD(sb *strings.Builder, v any, d int) {
+	if d > maxValueDepth {
+		panic(errValueTooDeep)
+	}
 	switch x := v.(type) {
 	case nil:
 		sb.WriteString("n;")
@@ -582,7 +615,7 @@ func writeKey(sb *strings.Builder, v any) {
 	case []any:
 		sb.WriteString("l[")
 		for _, e := range x {
-			writeKey(sb, e)
+			writeKeyD(sb, e, d+1)
 		}
 		sb.WriteString("];")
 	case map[string]any:
@@ -591,7 +624,7 @@ func writeKey(sb *strings.Builder, v any) {
 			sb.WriteString(strconv.Itoa(len(k)))
 			sb.WriteByte(':')
 			sb.WriteString(k)
-			writeKey(sb, x[k])
+			writeKeyD(sb, x[k], d+1)
 		}
 		sb.WriteString("};")
 	case *Node:
@@ -616,4 +649,55 @@ func writeKey(sb *strings.Builder, v any) {
 	default:
 		fmt.Fprintf(sb, "?%v;", x)
 	}
+}
+
+// maxValueDepth bounds how deeply nested a list or map the interpreter will
+// walk. Statements can build arbitrarily deep values iteratively (reduce(), a
+// chain of WITH clauses), and the walkers recurse once per level, so without a
+// bound a crafted statement overflows the goroutine stack, which is fatal.
+const maxValueDepth = 10000
+
+// valueTooDeep is the panic raised past maxValueDepth; run converts it into an
+// error for the statement.
+type valueTooDeep struct{}
+
+var errValueTooDeep = valueTooDeep{}
+
+func (valueTooDeep) Error() string { return "value is nested too deeply" }
+
+// nestingExceeds reports whether v holds lists or maps nested deeper than
+// limit. It walks with an explicit stack, so the value cannot overflow it.
+func nestingExceeds(v any, limit int) bool {
+	type item struct {
+		v any
+		d int
+	}
+	stack := []item{{v, 0}}
+	for len(stack) > 0 {
+		it := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		switch x := it.v.(type) {
+		case []any:
+			if it.d+1 > limit {
+				return true
+			}
+			for _, e := range x {
+				switch e.(type) {
+				case []any, map[string]any:
+					stack = append(stack, item{e, it.d + 1})
+				}
+			}
+		case map[string]any:
+			if it.d+1 > limit {
+				return true
+			}
+			for _, e := range x {
+				switch e.(type) {
+				case []any, map[string]any:
+					stack = append(stack, item{e, it.d + 1})
+				}
+			}
+		}
+	}
+	return false
 }

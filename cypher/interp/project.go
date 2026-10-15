@@ -142,7 +142,7 @@ func (ex *exec) projection(p *syntax.Projection, where syntax.Expr, st *qstate, 
 	}
 
 	var out, origs []row
-	var substs []map[string]any
+	var substs []map[uint64]any
 	if !aggregating {
 		for _, r := range st.rows {
 			nr := make(row, len(items))
@@ -181,7 +181,7 @@ func (ex *exec) projection(p *syntax.Projection, where syntax.Expr, st *qstate, 
 					ex.agg[f] = v
 				}
 			}
-			subst := map[string]any{}
+			subst := map[uint64]any{}
 			for i, it := range items {
 				var v any
 				var err error
@@ -195,7 +195,7 @@ func (ex *exec) projection(p *syntax.Projection, where syntax.Expr, st *qstate, 
 					return err
 				}
 				nr[it.name] = v
-				subst[syntax.Dump(it.expr)] = v
+				subst[ex.hasher.Hash(it.expr)] = v
 			}
 			ex.agg = nil
 			out = append(out, nr)
@@ -209,7 +209,7 @@ func (ex *exec) projection(p *syntax.Projection, where syntax.Expr, st *qstate, 
 
 // finishProjection applies DISTINCT, ORDER BY, SKIP/LIMIT and the WITH's WHERE to
 // the projected rows and installs them as the query state.
-func (ex *exec) finishProjection(p *syntax.Projection, where syntax.Expr, st *qstate, names []string, aggregating bool, out, origs []row, substs []map[string]any) error {
+func (ex *exec) finishProjection(p *syntax.Projection, where syntax.Expr, st *qstate, names []string, aggregating bool, out, origs []row, substs []map[uint64]any) error {
 	out, err := ex.finishProjectionRows(p, where, names, aggregating, out, origs, substs)
 	if err != nil {
 		return err
@@ -221,11 +221,11 @@ func (ex *exec) finishProjection(p *syntax.Projection, where syntax.Expr, st *qs
 
 // finishProjectionRows applies DISTINCT, ORDER BY, SKIP/LIMIT and the WITH's
 // WHERE to projected rows and returns the result.
-func (ex *exec) finishProjectionRows(p *syntax.Projection, where syntax.Expr, names []string, aggregating bool, out, origs []row, substs []map[string]any) ([]row, error) {
+func (ex *exec) finishProjectionRows(p *syntax.Projection, where syntax.Expr, names []string, aggregating bool, out, origs []row, substs []map[uint64]any) ([]row, error) {
 	if p.Distinct {
 		seen := map[string]bool{}
 		var o2, g2 []row
-		var s2 []map[string]any
+		var s2 []map[uint64]any
 		for i, r := range out {
 			k := rowKey(r, names)
 			if seen[k] {
@@ -348,7 +348,7 @@ func (ex *exec) groupRows(items []projItem, aggItem []bool, rows []row) ([]*grou
 }
 
 // sortRows orders out (and the parallel origs/substs) by the ORDER BY items.
-func (ex *exec) sortRows(p *syntax.Projection, out, origs []row, substs []map[string]any, aggregating, distinct bool) error {
+func (ex *exec) sortRows(p *syntax.Projection, out, origs []row, substs []map[uint64]any, aggregating, distinct bool) error {
 	n := len(out)
 	keys := make([][]any, n)
 	for i := 0; i < n; i++ {

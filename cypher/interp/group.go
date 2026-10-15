@@ -103,8 +103,8 @@ func (ex *exec) walkGroup(elems []syntax.PatternElem, i int, g *syntax.GroupPatt
 	if g.Quant.Max != nil {
 		max = *g.Quant.Max
 	}
-	if ex.g.eng != nil && ex.g.eng.MaxPathHops > 0 {
-		hops := int64(ex.g.eng.MaxPathHops)
+	{
+		hops := ex.g.eng.maxHops()
 		if max > hops {
 			return argErr("quantifier upper bound %d exceeds the configured maximum of %d hops", max, hops)
 		}

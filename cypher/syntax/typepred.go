@@ -1,5 +1,7 @@
 package syntax
 
+import "strings"
+
 // Map projections and value types.
 
 // parseMapProjection parses `subject{.key, key: expr, var, .*}`.
@@ -67,36 +69,33 @@ func (p *parser) atTypeWord() bool {
 func (p *parser) parseTypeText() string {
 	p.enter()
 	defer p.leave()
-	s := p.parseTypeAtom()
+	alts := []string{p.parseTypeAtom()}
 	for p.at(PIPE) && p.peek(1).Kind == IDENT && typeWords[upper(p.peek(1).Text)] {
 		p.next()
-		s += " | " + p.parseTypeAtom()
+		alts = append(alts, p.parseTypeAtom())
 	}
-	return s
+	return strings.Join(alts, " | ")
 }
 
 func (p *parser) parseTypeAtom() string {
 	if !p.atTypeWord() {
 		p.unexpected("type name")
 	}
-	var s string
+	var parts []string // joined once below: += per word would be quadratic
 	for p.atTypeWord() {
 		w := upper(p.next().Text)
-		if s != "" {
-			s += " "
-		}
-		s += w
+		parts = append(parts, w)
 		// TIME/TIMESTAMP WITH[OUT] TIME ZONE / TIMEZONE
 		if (w == "TIME" || w == "TIMESTAMP") && (p.atKw(KwWith) || p.cur().isWord("without")) {
 			if n := p.peek(1); n.isWord("time") || n.isWord("timezone") {
-				s += " " + upper(p.next().Text)
-				s += " " + upper(p.next().Text)
+				parts = append(parts, upper(p.next().Text), upper(p.next().Text))
 				if p.cur().isWord("zone") {
-					s += " " + upper(p.next().Text)
+					parts = append(parts, upper(p.next().Text))
 				}
 			}
 		}
 	}
+	s := strings.Join(parts, " ")
 	if p.at(LT) {
 		p.next()
 		s += "<" + p.parseTypeText() + ">"

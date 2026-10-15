@@ -35,6 +35,7 @@ type checker struct {
 	reg proc.Registry
 	// standalone is true when the statement is a lone CALL.
 	standalone bool
+	hasher     syntax.Hasher // structural hashes for same()
 }
 
 // fail aborts the analysis with a SyntaxError.
@@ -64,6 +65,10 @@ func (c *checker) body(b syntax.Body, outer *scope) []string {
 			}
 		}
 		return first
+	case *syntax.CreateIndex:
+		c.checkSchemaOptions(b.Options)
+	case *syntax.CreateConstraint:
+		c.checkSchemaOptions(b.Options)
 	case *syntax.Conditional:
 		for _, w := range b.Branches {
 			c.expr(w.Cond, env{sc: outer, boolCtx: true})

@@ -36,6 +36,8 @@ func (p *parser) parseLabelNot() LabelExpr {
 	switch t.Kind {
 	case BANG:
 		p.next()
+		p.enter() // `!!!…` recurses once per `!`
+		defer p.leave()
 		return &LabelNot{Loc{t.Pos}, p.parseLabelNot()}
 	case PERCENT:
 		p.next()

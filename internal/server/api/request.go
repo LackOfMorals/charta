@@ -293,33 +293,17 @@ func (tp typedParam) convert(ver int) (any, error) {
 		}
 		return b, nil
 	case "List":
-		var items []typedParam
-		if err := json.Unmarshal(v, &items); err != nil {
+		var items []any
+		if err := decodeGeneric(v, &items); err != nil {
 			return nil, fmt.Errorf("List: %w", err)
 		}
-		out := make([]any, len(items))
-		for i, tp := range items {
-			val, err := tp.convert(ver)
-			if err != nil {
-				return nil, fmt.Errorf("List[%d]: %w", i, err)
-			}
-			out[i] = val
-		}
-		return out, nil
+		return convertList(items, ver, 1)
 	case "Map":
-		var m map[string]typedParam
-		if err := json.Unmarshal(v, &m); err != nil {
+		var m map[string]any
+		if err := decodeGeneric(v, &m); err != nil {
 			return nil, fmt.Errorf("Map: %w", err)
 		}
-		out := make(map[string]any, len(m))
-		for k, tp := range m {
-			val, err := tp.convert(ver)
-			if err != nil {
-				return nil, fmt.Errorf("Map[%q]: %w", k, err)
-			}
-			out[k] = val
-		}
-		return out, nil
+		return convertMap(m, ver, 1)
 
 	case "Date", "Time", "LocalTime", "LocalDateTime", "ZonedDateTime", "OffsetDateTime", "Duration":
 		var s string
@@ -385,29 +369,30 @@ func decodeVector(raw json.RawMessage) (any, error) {
 	if !ok {
 		return nil, fmt.Errorf("Vector: unsupported coordinatesType %q", vv.CoordinatesType)
 	}
-	vec := vector.Vector{Type: graingraphType}
-	if graingraphType.IsInteger() {
-		vec.Ints = make([]int64, len(vv.Coordinates))
-		for i, c := range vv.Coordinates {
+	// vector.New enforces the dimension range, finiteness and integer ranges.
+	vals := make([]any, len(vv.Coordinates))
+	for i, c := range vv.Coordinates {
+		if graingraphType.IsInteger() {
 			n, err := strconv.ParseInt(c, 10, 64)
 			if err != nil {
 				return nil, fmt.Errorf("Vector: coordinate %d: %w", i, err)
 			}
-			vec.Ints[i] = n
+			vals[i] = n
+			continue
 		}
-	} else {
 		bits := 32
 		if graingraphType == vector.Float64 {
 			bits = 64
 		}
-		vec.Floats = make([]float64, len(vv.Coordinates))
-		for i, c := range vv.Coordinates {
-			f, err := strconv.ParseFloat(c, bits)
-			if err != nil {
-				return nil, fmt.Errorf("Vector: coordinate %d: %w", i, err)
-			}
-			vec.Floats[i] = f
+		f, err := strconv.ParseFloat(c, bits)
+		if err != nil {
+			return nil, fmt.Errorf("Vector: coordinate %d: %w", i, err)
 		}
+		vals[i] = f
+	}
+	vec, err := vector.New(vals, len(vals), graingraphType)
+	if err != nil {
+		return nil, fmt.Errorf("Vector: %w", err)
 	}
 	return vec, nil
 }
@@ -451,4 +436,79 @@ func rejectTrailing(dec *json.Decoder) error {
 		return invalidInputf("request body must contain a single JSON object")
 	}
 	return nil
+}
+
+// maxTypedDepth bounds how deeply typed List and Map parameters nest.
+const maxTypedDepth = 32
+
+// decodeGeneric decodes a JSON value once, keeping numbers exact. Nested typed
+// values are then converted from the decoded tree: unmarshalling each level
+// into json.RawMessage would copy and rescan the whole remaining subtree at
+// every level, so a deeply nested body cost memory proportional to depth times
+// its size.
+func decodeGeneric(raw json.RawMessage, into any) error {
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.UseNumber()
+	return dec.Decode(into)
+}
+
+func convertList(items []any, ver, depth int) (any, error) {
+	if depth > maxTypedDepth {
+		return nil, fmt.Errorf("nested more than %d levels deep", maxTypedDepth)
+	}
+	out := make([]any, len(items))
+	for i, it := range items {
+		val, err := convertNode(it, ver, depth)
+		if err != nil {
+			return nil, fmt.Errorf("List[%d]: %w", i, err)
+		}
+		out[i] = val
+	}
+	return out, nil
+}
+
+func convertMap(m map[string]any, ver, depth int) (any, error) {
+	if depth > maxTypedDepth {
+		return nil, fmt.Errorf("nested more than %d levels deep", maxTypedDepth)
+	}
+	out := make(map[string]any, len(m))
+	for k, it := range m {
+		val, err := convertNode(it, ver, depth)
+		if err != nil {
+			return nil, fmt.Errorf("Map[%q]: %w", k, err)
+		}
+		out[k] = val
+	}
+	return out, nil
+}
+
+// convertNode converts one decoded typed value ({"$type": …, "_value": …}).
+func convertNode(node any, ver, depth int) (any, error) {
+	obj, ok := node.(map[string]any)
+	if !ok {
+		return nil, errors.New("expected a typed value object")
+	}
+	typ, _ := obj["$type"].(string)
+	if typ == "" {
+		return nil, errors.New("missing $type")
+	}
+	switch typ {
+	case "List":
+		items, ok := obj["_value"].([]any)
+		if !ok {
+			return nil, errors.New("List: _value must be an array")
+		}
+		return convertList(items, ver, depth+1)
+	case "Map":
+		m, ok := obj["_value"].(map[string]any)
+		if !ok {
+			return nil, errors.New("Map: _value must be an object")
+		}
+		return convertMap(m, ver, depth+1)
+	}
+	raw, err := json.Marshal(obj["_value"]) // a leaf: small, copied once
+	if err != nil {
+		return nil, err
+	}
+	return typedParam{Type: typ, Value: raw}.convert(ver)
 }

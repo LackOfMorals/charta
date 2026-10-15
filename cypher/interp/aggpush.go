@@ -174,7 +174,7 @@ func (ex *exec) aggregatePushdown(q *syntax.SingleQuery, st *qstate) (names []st
 	defer rows.Close()
 
 	var out, origs []row
-	var substs []map[string]any
+	var substs []map[uint64]any
 	keyKinds := map[int]map[string]bool{} // item index -> numeric/text/bool kinds seen
 	for rows.Next() {
 		dest := make([]any, len(sel))
@@ -186,7 +186,7 @@ func (ex *exec) aggregatePushdown(q *syntax.SingleQuery, st *qstate) (names []st
 			return nil, false, nil
 		}
 		nr := make(row, len(items))
-		subst := make(map[string]any, len(items))
+		subst := make(map[uint64]any, len(items))
 		col := 0
 		for idx, it := range items {
 			var v any
@@ -239,7 +239,7 @@ func (ex *exec) aggregatePushdown(q *syntax.SingleQuery, st *qstate) (names []st
 				v = val
 			}
 			nr[it.name] = v
-			subst[syntax.Dump(it.expr)] = v
+			subst[ex.hasher.Hash(it.expr)] = v
 		}
 		out = append(out, nr)
 		origs = append(origs, row{})

@@ -11,6 +11,20 @@ import (
 	"github.com/graingraph/graingraph/cypher/syntax"
 )
 
+// hardMaxHops is the deepest variable-length expansion the interpreter will
+// recurse into when no MaxPathHops is configured: each hop costs a few Go
+// frames, so an unlimited search over a long chain would overflow the stack,
+// which is fatal rather than an error.
+const hardMaxHops = 100000
+
+// maxHops is the effective cap on variable-length expansion.
+func (e *Engine) maxHops() int64 {
+	if e != nil && e.MaxPathHops > 0 {
+		return int64(e.MaxPathHops)
+	}
+	return hardMaxHops
+}
+
 // Engine is the per-database state the interpreter keeps between statements:
 // registered procedures and the property-index advisor.
 type Engine struct {
@@ -18,7 +32,8 @@ type Engine struct {
 	Procs proc.Set
 	// MaxPathHops, when positive, caps variable-length patterns: an unbounded
 	// pattern stops at this many hops and an explicit upper bound above it is
-	// an error. Zero means no cap.
+	// an error. Zero means the built-in limit of hardMaxHops, which keeps the
+	// recursive path search inside the goroutine stack.
 	MaxPathHops int
 	// NoAutoIndexes disables the automatic property indexes.
 	NoAutoIndexes bool
@@ -37,12 +52,22 @@ type Engine struct {
 	vecMu            sync.Mutex
 	vec              vecCache
 
-	stmtMu sync.RWMutex
-	stmts  map[string]*syntax.Statement // parsed and analysed statements, by text
+	stmtMu    sync.RWMutex
+	stmts     map[string]*syntax.Statement // parsed and analysed statements, by text
+	stmtBytes int                          // estimated size of stmts
 }
 
-// maxCachedStatements bounds the statement cache; it is emptied when full.
-const maxCachedStatements = 512
+// maxCachedStatements bounds the statement cache by count, and
+// maxCachedStatementBytes by size (an AST costs several times its text); it is
+// emptied when either is reached. A statement bigger than maxCacheableBytes is
+// not cached at all: it is rarely repeated and could evict everything else.
+const (
+	maxCachedStatements     = 512
+	maxCachedStatementBytes = 32 << 20
+	maxCacheableBytes       = 64 << 10
+	astBytesPerSourceByte   = 32
+	maxTrackedScanKeys      = 1024
+)
 
 // Statement returns the cached statement for query text, if any. Statements
 // are immutable once built and may be shared between goroutines.
@@ -57,10 +82,16 @@ func (e *Engine) Statement(q string) (*syntax.Statement, bool) {
 func (e *Engine) CacheStatement(q string, st *syntax.Statement) {
 	e.stmtMu.Lock()
 	defer e.stmtMu.Unlock()
-	if e.stmts == nil || len(e.stmts) >= maxCachedStatements {
+	if len(q) > maxCacheableBytes {
+		return
+	}
+	cost := (len(q) + 64) * astBytesPerSourceByte
+	if e.stmts == nil || len(e.stmts) >= maxCachedStatements || e.stmtBytes+cost > maxCachedStatementBytes {
 		e.stmts = make(map[string]*syntax.Statement, 64)
+		e.stmtBytes = 0
 	}
 	e.stmts[q] = st
+	e.stmtBytes += cost
 }
 
 // ClearStatements drops the statement cache. Call it when the set of
@@ -68,6 +99,7 @@ func (e *Engine) CacheStatement(q string, st *syntax.Statement) {
 func (e *Engine) ClearStatements() {
 	e.stmtMu.Lock()
 	e.stmts = nil
+	e.stmtBytes = 0
 	e.stmtMu.Unlock()
 }
 
@@ -123,6 +155,9 @@ func (e *Engine) noteScan(ctx context.Context, db DB, key string, readOnly bool)
 	id := fmt.Sprintf("%x", key)
 	if e.indexed[id] {
 		return
+	}
+	if _, seen := e.scans[key]; !seen && len(e.scans) >= maxTrackedScanKeys {
+		return // bounded: keys come from statements and parameters
 	}
 	e.scans[key]++
 	if e.scans[key] < indexScansBeforeIndex || len(e.indexed) >= indexMax {

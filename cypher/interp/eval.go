@@ -53,7 +53,10 @@ type exec struct {
 	agg map[*syntax.FuncCall]any
 	// subst replaces whole sub-expressions by value (ORDER BY on projected
 	// expressions).
-	subst map[string]any
+	subst map[uint64]any
+	ticks uint32 // calls to tick
+	// hasher gives the structural hash that keys subst; memoised per node.
+	hasher syntax.Hasher
 	// regexCache avoids recompiling regular expressions.
 	procs *proc.Set
 	// clock is the instant temporal functions report for "now", fixed for the
@@ -84,9 +87,23 @@ func (ex *exec) overBudget(n int) bool {
 	return false
 }
 
+// tick checks the statement's context every few thousand calls, so a cancelled
+// or timed-out request stops burning CPU (and gives up its connection) instead
+// of running to the end of an in-memory loop.
+func (ex *exec) tick() error {
+	ex.ticks++
+	if ex.ticks&0x3ff == 0 {
+		return ex.g.ctx.Err()
+	}
+	return nil
+}
+
 func (ex *exec) eval(e syntax.Expr, r row) (any, error) {
+	if err := ex.tick(); err != nil {
+		return nil, err
+	}
 	if ex.subst != nil {
-		if v, ok := ex.subst[syntax.Dump(e)]; ok {
+		if v, ok := ex.subst[ex.hasher.Hash(e)]; ok {
 			return v, nil
 		}
 	}
@@ -459,6 +476,9 @@ func (ex *exec) binary(e *syntax.Binary, r row) (any, error) {
 		if l == nil || rv == nil {
 			return nil, nil
 		}
+		if err := checkConcat(l, rv); err != nil {
+			return nil, err
+		}
 		if ls, ok := l.(string); ok {
 			if rs, ok := rv.(string); ok {
 				return ls + rs, nil
@@ -551,7 +571,38 @@ func (ex *exec) logic(e *syntax.Binary, r row) (any, error) {
 	return false, nil
 }
 
+// maxStringBytes bounds a string the interpreter builds by concatenation or
+// replacement; with maxListLen it keeps a statement that doubles a value in a
+// loop (reduce(s = 'x', i IN range(1, 40) | s + s)) from exhausting memory,
+// which is fatal rather than an error.
+const maxStringBytes = 64 << 20
+
+// checkConcat fails when joining l and r would exceed the size limits.
+func checkConcat(l, r any) error {
+	size := func(v any) (strBytes, listLen int) {
+		switch x := v.(type) {
+		case string:
+			return len(x), 0
+		case []any:
+			return 0, len(x)
+		}
+		return 0, 0
+	}
+	ls, ll := size(l)
+	rs, rl := size(r)
+	if ls+rs > maxStringBytes {
+		return errorf("ArgumentError", "ValueTooLarge", "string longer than the limit of %d bytes", maxStringBytes)
+	}
+	if ll+rl > maxListLen {
+		return errorf("ArgumentError", "ValueTooLarge", "list longer than the limit of %d elements", maxListLen)
+	}
+	return nil
+}
+
 func add(l, r any) (any, error) {
+	if err := checkConcat(l, r); err != nil {
+		return nil, err
+	}
 	if l == nil || r == nil {
 		return nil, nil
 	}
@@ -765,6 +816,9 @@ func isNaNValue(v any) bool {
 	return ok && math.IsNaN(f)
 }
 
+// maxRegexCache bounds the compiled patterns kept for one statement.
+const maxRegexCache = 256
+
 func (ex *exec) regex(pattern string) (*regexp.Regexp, error) {
 	if re, ok := ex.regexCache[pattern]; ok {
 		return re, nil
@@ -772,6 +826,9 @@ func (ex *exec) regex(pattern string) (*regexp.Regexp, error) {
 	re, err := regexp.Compile(`^(?:` + pattern + `)$`)
 	if err != nil {
 		return nil, errorf("ArgumentError", "InvalidArgumentValue", "invalid regular expression %q: %v", pattern, err)
+	}
+	if len(ex.regexCache) >= maxRegexCache {
+		return re, nil // a pattern that changes per row is not worth keeping
 	}
 	if ex.regexCache == nil {
 		ex.regexCache = map[string]*regexp.Regexp{}

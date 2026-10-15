@@ -476,8 +476,7 @@ func (l *Lexer) str(start Pos, quote byte) (Token, error) {
 				sb = &strings.Builder{}
 			}
 			sb.WriteString(s[segStart:i])
-			escPos := l.posAt(start, i)
-			n, err := l.escape(sb, escPos, i)
+			n, err := l.escape(sb, start, i)
 			if err != nil {
 				return Token{}, err
 			}
@@ -497,10 +496,13 @@ func (l *Lexer) str(start Pos, quote byte) (Token, error) {
 
 // escape decodes the escape sequence starting at s[i] == '\\', writes it to sb
 // and returns the number of source bytes consumed.
-func (l *Lexer) escape(sb *strings.Builder, p Pos, i int) (int, error) {
+func (l *Lexer) escape(sb *strings.Builder, start Pos, i int) (int, error) {
 	s := l.src
+	// The position is only needed for an error; computing it walks from the
+	// literal's start, so doing it per escape would be quadratic.
+	pos := func() Pos { return l.posAt(start, i) }
 	if i+1 >= len(s) {
-		return 0, l.errorf(p, "\\", "unterminated string literal")
+		return 0, l.errorf(pos(), "\\", "unterminated string literal")
 	}
 	switch c := s[i+1]; c {
 	case '\\', '\'', '"', '`':
@@ -520,14 +522,14 @@ func (l *Lexer) escape(sb *strings.Builder, p Pos, i int) (int, error) {
 		// present, otherwise four; the letter's case does not matter.
 		if r, ok := hexRune(s, i+2, 8); ok {
 			if r > unicode.MaxRune || utf16.IsSurrogate(r) {
-				return 0, l.errorc(CodeInvalidUnicodeLiteral, p, s[i:i+10], "invalid escape: not a Unicode code point")
+				return 0, l.errorc(CodeInvalidUnicodeLiteral, pos(), s[i:i+10], "invalid escape: not a Unicode code point")
 			}
 			sb.WriteRune(r)
 			return 10, nil
 		}
 		r, ok := hexRune(s, i+2, 4)
 		if !ok {
-			return 0, l.errorc(CodeInvalidUnicodeLiteral, p, s[i:min(i+6, len(s))], "invalid \\u escape: expected 4 or 8 hex digits")
+			return 0, l.errorc(CodeInvalidUnicodeLiteral, pos(), s[i:min(i+6, len(s))], "invalid \\u escape: expected 4 or 8 hex digits")
 		}
 		if utf16.IsSurrogate(r) {
 			// A high surrogate must be followed by \uXXXX holding the low half.
@@ -539,13 +541,13 @@ func (l *Lexer) escape(sb *strings.Builder, p Pos, i int) (int, error) {
 					}
 				}
 			}
-			return 0, l.errorc(CodeInvalidUnicodeLiteral, p, s[i:i+6], "invalid \\u escape: unpaired UTF-16 surrogate")
+			return 0, l.errorc(CodeInvalidUnicodeLiteral, pos(), s[i:i+6], "invalid \\u escape: unpaired UTF-16 surrogate")
 		}
 		sb.WriteRune(r)
 		return 6, nil
 	default:
 		r, _ := utf8.DecodeRuneInString(s[i+1:])
-		return 0, l.errorf(p, "\\"+string(r), "invalid escape sequence in string literal")
+		return 0, l.errorf(pos(), "\\"+string(r), "invalid escape sequence in string literal")
 	}
 	return 2, nil
 }

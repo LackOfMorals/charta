@@ -342,10 +342,20 @@ func encodeValue(sb *strings.Builder, v any) error {
 		sb.Write(b)
 		sb.WriteByte('}')
 	case spatial.Point:
+		for _, c := range [...]float64{x.X, x.Y, x.Z} {
+			if math.IsNaN(c) || math.IsInf(c, 0) {
+				return errorf("TypeError", "InvalidPropertyType", "NaN and infinity cannot be stored in a point")
+			}
+		}
 		sb.WriteString(`{"$p":` + strconv.Itoa(x.SRID) + `,"c":[` +
 			strconv.FormatFloat(x.X, 'g', -1, 64) + `,` + strconv.FormatFloat(x.Y, 'g', -1, 64) + `,` +
 			strconv.FormatFloat(x.Z, 'g', -1, 64) + `]}`)
 	case vector.Vector:
+		for _, c := range x.Floats {
+			if math.IsNaN(c) || math.IsInf(c, 0) {
+				return errorf("TypeError", "InvalidPropertyType", "NaN and infinity cannot be stored in a vector")
+			}
+		}
 		sb.WriteString(`{"$v":"` + string(x.Type) + `","c":[`)
 		for i := 0; i < x.Dimension(); i++ {
 			if i > 0 {

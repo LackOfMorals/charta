@@ -134,10 +134,12 @@ func (s *scope) names() []string {
 	return out
 }
 
-// sameExpr reports whether two expressions are structurally identical.
-func sameExpr(a, b syntax.Expr) bool {
+// same reports whether two expressions are structurally identical. Hashes
+// (memoised per node, so linear overall) rule out almost every pair; a hash
+// match is confirmed by a short-circuiting comparison.
+func (c *checker) same(a, b syntax.Expr) bool {
 	if a == nil || b == nil {
 		return a == nil && b == nil
 	}
-	return syntax.Dump(a) == syntax.Dump(b)
+	return c.hasher.Hash(a) == c.hasher.Hash(b) && syntax.Equal(a, b)
 }

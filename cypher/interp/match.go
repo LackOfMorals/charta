@@ -473,20 +473,22 @@ func (ex *exec) walkVarLength(elems []syntax.PatternElem, i int, rp *syntax.RelP
 	if rng.Max != nil {
 		max = *rng.Max
 	}
-	if hops := int64(0); ex.g.eng != nil {
-		if hops = int64(ex.g.eng.MaxPathHops); hops > 0 {
-			if max > hops {
-				return argErr("variable-length upper bound %d exceeds the configured maximum of %d hops", max, hops)
-			}
-			if max < 0 {
-				max = hops
-			}
+	{
+		hops := ex.g.eng.maxHops()
+		if max > hops {
+			return argErr("variable-length upper bound %d exceeds the configured maximum of %d hops", max, hops)
+		}
+		if max < 0 {
+			max = hops
 		}
 	}
 	var chain []*Rel
 	var visited []*Node // the nodes reached along chain, in order
 	var dfs func(node *Node, depth int64) error
 	dfs = func(node *Node, depth int64) error {
+		if err := ex.tick(); err != nil {
+			return err
+		}
 		if depth >= min {
 			r2, ok, err := ex.bindVarLength(rp, np, chain, node, r)
 			if err != nil {
@@ -625,8 +627,8 @@ func (ex *exec) matchShortest(part *syntax.PatternPart, r row, used map[int64]bo
 // [min, max] (max < 0 is unbounded). all asks for every shortest path rather
 // than one.
 func (ex *exec) shortestPaths(rp *syntax.RelPattern, s, e *Node, min, max int64, all bool, r row, used map[int64]bool) ([]*Path, error) {
-	if ex.g.eng != nil && ex.g.eng.MaxPathHops > 0 {
-		hops := int64(ex.g.eng.MaxPathHops)
+	{
+		hops := ex.g.eng.maxHops()
 		if max > hops {
 			return nil, argErr("shortest path upper bound %d exceeds the configured maximum of %d hops", max, hops)
 		}
@@ -944,13 +946,27 @@ func (ex *exec) shortestPathsSlow(rp *syntax.RelPattern, s, e *Node, min, max in
 				}
 				if other.ID == e.ID && int64(len(p.Rels)) >= min {
 					found = append(found, p)
+					if !all {
+						return errStop // the first is the one returned
+					}
+					if len(found) > maxShortestPaths {
+						return unsupported("too many shortest paths")
+					}
 					return nil
+				}
+				// checked as states are added: parallel relationships multiply
+				// them without multiplying nodes
+				if len(next) >= 100000 {
+					return unsupported("shortest path search space is too large")
 				}
 				next = append(next, state{other, p})
 				return nil
 			})
-			if err != nil {
+			if err != nil && err != errStop {
 				return nil, err
+			}
+			if err == errStop {
+				break
 			}
 		}
 		if len(found) > 0 {

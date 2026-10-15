@@ -127,7 +127,7 @@ func parameterFormat(header string) (format, int, error) {
 		media = strings.TrimSpace(media[:i])
 	}
 	switch media {
-	case "", "application/json":
+	case "application/json":
 		return formatPlain, 0, nil
 	case "application/vnd.neo4j.query":
 		return formatTyped, 0, nil

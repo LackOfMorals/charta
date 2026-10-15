@@ -73,6 +73,8 @@ type Store struct {
 	db  *graingraph.DB
 	mu  sync.Mutex
 	txs map[string]*OpenTx
+	// beginning is set while a transaction is being opened (see Begin).
+	beginning bool
 
 	bookmarks bookmarkCounter
 	started   time.Time
@@ -283,15 +285,47 @@ func (s *Store) NewBookmark() string { return s.bookmarks.next() }
 // Begin opens an explicit transaction. id must be unique among open
 // transactions. timeout is the idle timeout (zero: no timeout).
 func (s *Store) Begin(ctx context.Context, id string, timeout time.Duration, meta map[string]any) (*OpenTx, error) {
-	if err := s.checkNoOpenTx(ctx); err != nil {
+	// Reserve the right to begin: the check for an open transaction and the
+	// registration of the new one must not be separated by other callers, or
+	// every request released by a commit would pass the check together and queue
+	// on the single connection.
+	if err := s.reserveBegin(ctx); err != nil {
 		return nil, err
+	}
+	release := func() {
+		s.mu.Lock()
+		s.beginning = false
+		s.mu.Unlock()
 	}
 	// database/sql rolls a transaction back when the context given to
 	// BeginTx is cancelled. The transaction must outlive the HTTP request
-	// that opens it, so detach it from that request's cancellation.
-	tx, err := s.db.BeginTx(context.WithoutCancel(ctx))
-	if err != nil {
-		return nil, err
+	// that opens it, so detach it from that request's cancellation, and stop
+	// waiting for it ourselves when the request goes away.
+	type begun struct {
+		tx  *graingraph.Tx
+		err error
+	}
+	ch := make(chan begun, 1)
+	go func() {
+		tx, err := s.db.BeginTx(context.WithoutCancel(ctx))
+		ch <- begun{tx, err}
+	}()
+	var tx *graingraph.Tx
+	select {
+	case b := <-ch:
+		if b.err != nil {
+			release()
+			return nil, b.err
+		}
+		tx = b.tx
+	case <-ctx.Done():
+		go func() { // whoever gets the connection later must not keep it
+			if b := <-ch; b.err == nil {
+				_ = b.tx.Rollback()
+			}
+			release()
+		}()
+		return nil, &TransactionOpenError{}
 	}
 	ot := &OpenTx{
 		ID:      id,
@@ -303,6 +337,7 @@ func (s *Store) Begin(ctx context.Context, id string, timeout time.Duration, met
 		ot.expiresAt = time.Now().Add(timeout)
 	}
 	s.mu.Lock()
+	s.beginning = false
 	if _, exists := s.txs[id]; exists {
 		s.mu.Unlock()
 		_ = tx.Rollback()
@@ -311,6 +346,34 @@ func (s *Store) Begin(ctx context.Context, id string, timeout time.Duration, met
 	s.txs[id] = ot
 	s.mu.Unlock()
 	return ot, nil
+}
+
+// reserveBegin waits up to the store's tx wait for no transaction to be open
+// or being opened, and marks one as being opened, atomically.
+func (s *Store) reserveBegin(ctx context.Context) error {
+	deadline := time.Now().Add(s.txWait)
+	for {
+		s.mu.Lock()
+		open := ""
+		for id := range s.txs {
+			open = id
+			break
+		}
+		if open == "" && !s.beginning {
+			s.beginning = true
+			s.mu.Unlock()
+			return nil
+		}
+		s.mu.Unlock()
+		if !time.Now().Before(deadline) {
+			return &TransactionOpenError{ID: open}
+		}
+		select {
+		case <-ctx.Done():
+			return &TransactionOpenError{ID: open}
+		case <-time.After(2 * time.Millisecond):
+		}
+	}
 }
 
 // Tx looks up the open transaction with the given ID.

@@ -143,6 +143,9 @@ func (ex *exec) builtin(name string, args []any) (any, error) {
 	case "randomuuid":
 		return randomUUID(), nil
 	}
+	if needsArg[name] && len(args) == 0 {
+		return nil, errorf("SyntaxError", "InvalidNumberOfArguments", "%s() requires an argument", name)
+	}
 	// All remaining functions return null for a null argument.
 	if len(args) > 0 && args[0] == nil {
 		switch name {
@@ -461,6 +464,10 @@ func (ex *exec) builtin(name string, args []any) (any, error) {
 		if !ok1 || !ok2 || !ok3 {
 			return nil, typeErr("replace() expects strings")
 		}
+		n := strings.Count(s, a) // for an empty a: runes + 1
+		if int64(len(s))+int64(n)*int64(len(b)-len(a)) > maxStringBytes {
+			return nil, errorf("ArgumentError", "ValueTooLarge", "replace() would produce a string longer than the limit of %d bytes", maxStringBytes)
+		}
 		return strings.ReplaceAll(s, a, b), nil
 	case "substring":
 		return fnSubstring(args)
@@ -622,46 +629,84 @@ func roundHalfUp(x float64) float64 {
 	return math.Round(x)
 }
 
-func fnRange(args []any) (any, error) {
+// maxListLen bounds a list the interpreter materialises from range(); longer
+// ranges can still be walked lazily by UNWIND in a read-only pipeline.
+const maxListLen = 10_000_000
+
+// rangeSpec checks range()'s arguments. null is true when an argument is null.
+func rangeSpec(args []any) (start, end, step int64, null bool, err error) {
 	if err := argc("range", args, 2, 3); err != nil {
-		return nil, err
+		return 0, 0, 0, false, err
 	}
 	if anyNil(args) {
-		return nil, nil
+		return 0, 0, 0, true, nil
 	}
 	nums := make([]int64, len(args))
 	for i, a := range args {
 		n, ok := a.(int64)
 		if !ok {
-			return nil, errorf("ArgumentError", "InvalidArgumentType", "range() expects integers, got %s", typeName(a))
+			return 0, 0, 0, false, errorf("ArgumentError", "InvalidArgumentType", "range() expects integers, got %s", typeName(a))
 		}
 		nums[i] = n
 	}
-	step := int64(1)
+	step = 1
 	if len(nums) == 3 {
 		step = nums[2]
 	}
 	if step == 0 {
-		return nil, errorf("ArgumentError", "NumberOutOfRange", "range() step must not be zero")
+		return 0, 0, 0, false, errorf("ArgumentError", "NumberOutOfRange", "range() step must not be zero")
 	}
-	out := []any{}
-	if step > 0 {
-		for i := nums[0]; i <= nums[1]; i += step {
-			out = append(out, i)
-			if i > math.MaxInt64-step {
-				break
-			}
-		}
-	} else {
-		for i := nums[0]; i >= nums[1]; i += step {
-			out = append(out, i)
-			if i < math.MinInt64-step {
-				break
-			}
-		}
+	return nums[0], nums[1], step, false, nil
+}
+
+// rangeLen is the number of elements range(start, end, step) produces,
+// saturating at MaxUint64.
+func rangeLen(start, end, step int64) uint64 {
+	var diff, st uint64
+	switch {
+	case step > 0 && end >= start:
+		diff, st = uint64(end)-uint64(start), uint64(step)
+	case step < 0 && end <= start:
+		diff, st = uint64(start)-uint64(end), uint64(-step) // -MinInt64 wraps to 2^63, still right as uint64
+	default:
+		return 0
+	}
+	n := diff/st + 1
+	if n == 0 {
+		return math.MaxUint64
+	}
+	return n
+}
+
+func fnRange(args []any) (any, error) {
+	start, end, step, null, err := rangeSpec(args)
+	if err != nil || null {
+		return nil, err
+	}
+	n := rangeLen(start, end, step)
+	if n > maxListLen {
+		return nil, errorf("ArgumentError", "NumberOutOfRange", "range() would produce %d elements; the limit is %d", n, maxListLen)
+	}
+	out := make([]any, 0, n)
+	for i, k := start, uint64(0); k < n; i, k = i+step, k+1 {
+		out = append(out, i)
 	}
 	return out, nil
 }
+
+// needsArg lists the functions that read args[0] without any other arity check.
+var needsArg = func() map[string]bool {
+	m := map[string]bool{}
+	for _, n := range []string{"char_length", "character_length", "head", "last", "tail", "reverse", "isempty",
+		"keys", "properties", "labels", "type", "id", "elementid", "nodes", "relationships", "rels",
+		"startnode", "endnode", "tointeger", "tointegerornull", "tofloat", "tofloatornull", "toboolean",
+		"tobooleanornull", "tostring", "tostringornull", "tointegerlist", "tofloatlist", "tobooleanlist",
+		"tostringlist", "abs", "sign", "ceil", "floor", "sqrt", "exp", "log", "log10", "sin", "cos", "tan",
+		"cot", "asin", "acos", "atan", "degrees", "radians", "haversin", "sinh", "cosh", "tanh", "coth"} {
+		m[n] = true
+	}
+	return m
+}()
 
 func fnSubstring(args []any) (any, error) {
 	if err := argc("substring", args, 2, 3); err != nil {
@@ -691,7 +736,7 @@ func fnSubstring(args []any) (any, error) {
 		if n < 0 {
 			return nil, errorf("SyntaxError", "NegativeIntegerArgument", "substring() length must not be negative")
 		}
-		if start+n < end {
+		if n < end-start { // compare against the remaining runes: start+n could overflow
 			end = start + n
 		}
 	}

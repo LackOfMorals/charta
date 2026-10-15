@@ -1,5 +1,7 @@
 package syntax
 
+import "strings"
+
 // Statement prefixes, schema commands and server-only commands.
 //
 //	statement   := prefix* (schema | server | query)
@@ -224,7 +226,11 @@ func (p *parser) parseCreateIndex() Body {
 		p.next()
 		c.Each = true
 		if p.at(LBRACK) {
-			list := p.parseListLiteral().(*ListLit)
+			pos := p.cur().Pos
+			list, ok := p.parseListLiteral().(*ListLit)
+			if !ok {
+				p.fail(pos, "ON EACH expects a plain list of properties")
+			}
 			c.Properties = list.Elems
 		} else {
 			c.Properties = []Expr{p.parsePostfix()}
@@ -308,12 +314,11 @@ func (p *parser) parseDropSchema() Body {
 func (p *parser) parseShow() Body {
 	start := p.expectKw(KwShow)
 	s := &Show{Loc: Loc{start.Pos}}
+	var words []string // joined once: repeated += would be quadratic in the word count
 	for p.at(IDENT) && !p.atKw(KwYield) && !p.atKw(KwWhere) {
-		if s.What != "" {
-			s.What += " "
-		}
-		s.What += upper(p.next().Value)
+		words = append(words, upper(p.next().Value))
 	}
+	s.What = strings.Join(words, " ")
 	if s.What == "" {
 		p.unexpected("what to show")
 	}

@@ -75,9 +75,16 @@ func (p *parser) parseClauseOpt() Clause {
 
 // ─── reading clauses ─────────────────────────────────────────────────────────
 
+// maxPatternParts bounds the comma-separated parts of one pattern.
+const maxPatternParts = 10000
+
 func (p *parser) parsePatternParts() []*PatternPart {
 	parts := []*PatternPart{p.parsePatternPart()}
 	for p.accept(COMMA) {
+		if len(parts) >= maxPatternParts {
+			// the interpreter matches parts by recursion, one level per part
+			p.fail(p.cur().Pos, "too many pattern parts in one clause (limit %d)", maxPatternParts)
+		}
 		parts = append(parts, p.parsePatternPart())
 	}
 	return parts

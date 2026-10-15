@@ -173,7 +173,7 @@ func (g *graph) buildMatrixFast(d schemaDef) (*vector.Matrix, error) {
 			for batch := range batches {
 				for i, id := range batch.ids {
 					row := b.NextRow()
-					if vector.StoredVector(unsafe.String(&batch.data[batch.offs[i]], batch.offs[i+1]-batch.offs[i]), prop, row) {
+					if storedVectorSafe(batch, i, prop, row) {
 						b.Keep(id)
 					} else {
 						b.Discard()
@@ -226,6 +226,22 @@ func (g *graph) buildMatrixFast(d schemaDef) (*vector.Matrix, error) {
 		return nil, scanErr
 	}
 	return vector.MergeBuilders(builders...).Matrix(), nil
+}
+
+// storedVectorSafe extracts the vector of row i of the batch. An empty props
+// text (a damaged file) is skipped without indexing data, and a panic in the
+// parser discards the row instead of killing the process from a goroutine.
+func storedVectorSafe(batch *rowBatch, i int, prop string, row []float32) (ok bool) {
+	defer func() {
+		if recover() != nil {
+			ok = false
+		}
+	}()
+	lo, hi := batch.offs[i], batch.offs[i+1]
+	if hi <= lo {
+		return false
+	}
+	return vector.StoredVector(unsafe.String(&batch.data[lo], hi-lo), prop, row)
 }
 
 // rowBatch is a run of fetched rows: ids and the raw property text of each, laid

@@ -64,7 +64,9 @@ func runInterp(ctx context.Context, ex execer, cypherStr string, params map[stri
 		if err != nil {
 			return nil, fmt.Errorf("graingraph: begin read transaction: %w", err)
 		}
-		res, err = interp.RunReadOnly(ctx, readOnlyDB{tx}, st, params, eng)
+		res, err = guardRun(func() (*interp.Result, error) {
+			return interp.RunReadOnly(ctx, readOnlyDB{tx}, st, params, eng)
+		})
 		_ = tx.Rollback() // nothing to commit; this just ends the snapshot
 		if err != nil {
 			return nil, execError(err)
@@ -78,7 +80,9 @@ func runInterp(ctx context.Context, ex execer, cypherStr string, params map[stri
 		}
 		// A statement with no updating clause and no enclosing transaction has no
 		// uncommitted writes of its own, so it may search the shared vector matrices.
-		res, err = interp.RunWithOptions(ctx, tx, st, params, eng, interp.Options{VectorCache: !hasWrites(st)})
+		res, err = guardRun(func() (*interp.Result, error) {
+			return interp.RunWithOptions(ctx, tx, st, params, eng, interp.Options{VectorCache: !hasWrites(st)})
+		})
 		if err != nil {
 			_ = tx.Rollback()
 			eng.ResetIndexState()
@@ -89,8 +93,15 @@ func runInterp(ctx context.Context, ex execer, cypherStr string, params map[stri
 		}
 		eng.ApplyVectorDeltas(res.VectorDeltas) // only now that the commit succeeded
 	} else {
-		res, err = interp.RunWith(ctx, ex, st, params, eng)
+		res, err = guardRun(func() (*interp.Result, error) {
+			return interp.RunWith(ctx, ex, st, params, eng)
+		})
 		if err != nil {
+			if errors.Is(err, errInterpPanic) {
+				if tx, ok := ex.(interface{ Rollback() error }); ok {
+					_ = tx.Rollback() // a panicked statement may have flushed writes; never let them commit
+				}
+			}
 			return nil, execError(err)
 		}
 		if deltaSink != nil { // inside an explicit transaction: applied when it commits
@@ -98,6 +109,21 @@ func runInterp(ctx context.Context, ex execer, cypherStr string, params map[stri
 		}
 	}
 	return interpResult(res), nil
+}
+
+// errInterpPanic marks an error converted from an interpreter panic.
+var errInterpPanic = errors.New("graingraph: internal error while executing statement")
+
+// guardRun runs fn and converts a panic into an error, so a bug triggered by a
+// crafted statement fails that statement instead of killing the process and
+// leaving its transaction open. Callers roll the transaction back on error.
+func guardRun(fn func() (*interp.Result, error)) (res *interp.Result, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			res, err = nil, fmt.Errorf("%w: %v", errInterpPanic, r)
+		}
+	}()
+	return fn()
 }
 
 // hasWrites reports whether a statement contains an updating clause.

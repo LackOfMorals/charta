@@ -53,7 +53,15 @@ func RunReadOnly(ctx context.Context, db DB, st *syntax.Statement, params map[st
 	return run(ctx, db, st, params, eng, Options{ReadOnly: true, VectorCache: true})
 }
 
-func run(ctx context.Context, db DB, st *syntax.Statement, params map[string]any, eng *Engine, opts Options) (*Result, error) {
+func run(ctx context.Context, db DB, st *syntax.Statement, params map[string]any, eng *Engine, opts Options) (res *Result, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			if _, ok := r.(valueTooDeep); !ok {
+				panic(r)
+			}
+			res, err = nil, errorf("ArgumentError", "ValueTooDeep", "a list or map is nested more than %d levels deep", maxValueDepth)
+		}
+	}()
 	if st.Mode == syntax.ModeExplain {
 		// EXPLAIN compiles the query but does not run it: no rows, no effects.
 		return &Result{Columns: explainColumns(st.Body)}, nil
@@ -74,7 +82,7 @@ func run(ctx context.Context, db DB, st *syntax.Statement, params map[string]any
 	if err := g.finish(); err != nil {
 		return nil, err
 	}
-	res := &Result{Columns: cols, Counters: g.counters, VectorDeltas: g.deltas}
+	res = &Result{Columns: cols, Counters: g.counters, VectorDeltas: g.deltas}
 	if len(cols) == 0 {
 		return res, nil // a query without RETURN produces no rows
 	}
@@ -82,6 +90,10 @@ func run(ctx context.Context, db DB, st *syntax.Statement, params map[string]any
 		vals := make([]any, len(cols))
 		for i, c := range cols {
 			vals[i] = r[c]
+			if nestingExceeds(vals[i], maxValueDepth) {
+				// callers and encoders recurse over a returned value
+				return nil, errorf("ArgumentError", "ValueTooDeep", "a list or map is nested more than %d levels deep", maxValueDepth)
+			}
 		}
 		res.Rows = append(res.Rows, vals)
 	}

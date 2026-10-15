@@ -1,12 +1,28 @@
 package interp
 
 import (
+	"strings"
+
 	"github.com/graingraph/graingraph/cypher/syntax"
 )
 
 // labelNames flattens a conjunction of labels (`:A:B`, `A&B`, `$(expr)`) into
 // names, as CREATE and SET need.
 func (ex *exec) labelNames(le syntax.LabelExpr, r row) ([]string, error) {
+	names, err := ex.labelNames1(le, r)
+	if err != nil {
+		return nil, err
+	}
+	for _, n := range names {
+		if strings.Contains(n, ",") {
+			// nodes.labels is comma-joined, so a comma would read back as two labels
+			return nil, errorf("ArgumentError", "InvalidLabel", "label %q must not contain a comma", n)
+		}
+	}
+	return names, nil
+}
+
+func (ex *exec) labelNames1(le syntax.LabelExpr, r row) ([]string, error) {
 	switch le := le.(type) {
 	case nil:
 		return nil, nil
@@ -34,11 +50,11 @@ func (ex *exec) labelNames(le syntax.LabelExpr, r row) ([]string, error) {
 		}
 		return nil, typeErr("dynamic labels must be strings, got %s", typeName(v))
 	case *syntax.LabelAnd:
-		l, err := ex.labelNames(le.L, r)
+		l, err := ex.labelNames1(le.L, r)
 		if err != nil {
 			return nil, err
 		}
-		rr, err := ex.labelNames(le.R, r)
+		rr, err := ex.labelNames1(le.R, r)
 		if err != nil {
 			return nil, err
 		}
@@ -436,7 +452,12 @@ func (ex *exec) applyDelete(cl *syntax.Delete, r row) error {
 	return nil
 }
 
-func (ex *exec) deleteValue(v any, detach bool) error {
+func (ex *exec) deleteValue(v any, detach bool) error { return ex.deleteValueD(v, detach, 0) }
+
+func (ex *exec) deleteValueD(v any, detach bool, d int) error {
+	if d > maxValueDepth {
+		panic(errValueTooDeep)
+	}
 	switch x := v.(type) {
 	case nil:
 		return nil
@@ -457,7 +478,7 @@ func (ex *exec) deleteValue(v any, detach bool) error {
 		return nil
 	case []any:
 		for _, el := range x {
-			if err := ex.deleteValue(el, detach); err != nil {
+			if err := ex.deleteValueD(el, detach, d+1); err != nil {
 				return err
 			}
 		}

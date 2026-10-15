@@ -361,24 +361,51 @@ func (c *checker) subquery(e *syntax.SubqueryExpr, ev env) typ {
 	return tBool
 }
 
-// rejectUpdates reports an updating clause inside an EXISTS/COUNT/COLLECT body.
+// rejectUpdates reports an updating clause anywhere inside an EXISTS/COUNT/COLLECT
+// body: every UNION member, every WHEN/THEN/ELSE branch and any CALL {} body.
 func (c *checker) rejectUpdates(b syntax.Body) {
-	check := func(q *syntax.SingleQuery) {
-		for _, cl := range q.Clauses {
-			switch cl.(type) {
+	clauses := func(cs []syntax.Clause) {
+		for _, cl := range cs {
+			switch cl := cl.(type) {
 			case *syntax.Create, *syntax.Merge, *syntax.Set, *syntax.Remove, *syntax.Delete, *syntax.Foreach:
 				c.fail(CodeInvalidClauseComposition, cl.Pos(), "updating clauses are not allowed in a subquery expression")
+			case *syntax.CallSubquery:
+				c.rejectUpdates(cl.Body)
 			}
 		}
 	}
 	switch b := b.(type) {
 	case *syntax.SingleQuery:
-		check(b)
+		clauses(b.Clauses)
 	case *syntax.UnionQuery:
 		for _, q := range b.Queries {
-			check(q)
+			clauses(q.Clauses)
+		}
+	case *syntax.Conditional:
+		for _, w := range b.Branches {
+			c.rejectUpdates(w.Body)
+		}
+		if b.Else != nil {
+			c.rejectUpdates(b.Else)
 		}
 	}
+}
+
+// checkSchemaOptions analyses the OPTIONS expression of a schema command. It
+// may use parameters and literals but no subquery or comprehension, so a schema
+// command can never run a query of its own.
+func (c *checker) checkSchemaOptions(e syntax.Expr) {
+	if e == nil {
+		return
+	}
+	walk(e, func(n syntax.Expr) bool {
+		switch n.(type) {
+		case *syntax.SubqueryExpr, *syntax.PatternComp:
+			c.fail(CodeInvalidClauseComposition, n.Pos(), "OPTIONS must be a literal map; subqueries are not allowed")
+		}
+		return true
+	})
+	c.expr(e, env{sc: newScope(nil)})
 }
 
 // sortSpecial handles ORDER BY sub-expressions of an aggregating or DISTINCT
@@ -386,7 +413,7 @@ func (c *checker) rejectUpdates(b syntax.Body) {
 // aggregate call is checked against the scope before the projection.
 func (c *checker) sortSpecial(e syntax.Expr, ev env) (typ, bool) {
 	for _, p := range ev.sort.projected {
-		if sameExpr(p, e) {
+		if c.same(p, e) {
 			return tAny, true
 		}
 	}

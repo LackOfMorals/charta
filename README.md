@@ -661,6 +661,12 @@ Known differences, each marked in the test with its reason:
   Neo4j 2026.07 answers 406.
 - A non-string `statement` is `Request.Invalid` here, `Statement.SyntaxError` in Neo4j.
 - Neo4j adds `notifications` (such as deprecation warnings); graingraph-query has none.
+- A request body needs a JSON `Content-Type` (`application/json` or a Typed JSON type);
+  a missing one is `415`. A body without a `Content-Type` is the one shape a web page
+  can send to another origin without a CORS preflight, so refusing it keeps a page
+  from running statements with credentials the browser has cached. For the same
+  reason a `POST` or `DELETE` whose `Origin` is neither the server's own host nor in
+  `--cors-origins` is `403`.
 
 Also seen when comparing 54 queries on the Neo4j movies graph (not covered by
 the compatibility test; the rest matched, including every temporal and float
