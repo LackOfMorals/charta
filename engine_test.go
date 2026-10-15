@@ -201,3 +201,29 @@ func TestLoadCSVRejectsSymlinkEscape(t *testing.T) {
 		t.Error("a symlink out of the import directory must not be followed")
 	}
 }
+
+func TestLoadCSVErrorsDoNotRevealServerPaths(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(dir, "sub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	db, err := graingraph.Open(":memory:", graingraph.WithImportDirectory(dir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close(ctx)
+	for _, url := range []string{"file:///missing.csv", "file:///", "file:///sub", "file://localhost", "sub"} {
+		res, err := db.RunQuery(ctx, "LOAD CSV FROM '"+url+"' AS row RETURN row", nil)
+		if err == nil {
+			_, err = res.Collect(ctx)
+		}
+		if err == nil {
+			t.Errorf("%s: expected an error", url)
+			continue
+		}
+		if strings.Contains(err.Error(), dir) || strings.Contains(err.Error(), filepath.Base(dir)) {
+			t.Errorf("%s: error reveals the import directory: %v", url, err)
+		}
+	}
+}
