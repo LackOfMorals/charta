@@ -274,6 +274,7 @@ func TestJSONLStream(t *testing.T) {
 		strings.NewReader(`{"statement":"CREATE (n:Person {name:'A'}) RETURN n.name AS name UNION CREATE (n:Person {name:'B'}) RETURN n.name AS name"}`))
 	req.SetBasicAuth(testUser, testPass)
 	req.Header.Set("Accept", "application/jsonl")
+	req.Header.Set("Content-Type", "application/json")
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)
@@ -315,6 +316,7 @@ func TestJSONLErrorEvent(t *testing.T) {
 		strings.NewReader(`{"statement":"MATCH (n) RETURN"}`))
 	req.SetBasicAuth(testUser, testPass)
 	req.Header.Set("Accept", "application/jsonl")
+	req.Header.Set("Content-Type", "application/json")
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)

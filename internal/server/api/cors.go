@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"net/url"
 	"slices"
 	"strings"
 )
@@ -51,6 +52,22 @@ func withCORS(next http.Handler, origins []string) http.Handler {
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
+		if origin != "" && !allowed && !sameOrigin(r, origin) &&
+			(r.Method == http.MethodPost || r.Method == http.MethodDelete) {
+			// A browser attaches cached Basic credentials to a cross-origin
+			// request like a cookie, so a foreign page could otherwise run a
+			// statement as the user without a preflight. Non-browser clients
+			// send no Origin and are unaffected.
+			writeError(w, http.StatusForbidden, clientError(CodeRequestInvalid, "cross-origin request from %q is not allowed", origin))
+			return
+		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// sameOrigin reports whether the Origin header names the host that was
+// requested.
+func sameOrigin(r *http.Request, origin string) bool {
+	u, err := url.Parse(origin)
+	return err == nil && u.Host != "" && strings.EqualFold(u.Host, r.Host)
 }

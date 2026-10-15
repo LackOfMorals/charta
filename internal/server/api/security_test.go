@@ -1,7 +1,13 @@
 package api
 
 import (
+	"net/http/httptest"
+	"time"
+
 	"encoding/json"
+	"github.com/graingraph/graingraph/internal/server/auth"
+	"github.com/graingraph/graingraph/internal/server/store"
+	"net/http"
 	"runtime"
 	"strings"
 	"testing"
@@ -43,5 +49,45 @@ func TestNonFiniteTypedValuesRejected(t *testing.T) {
 		if _, err := decodeParameters(json.RawMessage(body), formatTyped, 2); err == nil {
 			t.Errorf("%s: expected an error", body)
 		}
+	}
+}
+
+func TestCrossOriginWritesRefused(t *testing.T) {
+	st, err := store.New(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	h := NewHandler(st, auth.New(testUser, testPass), "neo4j", 5*time.Minute)
+	h.SetCORSOrigins([]string{"none"})
+	srv := httptest.NewServer(h.Routes())
+	t.Cleanup(srv.Close)
+	post := func(origin, ctype string) int {
+		req, _ := http.NewRequest("POST", srv.URL+"/db/neo4j/query/v2", strings.NewReader(`{"statement":"RETURN 1"}`))
+		req.SetBasicAuth(testUser, testPass)
+		if ctype != "" {
+			req.Header.Set("Content-Type", ctype)
+		}
+		if origin != "" {
+			req.Header.Set("Origin", origin)
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		return resp.StatusCode
+	}
+	if got := post("", "application/json"); got != http.StatusAccepted {
+		t.Errorf("no Origin: %d", got)
+	}
+	if got := post("", ""); got != http.StatusUnsupportedMediaType {
+		t.Errorf("no Content-Type: %d", got)
+	}
+	if got := post("http://evil.example", "application/json"); got != http.StatusForbidden {
+		t.Errorf("foreign Origin: %d", got)
+	}
+	if got := post(srv.URL, "application/json"); got != http.StatusAccepted {
+		t.Errorf("same Origin: %d", got)
 	}
 }
