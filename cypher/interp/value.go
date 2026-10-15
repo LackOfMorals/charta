@@ -493,9 +493,17 @@ func orderCompare(a, b any) int {
 		}
 		return cmpInt(int64(len(x.Nodes)), int64(len(y.Nodes)))
 	case spatial.Point:
-		return spatial.Compare(x, b.(spatial.Point))
+		y, ok := b.(spatial.Point)
+		if !ok { // a point and a vector share a rank; points sort first
+			return -1
+		}
+		return spatial.Compare(x, y)
 	case vector.Vector:
-		return strings.Compare(x.String(), b.(vector.Vector).String())
+		y, ok := b.(vector.Vector)
+		if !ok {
+			return 1
+		}
+		return strings.Compare(x.String(), y.String())
 	case temporal.Value:
 		if c, ok := temporal.Compare(x, b.(temporal.Value)); ok {
 			return c

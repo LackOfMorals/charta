@@ -60,3 +60,36 @@ func TestPanicInExplicitTxRollsBack(t *testing.T) {
 		t.Fatalf("rows persisted: %v", recs[0].Values()[0])
 	}
 }
+
+func TestInterpreterInputValidation(t *testing.T) {
+	db := openDB(t)
+	ctx := context.Background()
+	bad := []string{
+		`RETURN abs()`, `RETURN head()`, `RETURN toInteger()`, `RETURN labels()`,
+		`RETURN duration({days: 1}) / (1.0/0.0)`,
+		`RETURN point({x: 0.0/0.0, y: 1.0})`,
+		`CREATE (:`+"`A,B`"+`)`,
+	}
+	for _, q := range bad[:4] {
+		if _, err := db.RunQuery(ctx, q, nil); err == nil {
+			t.Errorf("%s: expected an error", q)
+		}
+	}
+	for _, q := range bad[4:] {
+		res, err := db.RunQuery(ctx, q, nil)
+		if err == nil {
+			_, err = res.Collect(ctx)
+		}
+		if err == nil {
+			t.Errorf("%s: expected an error", q)
+		}
+	}
+	res, err := db.RunQuery(ctx, `RETURN substring('abc', 1, 9223372036854775807) AS s`, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	recs, _ := res.Collect(ctx)
+	if recs[0].Values()[0] != "bc" {
+		t.Fatalf("got %v", recs[0].Values()[0])
+	}
+}

@@ -190,6 +190,11 @@ func (d *DB) importJSON(ctx context.Context, r io.Reader) (retErr error) {
 		if err != nil {
 			return fmt.Errorf("graingraph: import: node %d (%q) props: %w", i, n.ID, err)
 		}
+		for _, l := range n.Labels {
+			if strings.Contains(l, ",") {
+				return fmt.Errorf("graingraph: import: node %d (%q): label %q must not contain a comma", i, n.ID, l)
+			}
+		}
 		dbID, err := tx.InsertNode(ctx, store.Labels(n.Labels), propsJSON)
 		if err != nil {
 			return fmt.Errorf("graingraph: import: insert node %d (%q): %w", i, n.ID, err)

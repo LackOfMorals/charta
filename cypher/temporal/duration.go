@@ -2,6 +2,7 @@ package temporal
 
 import (
 	"fmt"
+	"math"
 	"math/big"
 )
 
@@ -113,6 +114,9 @@ func (d Duration) Minus(o Duration) (Duration, error) { return d.Plus(o.Neg()) }
 // Scale multiplies d by f, cascading fractional months and days like the
 // constructors do.
 func (d Duration) Scale(f float64) (Duration, error) {
+	if math.IsNaN(f) || math.IsInf(f, 0) {
+		return Duration{}, fmt.Errorf("cannot multiply a duration by a non-finite number")
+	}
 	r := ratFloat(f)
 	p := newDurParts()
 	p.months.Mul(ratInt(d.Months), r)
@@ -125,6 +129,9 @@ func (d Duration) Scale(f float64) (Duration, error) {
 func (d Duration) Div(f float64) (Duration, error) {
 	if f == 0 {
 		return Duration{}, fmt.Errorf("division by zero")
+	}
+	if math.IsNaN(f) || math.IsInf(f, 0) {
+		return Duration{}, fmt.Errorf("cannot divide a duration by a non-finite number")
 	}
 	r := ratFloat(f)
 	r.Inv(r)

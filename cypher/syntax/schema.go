@@ -224,7 +224,11 @@ func (p *parser) parseCreateIndex() Body {
 		p.next()
 		c.Each = true
 		if p.at(LBRACK) {
-			list := p.parseListLiteral().(*ListLit)
+			pos := p.cur().Pos
+			list, ok := p.parseListLiteral().(*ListLit)
+			if !ok {
+				p.fail(pos, "ON EACH expects a plain list of properties")
+			}
 			c.Properties = list.Elems
 		} else {
 			c.Properties = []Expr{p.parsePostfix()}

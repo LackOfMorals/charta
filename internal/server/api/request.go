@@ -385,29 +385,30 @@ func decodeVector(raw json.RawMessage) (any, error) {
 	if !ok {
 		return nil, fmt.Errorf("Vector: unsupported coordinatesType %q", vv.CoordinatesType)
 	}
-	vec := vector.Vector{Type: graingraphType}
-	if graingraphType.IsInteger() {
-		vec.Ints = make([]int64, len(vv.Coordinates))
-		for i, c := range vv.Coordinates {
+	// vector.New enforces the dimension range, finiteness and integer ranges.
+	vals := make([]any, len(vv.Coordinates))
+	for i, c := range vv.Coordinates {
+		if graingraphType.IsInteger() {
 			n, err := strconv.ParseInt(c, 10, 64)
 			if err != nil {
 				return nil, fmt.Errorf("Vector: coordinate %d: %w", i, err)
 			}
-			vec.Ints[i] = n
+			vals[i] = n
+			continue
 		}
-	} else {
 		bits := 32
 		if graingraphType == vector.Float64 {
 			bits = 64
 		}
-		vec.Floats = make([]float64, len(vv.Coordinates))
-		for i, c := range vv.Coordinates {
-			f, err := strconv.ParseFloat(c, bits)
-			if err != nil {
-				return nil, fmt.Errorf("Vector: coordinate %d: %w", i, err)
-			}
-			vec.Floats[i] = f
+		f, err := strconv.ParseFloat(c, bits)
+		if err != nil {
+			return nil, fmt.Errorf("Vector: coordinate %d: %w", i, err)
 		}
+		vals[i] = f
+	}
+	vec, err := vector.New(vals, len(vals), graingraphType)
+	if err != nil {
+		return nil, fmt.Errorf("Vector: %w", err)
 	}
 	return vec, nil
 }

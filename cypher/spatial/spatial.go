@@ -77,6 +77,9 @@ func FromMap(m map[string]any) (Point, error) {
 		case int64:
 			return float64(x), true, nil
 		case float64:
+			if math.IsNaN(x) || math.IsInf(x, 0) {
+				return 0, false, fmt.Errorf("point(): %s must be finite", key)
+			}
 			return x, true, nil
 		}
 		return 0, false, fmt.Errorf("point(): %s must be a number", key)

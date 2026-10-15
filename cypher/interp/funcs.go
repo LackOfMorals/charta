@@ -143,6 +143,9 @@ func (ex *exec) builtin(name string, args []any) (any, error) {
 	case "randomuuid":
 		return randomUUID(), nil
 	}
+	if needsArg[name] && len(args) == 0 {
+		return nil, errorf("SyntaxError", "InvalidNumberOfArguments", "%s() requires an argument", name)
+	}
 	// All remaining functions return null for a null argument.
 	if len(args) > 0 && args[0] == nil {
 		switch name {
@@ -663,6 +666,20 @@ func fnRange(args []any) (any, error) {
 	return out, nil
 }
 
+// needsArg lists the functions that read args[0] without any other arity check.
+var needsArg = func() map[string]bool {
+	m := map[string]bool{}
+	for _, n := range []string{"char_length", "character_length", "head", "last", "tail", "reverse", "isempty",
+		"keys", "properties", "labels", "type", "id", "elementid", "nodes", "relationships", "rels",
+		"startnode", "endnode", "tointeger", "tointegerornull", "tofloat", "tofloatornull", "toboolean",
+		"tobooleanornull", "tostring", "tostringornull", "tointegerlist", "tofloatlist", "tobooleanlist",
+		"tostringlist", "abs", "sign", "ceil", "floor", "sqrt", "exp", "log", "log10", "sin", "cos", "tan",
+		"cot", "asin", "acos", "atan", "degrees", "radians", "haversin", "sinh", "cosh", "tanh", "coth"} {
+		m[n] = true
+	}
+	return m
+}()
+
 func fnSubstring(args []any) (any, error) {
 	if err := argc("substring", args, 2, 3); err != nil {
 		return nil, err
@@ -691,7 +708,7 @@ func fnSubstring(args []any) (any, error) {
 		if n < 0 {
 			return nil, errorf("SyntaxError", "NegativeIntegerArgument", "substring() length must not be negative")
 		}
-		if start+n < end {
+		if n < end-start { // compare against the remaining runes: start+n could overflow
 			end = start + n
 		}
 	}
