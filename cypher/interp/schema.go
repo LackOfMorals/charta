@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -27,6 +28,7 @@ const schemaTable = "charta_schema"
 
 // schemaDef is one index or constraint.
 type schemaDef struct {
+	invalid    bool     // failed validate(); only DROP sees such rows
 	ID         int64    `json:"-"`
 	Name       string   `json:"-"`
 	Constraint bool     `json:"constraint"`
@@ -58,7 +60,64 @@ func (ex *exec) ensureSchemaTable() error {
 }
 
 // loadSchema reads every definition, in creation order.
-func (g *graph) loadSchema() ([]schemaDef, error) {
+func (g *graph) loadSchema() ([]schemaDef, error) { return g.loadSchemaRows(false) }
+
+var (
+	backingIdxRe = regexp.MustCompile(`^gl_idx_[0-9]+$`)
+	valueTypeRe  = regexp.MustCompile(`^[A-Za-z0-9 <>,|_]{1,512}$`)
+)
+
+// validate checks the invariants every consumer of a definition relies on. The
+// definitions are read from the database file, which may not have been written
+// by graingraph, so none of them is trusted: a row that fails is skipped by
+// loadSchema (so it cannot panic a write or be spliced into SQL or Cypher) but
+// can still be dropped by name.
+func (d *schemaDef) validate() error {
+	switch d.Entity {
+	case "NODE", "RELATIONSHIP":
+	default:
+		return fmt.Errorf("unknown entity %q", d.Entity)
+	}
+	if d.Constraint {
+		switch d.Kind {
+		case "UNIQUENESS", "KEY", "EXISTENCE", "TYPE":
+		default:
+			return fmt.Errorf("unknown constraint kind %q", d.Kind)
+		}
+		if len(d.Targets) < 1 || len(d.Props) < 1 {
+			return fmt.Errorf("constraint needs a target and a property")
+		}
+	} else {
+		switch d.Kind {
+		case "RANGE", "TEXT", "POINT", "VECTOR", "FULLTEXT":
+			if len(d.Targets) < 1 || len(d.Props) < 1 {
+				return fmt.Errorf("index needs a target and a property")
+			}
+		case "LOOKUP":
+		default:
+			return fmt.Errorf("unknown index kind %q", d.Kind)
+		}
+	}
+	if d.Kind == "VECTOR" {
+		if d.VectorDims < 1 || d.VectorDims > vector.MaxDimension {
+			return fmt.Errorf("vector dimension %d out of range", d.VectorDims)
+		}
+		if d.VectorSim != "cosine" && d.VectorSim != "euclidean" {
+			return fmt.Errorf("unknown similarity function %q", d.VectorSim)
+		}
+	}
+	if d.BackingIdx != "" && !backingIdxRe.MatchString(d.BackingIdx) {
+		return fmt.Errorf("bad backing index name")
+	}
+	if d.ValueType != "" && !valueTypeRe.MatchString(d.ValueType) {
+		return fmt.Errorf("bad value type")
+	}
+	return nil
+}
+
+// loadSchemaRows reads the definitions; invalid ones are included only when
+// withInvalid is set (DROP), and are then marked by a nil-safe empty Targets.
+func (g *graph) loadSchemaRows(withInvalid bool) ([]schemaDef, error) {
 	var exists int
 	if err := g.queryRow(`SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = ?`, []any{schemaTable}, &exists); err != nil {
 		return nil, err
@@ -80,6 +139,12 @@ func (g *graph) loadSchema() ([]schemaDef, error) {
 		}
 		if err := json.Unmarshal([]byte(raw), &d); err != nil {
 			return nil, fmt.Errorf("corrupt schema definition %q: %w", d.Name, err)
+		}
+		if err := d.validate(); err != nil {
+			if !withInvalid {
+				continue
+			}
+			d.invalid = true
 		}
 		out = append(out, d)
 	}
@@ -333,7 +398,7 @@ func backingIndexSQL(id int64, d schemaDef) string {
 // ─── DROP ───────────────────────────────────────────────────────────────────
 
 func (ex *exec) execDropSchema(ds *syntax.DropSchema) error {
-	defs, err := ex.g.loadSchema()
+	defs, err := ex.g.loadSchemaRows(true)
 	if err != nil {
 		return err
 	}
@@ -351,8 +416,8 @@ func (ex *exec) execDropSchema(ds *syntax.DropSchema) error {
 		if d.Kind == "VECTOR" {
 			ex.g.eng.dropVectorMatrix(d.ID)
 		}
-		if d.BackingIdx != "" {
-			if _, err := ex.g.db.ExecContext(ex.g.ctx, `DROP INDEX IF EXISTS `+d.BackingIdx); err != nil {
+		if d.BackingIdx != "" { // always the derived name, never the stored text
+			if _, err := ex.g.db.ExecContext(ex.g.ctx, `DROP INDEX IF EXISTS `+backingIndexName(d.ID)); err != nil {
 				return err
 			}
 		}

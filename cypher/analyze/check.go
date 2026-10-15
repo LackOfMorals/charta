@@ -64,6 +64,10 @@ func (c *checker) body(b syntax.Body, outer *scope) []string {
 			}
 		}
 		return first
+	case *syntax.CreateIndex:
+		c.checkSchemaOptions(b.Options)
+	case *syntax.CreateConstraint:
+		c.checkSchemaOptions(b.Options)
 	case *syntax.Conditional:
 		for _, w := range b.Branches {
 			c.expr(w.Cond, env{sc: outer, boolCtx: true})
