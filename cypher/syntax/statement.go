@@ -10,7 +10,7 @@ func Parse(src string) (*Statement, error) {
 		return nil, err
 	}
 	var st *Statement
-	err = p.run(func() { st = p.parseStatement() })
+	err = p.run(func() { st = p.parseStatement(); p.checkDepth(st) })
 	if err != nil {
 		return nil, err
 	}

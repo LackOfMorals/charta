@@ -59,6 +59,7 @@ func ParseExpr(src string) (Expr, error) {
 		if !p.at(EOF) {
 			p.unexpected("end of input")
 		}
+		p.checkDepth(e)
 	})
 	if err != nil {
 		return nil, err
